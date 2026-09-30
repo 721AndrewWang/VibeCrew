@@ -1,0 +1,5 @@
+{
+  "name": "@anthropic-ai/claude-agent-sdk-linux-x64",
+  "version": "0.0.0-use-system-claude",
+  "description": "Placeholder: VibeCrew runs the Claude Code CLI installed on this machine (pathToClaudeCodeExecutable) instead of the SDK's bundled 240MB binary."
+}

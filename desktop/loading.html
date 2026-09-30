@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>VibeCrew</title>
+    <style>
+      :root {
+        --bg: #f4f4f7;
+        --fg: #1c1c1f;
+        --muted: #8b8b94;
+        --card: #ffffff;
+        --border: #e2e2e8;
+        --accent: #0a84ff;
+        --red: #e5383b;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111114;
+          --fg: #f2f2f6;
+          --muted: #85858f;
+          --card: #1c1c21;
+          --border: #2b2b32;
+          --red: #ff5a52;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      main {
+        width: min(560px, calc(100vw - 48px));
+        text-align: center;
+      }
+      img {
+        width: 72px;
+        height: 72px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 18px 0 6px;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .spinner {
+        width: 22px;
+        height: 22px;
+        margin: 22px auto 0;
+        border-radius: 50%;
+        border: 2.5px solid var(--border);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      pre {
+        margin: 18px 0 0;
+        max-height: 40vh;
+        overflow: auto;
+        text-align: left;
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--fg);
+        font: 12px/1.5 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 18px;
+      }
+      button {
+        height: 34px;
+        padding: 0 16px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .error h1 {
+        color: var(--red);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="root">
+      <img src="icons/128x128.png" alt="" />
+      <h1 id="title">正在启动 VibeCrew…</h1>
+      <p id="hint">机器人小队马上就位</p>
+      <div class="spinner" id="spinner"></div>
+      <pre id="detail" hidden></pre>
+      <div class="actions" id="actions" hidden>
+        <button class="primary" id="retry">重试</button>
+        <button id="logs">打开日志</button>
+      </div>
+    </main>
+    <script>
+      const q = new URLSearchParams(location.search);
+      const $ = (id) => document.getElementById(id);
+      const msg = q.get('msg');
+      if (msg) $('title').textContent = msg;
+      if (q.get('state') === 'error') {
+        document.getElementById('root').className = 'error';
+        $('spinner').hidden = true;
+        $('hint').textContent = '可以重试；如果还不行，把下面的日志发给我们排查。';
+        const detail = q.get('detail');
+        if (detail) {
+          $('detail').textContent = detail;
+          $('detail').hidden = false;
+        }
+        $('actions').hidden = false;
+      }
+      const bridge = window.vibecrewDesktop;
+      $('retry').onclick = () => {
+        $('actions').hidden = true;
+        $('spinner').hidden = false;
+        $('title').textContent = '正在重新启动…';
+        bridge && bridge.retry();
+      };
+      $('logs').onclick = () => bridge && bridge.openLogs();
+    </script>
+  </body>
+</html>

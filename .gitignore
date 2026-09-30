@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+
+# Build output (npm run build / build:server / desktop:pack)
+/web/dist
+/dist-server
+/release
+*.AppImage
+
+# Logs
+*.log
+
+# Secrets and personal config (don't rely on a global excludes file)
+# Vite's root is web/, so it also reads web/.env*
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+electron-builder.env
+# VibeCrew data dir, if VIBECREW_HOME points inside the repo (settings.json holds the API key)
+.vibecrew/
+
+# Test and tool output
+coverage/
+test-results/
+playwright-report/
+.playwright-mcp/
+
+# TypeScript / Vite caches
+*.tsbuildinfo
+*.timestamp-*.mjs
+
+# Claude Code personal files
+**/.claude/settings.local.json
+CLAUDE.local.md
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

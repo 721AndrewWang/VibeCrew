@@ -1,0 +1,159 @@
+import { useEffect, useRef } from 'react';
+import { Terminal, type ITheme } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { onTerminal, send } from '../../socket';
+import { useDarkMode } from './theme';
+
+const DARK: ITheme = {
+  background: '#141418',
+  foreground: '#e6e6eb',
+  cursor: '#e6e6eb',
+  selectionBackground: 'rgba(10,132,255,0.35)',
+  black: '#1c1c21',
+  brightBlack: '#6b6b76',
+};
+
+const LIGHT: ITheme = {
+  background: '#fbfbfd',
+  foreground: '#1c1c1f',
+  cursor: '#1c1c1f',
+  selectionBackground: 'rgba(10,132,255,0.25)',
+  black: '#1c1c1f',
+  white: '#8b8b94',
+  brightWhite: '#6b6b76',
+  yellow: '#b26b00',
+  brightYellow: '#9a5b00',
+  green: '#1f8a3a',
+  brightGreen: '#1a7a33',
+  cyan: '#0a7ea4',
+  brightCyan: '#086a8a',
+};
+
+function makeTerm(dark: boolean, readOnly: boolean) {
+  return new Terminal({
+    fontFamily: "'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, 'Noto Sans Mono CJK SC', monospace",
+    fontSize: 12.5,
+    lineHeight: 1.25,
+    cursorBlink: !readOnly,
+    disableStdin: readOnly,
+    convertEol: false,
+    scrollback: 5000,
+    allowProposedApi: true,
+    theme: dark ? DARK : LIGHT,
+  });
+}
+
+function useFit(host: React.RefObject<HTMLDivElement | null>, term: React.RefObject<Terminal | null>, fit: React.RefObject<FitAddon | null>, active: boolean, onResize?: (cols: number, rows: number) => void) {
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const doFit = () => {
+      if (!active || !el.offsetWidth || !el.offsetHeight || !term.current || !fit.current) return;
+      try {
+        fit.current.fit();
+        onResize?.(term.current.cols, term.current.rows);
+      } catch {
+        /* not attached yet */
+      }
+    };
+    const ro = new ResizeObserver(doFit);
+    ro.observe(el);
+    const t = setTimeout(doFit, 30);
+    return () => {
+      ro.disconnect();
+      clearTimeout(t);
+    };
+  }, [active]);
+}
+
+/** An interactive shell on the server, attached over the websocket. */
+export function LiveTerminal({ id, projectId, command, active }: { id: string; projectId: string; command?: string; active: boolean }) {
+  const host = useRef<HTMLDivElement>(null);
+  const term = useRef<Terminal | null>(null);
+  const fit = useRef<FitAddon | null>(null);
+  const dark = useDarkMode();
+
+  useEffect(() => {
+    const t = makeTerm(dark, false);
+    const f = new FitAddon();
+    t.loadAddon(f);
+    t.open(host.current!);
+    term.current = t;
+    fit.current = f;
+    try {
+      f.fit();
+    } catch {
+      /* hidden */
+    }
+    const off = onTerminal(id, {
+      data: (d) => t.write(d),
+      exit: (code) => t.write(`\r\n\x1b[90m[进程已退出${code !== null ? `，代码 ${code}` : ''}]\x1b[0m\r\n`),
+    });
+    send({ t: 'term_open', id, projectId, cols: t.cols || 80, rows: t.rows || 24, command });
+    const sub = t.onData((d) => send({ t: 'term_input', id, data: d }));
+    return () => {
+      off();
+      sub.dispose();
+      t.dispose();
+      term.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  useEffect(() => {
+    if (term.current) term.current.options.theme = dark ? DARK : LIGHT;
+  }, [dark]);
+
+  useFit(host, term, fit, active, (cols, rows) => send({ t: 'term_resize', id, cols, rows }));
+
+  useEffect(() => {
+    if (active) setTimeout(() => term.current?.focus(), 50);
+  }, [active]);
+
+  return <div className="xterm-host" ref={host} />;
+}
+
+/** A read-only terminal that renders a growing log. */
+export function LogTerminal({ content, active }: { content: string; active: boolean }) {
+  const host = useRef<HTMLDivElement>(null);
+  const term = useRef<Terminal | null>(null);
+  const fit = useRef<FitAddon | null>(null);
+  const written = useRef(0);
+  const dark = useDarkMode();
+
+  useEffect(() => {
+    const t = makeTerm(dark, true);
+    const f = new FitAddon();
+    t.loadAddon(f);
+    t.open(host.current!);
+    term.current = t;
+    fit.current = f;
+    written.current = 0;
+    return () => {
+      t.dispose();
+      term.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const t = term.current;
+    if (!t) return;
+    if (content.length < written.current) {
+      t.reset();
+      written.current = 0;
+    }
+    if (content.length > written.current) {
+      t.write(content.slice(written.current));
+      written.current = content.length;
+    }
+  }, [content]);
+
+  useEffect(() => {
+    if (term.current) term.current.options.theme = dark ? DARK : LIGHT;
+  }, [dark]);
+
+  useFit(host, term, fit, active);
+
+  return <div className="xterm-host" ref={host} />;
+}
