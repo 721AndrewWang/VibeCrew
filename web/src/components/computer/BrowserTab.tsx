@@ -120,22 +120,22 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
 
   const post = (msg: object) => {
     const w = iframe.current?.contentWindow;
-    if (w && hostOrigin.current) w.postMessage({ __vibecrew_host: true, ...msg }, hostOrigin.current);
+    if (w && hostOrigin.current) w.postMessage({ __crew_host: true, ...msg }, hostOrigin.current);
   };
 
   // Messages from the script injected into the previewed page.
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (!iframe.current || e.source !== iframe.current.contentWindow) return;
-      const d = e.data as PreviewToHost & { __vibecrew?: boolean };
-      if (!d || d.__vibecrew !== true) return;
+      const d = e.data as PreviewToHost & { __crew?: boolean };
+      if (!d || d.__crew !== true) return;
       if (d.type === 'ready' || d.type === 'nav') {
         hostOrigin.current = e.origin;
         if (d.type === 'ready') {
-          (e.source as Window).postMessage({ __vibecrew_host: true, type: 'hello' }, e.origin);
+          (e.source as Window).postMessage({ __crew_host: true, type: 'hello' }, e.origin);
           const cur = previewOf(project.id);
-          if (cur.picking) (e.source as Window).postMessage({ __vibecrew_host: true, type: 'pick', on: true }, e.origin);
-          if (cur.recording) (e.source as Window).postMessage({ __vibecrew_host: true, type: 'record', on: true }, e.origin);
+          if (cur.picking) (e.source as Window).postMessage({ __crew_host: true, type: 'pick', on: true }, e.origin);
+          if (cur.recording) (e.source as Window).postMessage({ __crew_host: true, type: 'record', on: true }, e.origin);
         }
         let path = '/';
         try {

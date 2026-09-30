@@ -77,6 +77,10 @@
   gap: 0 16px;
 }
 
+.form-grid .span-all {
+  grid-column: 1 / -1;
+}
+
 .num-input {
   width: 96px;
   flex: none;
@@ -1687,6 +1691,11 @@
     flex-wrap: wrap;
   }
 
+  /* Controls too wide to sit beside the text go below it. */
+  .setting-row > div:first-child {
+    flex-basis: 220px;
+  }
+
   .fb-bar {
     flex-wrap: wrap;
   }
@@ -1789,6 +1798,58 @@
 .accent-swatch.on i {
   box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent);
   transform: scale(1.04);
+}
+
+.logo-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.logo-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 56px;
+  padding: 6px 4px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.logo-choice:hover {
+  background: var(--bg-hover);
+}
+
+.logo-choice .logo {
+  border-radius: 22%;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.logo-choice.on {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.logo-choice.on .logo {
+  box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent);
+  transform: scale(1.04);
+}
+
+/* All six in one row on a phone. */
+@media (max-width: 640px) {
+  .logo-choices {
+    gap: 2px;
+  }
+
+  .logo-choice {
+    min-width: 50px;
+    padding: 6px 2px 4px;
+  }
 }
 
 .test-ic {

@@ -1,21 +1,4 @@
-import type {
-  Attachment,
-  AuthStatus,
-  Bootstrap,
-  Bot,
-  Chat,
-  ChatMessage,
-  DevServerState,
-  PreviewInfo,
-  Project,
-  PublicSettings,
-  RecordedStep,
-  Routine,
-  Skill,
-  TurnSummary,
-  WorkspaceMergeResult,
-  WorkspaceStatus,
-} from '../../shared/types';
+import type { Attachment, AuthStatus, Bootstrap, Bot, Chat, ChatMessage, DevServerState, Effort, PermissionLevel, PreviewInfo, Project, PublicSettings, RecordedStep, Routine, Skill, TurnSummary, WorkspaceMergeResult, WorkspaceStatus } from '../../shared/types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -104,6 +87,8 @@ export const api = {
 
   createGroup: (g: { title?: string; botIds: string[]; leadBotId?: string | null; projectId?: string | null }) => post<Chat>('/api/chats', g),
   updateChat: (id: string, p: Partial<Chat>) => patch<Chat>(`/api/chats/${id}`, p),
+  /** The composer's switches for this chat; null goes back to each bot's own setting. */
+  setChatSwitches: (id: string, p: { permission?: PermissionLevel | null; model?: string | null; effort?: Effort | null }) => patch<Chat>(`/api/chats/${id}`, p),
   deleteChat: (id: string) => del(`/api/chats/${id}`),
   messages: (id: string, before?: number) => get<{ messages: ChatMessage[]; hasMore: boolean }>(`/api/chats/${id}/messages${before !== undefined ? `?before=${before}` : ''}`),
   send: (id: string, text: string, attachments: Attachment[]) => post<ChatMessage>(`/api/chats/${id}/messages`, { text, attachments }),
@@ -121,6 +106,7 @@ export const api = {
   removeWorkspace: (chatId: string, deleteBranch = false) => del(`/api/chats/${chatId}/workspace${deleteBranch ? '?deleteBranch=1' : ''}`),
   workspaceDiff: (chatId: string, path: string) => get<{ diff: string }>(`/api/chats/${chatId}/workspace/diff?path=${q(path)}`),
   mergeWorkspace: (chatId: string, message?: string) => post<WorkspaceMergeResult>(`/api/chats/${chatId}/workspace/merge`, { message }),
+  suggestCommitMessage: (chatId: string) => post<{ message: string }>(`/api/chats/${chatId}/workspace/commit-message`, {}),
   syncWorkspace: (chatId: string) => post<WorkspaceMergeResult>(`/api/chats/${chatId}/workspace/sync`),
   resolveConflicts: (chatId: string) => post<{ started: boolean; conflicts: string[] }>(`/api/chats/${chatId}/workspace/resolve`),
   abortSync: (chatId: string) => post(`/api/chats/${chatId}/workspace/abort`),

@@ -21,6 +21,7 @@ import type {
   Skill,
   TurnSummary,
 } from '../../shared/types';
+import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import { api } from './api';
 import { desktop } from './desktop';
 
@@ -105,6 +106,16 @@ export interface AppState {
 
 const LS_UI = 'vc-ui';
 
+/** The logo last seen (App.tsx keeps it), so the boot screen shows it before the settings arrive. */
+function cachedLogo(): LogoId {
+  try {
+    const v = localStorage.getItem('vc-logo');
+    return isLogoId(v) ? v : DEFAULT_LOGO;
+  } catch {
+    return DEFAULT_LOGO;
+  }
+}
+
 function loadUi(): Partial<AppState> {
   try {
     const s = JSON.parse(localStorage.getItem(LS_UI) || '{}');
@@ -130,6 +141,8 @@ export const useStore = create<AppState>(() => ({
     projectsRoot: '',
     defaultPermission: 'edits',
     maxHops: 8,
+    logo: cachedLogo(),
+    denyRules: [],
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false },

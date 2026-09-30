@@ -966,6 +966,26 @@ button.term-tab {
   padding: 10px 12px;
 }
 
+.commit-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.commit-box.stacked {
+  flex-direction: column;
+}
+
+.commit-box.stacked textarea {
+  resize: vertical;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.commit-box.stacked .commit-actions {
+  justify-content: flex-end;
+}
+
 .commits {
   padding: 0 12px;
 }

@@ -42,10 +42,10 @@ const MIME: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
-const INJECT_TAG = '<script src="/__vibecrew/inject.js"></script>';
+const INJECT_TAG = '<script src="/__crew/inject.js"></script>';
 
 function injectHtml(html: string): string {
-  if (html.includes('/__vibecrew/inject.js')) return html;
+  if (html.includes('/__crew/inject.js')) return html;
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + INJECT_TAG);
   if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + INJECT_TAG);
   return INJECT_TAG + html;
@@ -126,13 +126,13 @@ class PreviewServer {
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = new URL(req.url || '/', 'http://preview.local');
-    if (url.pathname === '/__vibecrew/inject.js') {
+    if (url.pathname === '/__crew/inject.js') {
       const cfg = { liveReload: !this.target() };
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(`window.__VIBECREW_CFG__=${JSON.stringify(cfg)};\n${fs.readFileSync(INJECT_SCRIPT, 'utf8')}`);
+      res.end(`window.__CREW_CFG__=${JSON.stringify(cfg)};\n${fs.readFileSync(INJECT_SCRIPT, 'utf8')}`);
       return;
     }
-    if (url.pathname === '/__vibecrew/events') {
+    if (url.pathname === '/__crew/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
       res.write(': hi\n\n');
       this.sse.add(res);

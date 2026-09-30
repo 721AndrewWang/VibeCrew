@@ -33,7 +33,7 @@ async function getBrowser(): Promise<Browser> {
   if (browser?.isConnected()) return browser;
   if (launching) return launching;
   const executablePath = findChrome();
-  if (!executablePath) throw new Error('没有找到 Chrome/Chromium。请安装 Google Chrome，或设置环境变量 VIBECREW_CHROME_PATH。');
+  if (!executablePath) throw new Error('没有找到 Chrome/Chromium。请安装 Google Chrome，或设置环境变量 CREW_CHROME_PATH。');
   launching = (async () => {
     const { chromium } = await import('playwright-core');
     const b = await chromium.launch({
@@ -89,11 +89,11 @@ function collect(page: Page, logs: ConsoleEntry[]) {
   });
   page.on('pageerror', (e) => add('error', `Uncaught ${e.name}: ${e.message}${e.stack ? '\n' + e.stack.split('\n').slice(1, 4).join('\n') : ''}`));
   page.on('requestfailed', (r) => {
-    if (r.url().includes('/__vibecrew/')) return;
+    if (r.url().includes('/__crew/')) return;
     add('error', `[network] ${r.method()} ${r.url()} 失败：${r.failure()?.errorText || ''}`);
   });
   page.on('response', (r) => {
-    if (r.status() >= 400 && !r.url().includes('/__vibecrew/') && !/favicon\.ico$/.test(r.url())) add('warn', `[network] ${r.status()} ${r.request().method()} ${r.url()}`);
+    if (r.status() >= 400 && !r.url().includes('/__crew/') && !/favicon\.ico$/.test(r.url())) add('warn', `[network] ${r.status()} ${r.request().method()} ${r.url()}`);
   });
 }
 

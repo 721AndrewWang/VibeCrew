@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AppWindow, Bell, Check, Copy, Info, KeyRound, Monitor, Moon, Palette, Plug, RefreshCw, Save, SlidersHorizontal, Smartphone, Sun, Terminal, X } from 'lucide-react';
+import { LOGOS, type LogoId } from '../../../../shared/logos';
 import type { AuthMode, PermissionLevel, ProviderPreset, ProviderSettings } from '../../../../shared/types';
 import { api } from '../../api';
 import { desktop } from '../../desktop';
@@ -222,18 +223,18 @@ function ConnectionSection() {
 
       {!auth.cliFound && (
         <div className="callout warn">
-          <div>没有在这台电脑上找到 Claude Code。VibeCrew 通过它来运行机器人（用其他模型服务商时也一样），请先安装（需要 Node.js 18+）：</div>
+          <div>没有在这台电脑上找到 Claude Code。Crew 通过它来运行机器人（用其他模型服务商时也一样），请先安装（需要 Node.js 18+）：</div>
           <CodeLine code="npm i -g @anthropic-ai/claude-code" />
           <div className="hint">安装完成后点「重新检测」。</div>
         </div>
       )}
       {auth.cliFound && !auth.ready && settings.authMode === 'claude-code' && (
         <div className="callout warn">
-          <div>VibeCrew 通过你电脑上的 Claude Code 运行机器人。请先登录，或者在下面改用 API Key、其他模型服务商：</div>
+          <div>Crew 通过你电脑上的 Claude Code 运行机器人。请先登录，或者在下面改用 API Key、其他模型服务商：</div>
           <CodeLine code="claude auth login" />
           <div className="row wrap">
             <button className="btn primary sm" onClick={() => requestTerminal('claude auth login')}>
-              <Terminal size={13} /> 在 VibeCrew 终端里登录
+              <Terminal size={13} /> 在 Crew 终端里登录
             </button>
             <span className="hint">登录完成后回到这里点「重新检测」。</span>
           </div>
@@ -401,16 +402,22 @@ function DefaultsSection() {
   const [defaultPermission, setDefaultPermission] = useState<PermissionLevel>(settings.defaultPermission);
   const [maxHops, setMaxHops] = useState(settings.maxHops);
   const [projectsRoot, setProjectsRoot] = useState(settings.projectsRoot);
+  const [denyRules, setDenyRules] = useState((settings.denyRules || []).join('\n'));
   const [saving, setSaving] = useState(false);
+  const denyList = denyRules.split('\n').map((r) => r.trim()).filter(Boolean);
 
   const dirty =
-    defaultModel !== settings.defaultModel || defaultPermission !== settings.defaultPermission || maxHops !== settings.maxHops || projectsRoot !== settings.projectsRoot;
+    defaultModel !== settings.defaultModel ||
+    defaultPermission !== settings.defaultPermission ||
+    maxHops !== settings.maxHops ||
+    projectsRoot !== settings.projectsRoot ||
+    denyList.join('\n') !== (settings.denyRules || []).join('\n');
 
   const save = async () => {
     setSaving(true);
     try {
       const hops = Math.max(0, Math.min(30, Math.round(maxHops) || 0));
-      const r = await api.updateSettings({ defaultModel: defaultModel.trim(), defaultPermission, maxHops: hops, ...(projectsRoot.trim() ? { projectsRoot: projectsRoot.trim() } : {}) });
+      const r = await api.updateSettings({ defaultModel: defaultModel.trim(), defaultPermission, maxHops: hops, denyRules: denyList, ...(projectsRoot.trim() ? { projectsRoot: projectsRoot.trim() } : {}) });
       useStore.setState({ settings: r.settings });
       setMaxHops(r.settings.maxHops);
       setProjectsRoot(r.settings.projectsRoot);
@@ -448,8 +455,19 @@ function DefaultsSection() {
         </div>
         <div className="field">
           <label>项目文件夹</label>
-          <input className="input mono" value={projectsRoot} placeholder="~/VibeCrew" onChange={(e) => setProjectsRoot(e.target.value)} />
+          <input className="input mono" value={projectsRoot} placeholder="~/CrewProjects" onChange={(e) => setProjectsRoot(e.target.value)} />
           <div className="hint">新建的项目放在这里</div>
+        </div>
+        <div className="field span-all">
+          <label>禁止的操作</label>
+          <textarea
+            className="input mono"
+            rows={3}
+            value={denyRules}
+            placeholder={'每行一条，例如\nBash(*prod-server*)\nBash(rm -rf /*)'}
+            onChange={(e) => setDenyRules(e.target.value)}
+          />
+          <div className="hint">所有机器人、所有项目、任何权限模式下都直接拒绝，连「全自动」也不行。写法和「必须确认」一样，* 匹配任意内容。</div>
         </div>
       </div>
       <div className="row">
@@ -502,7 +520,7 @@ function LanSection() {
       <div className="setting-row">
         <div>
           <div className="sr-title">允许手机在局域网内访问</div>
-          <div className="hint">开启后需要重启 VibeCrew；手机和电脑需在同一局域网；链接里带有访问令牌，不要分享给别人</div>
+          <div className="hint">开启后需要重启 Crew；手机和电脑需在同一局域网；链接里带有访问令牌，不要分享给别人</div>
         </div>
         <Toggle on={enabled} disabled={busy} onChange={toggle} />
       </div>
@@ -536,7 +554,7 @@ function LanSection() {
               </div>
             </>
           ) : (
-            <div className="hint">没有检测到局域网地址。请确认电脑已连接 Wi-Fi 或有线网络，然后重启 VibeCrew。</div>
+            <div className="hint">没有检测到局域网地址。请确认电脑已连接 Wi-Fi 或有线网络，然后重启 Crew。</div>
           )}
         </div>
       )}
@@ -577,6 +595,19 @@ function readTheme(): Theme {
 function AppearanceSection() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [accent, setAccent] = useState(readAccent);
+  const logo = useStore((s) => s.settings.logo);
+  // Saved on the server: the desktop app's window, tray and Dock icons follow it too.
+  const chooseLogo = async (id: LogoId) => {
+    if (id === logo) return;
+    useStore.setState((s) => ({ settings: { ...s.settings, logo: id } }));
+    try {
+      const r = await api.updateSettings({ logo: id });
+      useStore.setState({ settings: r.settings });
+    } catch (e) {
+      useStore.setState((s) => ({ settings: { ...s.settings, logo } }));
+      toast('换图标失败', (e as Error).message, 'error');
+    }
+  };
   const applyAccent = (id: string) => {
     setAccent(id);
     try {
@@ -633,6 +664,20 @@ function AppearanceSection() {
           ))}
         </div>
       </div>
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">应用图标</div>
+          <div className="hint">桌面版的 Dock、托盘、窗口图标和浏览器标签页图标都会跟着换，所有设备共用这个设置</div>
+        </div>
+        <div className="logo-choices" role="radiogroup" aria-label="应用图标">
+          {LOGOS.map((l) => (
+            <button key={l.id} role="radio" aria-checked={logo === l.id} className={cx('logo-choice', logo === l.id && 'on')} onClick={() => void chooseLogo(l.id)}>
+              <Logo id={l.id} size={32} />
+              <span>{l.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </Section>
   );
 }
@@ -659,7 +704,7 @@ function NotificationSection() {
 
   const test = () => {
     try {
-      new Notification('VibeCrew', { body: '桌面通知已开启：机器人完成任务或需要你确认时会提醒你。', icon: '/icon.svg' });
+      new Notification('Crew', { body: '桌面通知已开启：机器人完成任务或需要你确认时会提醒你。', icon: '/icon.svg' });
     } catch {
       toast('无法显示通知', '这个浏览器只允许在后台时显示通知', 'warn');
     }
@@ -707,7 +752,7 @@ function DesktopSection() {
       <div className="setting-row">
         <div>
           <div className="sr-title">开机自动启动</div>
-          <div className="hint">登录后在后台启动 VibeCrew（只显示托盘图标），定时任务到点就能运行。</div>
+          <div className="hint">登录后在后台启动 Crew（只显示托盘图标），定时任务到点就能运行。</div>
         </div>
         <Toggle on={info.autostart} onChange={(v) => void toggle(v)} />
       </div>
@@ -748,7 +793,7 @@ function AboutSection() {
       <div className="about">
         <Logo size={40} />
         <div>
-          <div className="sr-title">VibeCrew {version}</div>
+          <div className="sr-title">Crew {version}</div>
           <div className="hint">灵感来自 xAI Grokbot，基于 Claude Code / Claude Agent SDK</div>
         </div>
       </div>

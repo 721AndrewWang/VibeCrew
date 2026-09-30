@@ -5,7 +5,7 @@ import { bus, internal, notify } from './bus';
 import { cleanEnv } from './config';
 import { botModel, modelEnv } from './claudeAuth';
 import { PLUGINS } from './data/catalog';
-import { chatProjectId, devCommand, HttpError, touchProject } from './projects';
+import { chatProjectId, configOf, devCommand, HttpError, touchProject } from './projects';
 import { bots, chats, messages, projects, settings, uid } from './store';
 import { skills } from './skills';
 import { readUpload, IMAGE_MIMES } from './uploads';
@@ -14,13 +14,13 @@ import { devServer } from './devserver';
 import { autoCommit, commitSubject, gitError } from './gitops';
 import { resetActSession } from './browser';
 import { crewServer } from './agents/crewTools';
-import { decide, describeAction, permissionModeFor, suggestRule } from './agents/permissions';
+import { decide, describeAction, permissionModeFor, rulesTouch, suggestRules } from './agents/permissions';
 import { buildSystemAppend, buildTurnPrompt } from './agents/prompts';
 import { summarize, TurnRecorder } from './agents/recorder';
 import { BotSession, FakeSession, type AgentSession, type SessionConfig } from './agents/session';
 import { TurnStream } from './agents/stream';
 
-const FAKE = process.env.VIBECREW_FAKE_AGENT === '1';
+const FAKE = process.env.CREW_FAKE_AGENT === '1';
 const IDLE_CLOSE_MS = 15 * 60_000;
 
 interface Job {
@@ -55,6 +55,8 @@ const statuses = new Map<string, BotStatus>();
 const approvals = new Map<string, PendingApproval>();
 /** Chats whose workspace is being changed by git (merge, sync…): new turns wait until it is done. */
 const locked = new Set<string>();
+/** Chats waiting for their workspace's setup command (see holdTurns). */
+const preparing = new Set<string>();
 /** projectId -> page the user is looking at in the preview. */
 const previewPages = new Map<string, string>();
 /** projectId -> when a bot turn in it last ended. */
@@ -186,12 +188,17 @@ function contextLines(project: Project | null): string[] {
   if (!project) return lines;
   const cmd = devCommand(project);
   const ds = devServer(project.id).state;
-  if (!cmd) lines.push('预览：静态网页，由 VibeCrew 直接提供，保存文件后自动刷新。');
+  if (!cmd) lines.push('预览：静态网页，由 Crew 直接提供，保存文件后自动刷新。');
   else if (ds.status === 'running') lines.push(`开发服务器：运行中 ${ds.url}（命令 ${ds.command}）`);
   else if (ds.status === 'installing' || ds.status === 'starting') lines.push(`开发服务器：${ds.status === 'installing' ? '正在安装依赖' : '正在启动'}（${cmd}）`);
   else lines.push(`开发服务器：未运行（需要 ${cmd}，可以用 dev_server 工具启动）${ds.error ? `，上次错误：${ds.error}` : ''}`);
   const page = previewPages.get(project.id);
   if (page) lines.push(`用户正在预览的页面：${page}`);
+  const conf = configOf(project);
+  const denied = settings.get().denyRules || [];
+  if (denied.length) lines.push(`禁止的操作（系统会直接拒绝，不要尝试，也不要换写法绕过）：${denied.join('、')}`);
+  if (conf.commitGuide) lines.push(`这个项目的提交信息要求：${conf.commitGuide}`);
+  if (conf.noAttribution) lines.push('这个项目的提交和 PR 里不要加任何 AI 署名（Co-Authored-By、Generated with 之类）。');
   return lines;
 }
 
@@ -218,15 +225,20 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   staleSessions.delete(key);
 
   const team = bots.all();
+  const conf = project ? configOf(project) : null;
+  const eff = effectiveBot(chat, bot);
   const cfg: SessionConfig = {
     cwd: project?.path || os.homedir(),
-    model: botModel(bot.model),
-    effort: bot.effort,
-    systemAppend: buildSystemAppend({ bot, chat, project, team, skills: skills.list() }),
+    model: botModel(eff.model),
+    effort: eff.effort || undefined,
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list() }),
     resume: chat.sessions[bot.id],
-    permissionMode: permissionModeFor(bot.permission),
+    permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
-    askRules: bot.askRules,
+    askRules: [...bot.askRules, ...(conf?.askRules || [])],
+    denyRules: settings.get().denyRules || [],
+    deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir()),
+    attributionOff: !!conf?.noAttribution,
     mcpServers: {
       crew: crewServer({
         botId: bot.id,
@@ -266,6 +278,42 @@ function closeSession(key: string) {
   sessions.delete(key);
 }
 
+/** Remembers how full the bot's context is after its turn: the composer's ring shows it. */
+async function recordContext(chatId: string, botId: string, session: AgentSession) {
+  const usage = await session.contextUsage?.().catch(() => null);
+  const chat = chats.get(chatId);
+  if (!usage || !chat || !chat.botIds.includes(botId)) return;
+  chat.context = { ...chat.context, [botId]: { ...usage, at: Date.now() } };
+  emitChat(chat);
+}
+
+/**
+ * A bot as it works in this chat: the chat's switches (composer) override its own settings. A
+ * read-only bot (a reviewer, say) stays read-only; that is its role, changed on the bot itself.
+ */
+export function effectiveBot(chat: Chat, bot: Bot): Bot {
+  return {
+    ...bot,
+    permission: bot.permission === 'plan' ? 'plan' : chat.permission || bot.permission,
+    model: chat.model !== undefined ? chat.model : bot.model,
+    effort: chat.effort !== undefined ? chat.effort : bot.effort,
+  };
+}
+
+/**
+ * The chat's switches changed. A running turn switches its permission mode at once; model and
+ * effort (and the mode, for the rest) apply from the next turn, when the sessions restart.
+ */
+export function applyChatSettings(chatId: string) {
+  const chat = chats.get(chatId);
+  const r = running.get(chatId);
+  if (chat && r) {
+    const bot = bots.get(r.job.botId);
+    if (bot) r.session.setPermissionMode?.(permissionModeFor(effectiveBot(chat, bot).permission));
+  }
+  invalidateChat(chatId);
+}
+
 /** Bot settings changed: its processes restart with the new configuration on the next turn. */
 export function invalidateBot(botId: string) {
   for (const key of [...sessions.keys()]) if (key.endsWith(`:${botId}`)) closeSession(key);
@@ -273,6 +321,25 @@ export function invalidateBot(botId: string) {
 
 export function invalidateChat(chatId: string) {
   for (const key of [...sessions.keys()]) if (key.startsWith(`${chatId}:`)) closeSession(key);
+}
+
+export function invalidateAllSessions() {
+  for (const key of [...sessions.keys()]) closeSession(key);
+}
+
+/** Why the action is refused outright (Settings → 默认值 → 禁止的操作), or null. Read fresh on every call. */
+function deniedReason(toolName: string, input: unknown, cwd: string): string | null {
+  const rules = settings.get().denyRules || [];
+  if (!rules.length || !rulesTouch(rules, toolName, input, cwd)) return null;
+  return `这个操作被禁止了（设置 → 默认值 → 禁止的操作：${rules.join('、')}）。不要换一种写法绕过它；需要的话请用户自己来做。`;
+}
+
+/** A project's settings changed: bots working there (or in its workspaces) restart with them. */
+export function invalidateProject(projectId: string) {
+  for (const c of chats.all()) {
+    const pid = chatProjectId(c);
+    if (pid && (pid === projectId || projects.get(pid)?.workspace?.parentId === projectId)) invalidateChat(c.id);
+  }
 }
 
 setInterval(() => {
@@ -298,7 +365,7 @@ function enqueue(job: Job) {
 }
 
 async function pump(chatId: string) {
-  if (running.has(chatId) || locked.has(chatId)) return;
+  if (running.has(chatId) || locked.has(chatId) || preparing.has(chatId)) return;
   const q = queues.get(chatId);
   const job = q?.shift();
   if (!job) return;
@@ -314,7 +381,17 @@ async function pump(chatId: string) {
 }
 
 export function isChatBusy(chatId: string) {
-  return running.has(chatId) || !!queues.get(chatId)?.length || locked.has(chatId);
+  return running.has(chatId) || !!queues.get(chatId)?.length || locked.has(chatId) || preparing.has(chatId);
+}
+
+/** Holds a chat's bot turns until `work` settles, e.g. a new workspace's setup command; messages sent meanwhile wait. */
+export function holdTurns(chatId: string, work: Promise<unknown>) {
+  preparing.add(chatId);
+  const done = () => {
+    preparing.delete(chatId);
+    void pump(chatId);
+  };
+  work.then(done, done);
 }
 
 /**
@@ -322,6 +399,7 @@ export function isChatBusy(chatId: string) {
  * meanwhile stay queued). Refuses when a turn is running or another operation is in progress.
  */
 export async function withChatLocked<T>(chatId: string, what: string, fn: () => Promise<T>): Promise<T> {
+  if (preparing.has(chatId)) throw new HttpError(409, `工作区还在准备，等准备好再${what}`);
   if (running.has(chatId) || !!queues.get(chatId)?.length) throw new HttpError(409, `机器人正在工作，等这一轮结束再${what}`);
   if (locked.has(chatId)) throw new HttpError(409, '上一个操作还没完成，请稍等');
   locked.add(chatId);
@@ -405,7 +483,13 @@ async function runTurn(job: Job) {
     beforeEdit: (fp: string | undefined) => recorder?.beforeEdit(fp),
     canUseTool: async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; matchedAskRule?: unknown; decisionReason?: string; title?: string }) => {
       const current = bots.get(bot.id) || bot;
-      const d = decide(current, current.permission, toolName, input, cwd, opts);
+      const refused = deniedReason(toolName, input, cwd);
+      if (refused) return { behavior: 'deny' as const, message: refused };
+      // The project's own "must ask" rules apply to every bot working there.
+      const projectRules = project ? configOf(project).askRules || [] : [];
+      // The chat's mode switch is read each time: switching to 自动 applies to the running turn too.
+      const level = effectiveBot(chats.get(chat.id) || chat, current).permission;
+      const d = decide(projectRules.length ? { ...current, askRules: [...current.askRules, ...projectRules] } : current, level, toolName, input, cwd, opts);
       if (d.behavior === 'allow') return { behavior: 'allow' as const, updatedInput: input };
       if (d.behavior === 'deny') return { behavior: 'deny' as const, message: d.message };
       const desc = describeAction(toolName, input, cwd);
@@ -417,9 +501,11 @@ async function runTurn(job: Job) {
         title: desc.title,
         detail: desc.detail,
         status: 'pending',
-        rule: suggestRule(toolName, input, cwd),
+        rule: undefined,
+        rules: suggestRules(toolName, input, cwd),
         reason: opts.decisionReason,
       };
+      part.rule = part.rules?.[0];
       stream.addPart(part);
       setStatus(bot.id, { state: 'waiting', detail: desc.title, chatId: chat.id });
       notify(`${bot.name} 需要你的确认`, desc.title, { chatId: chat.id, level: 'warn' });
@@ -431,10 +517,11 @@ async function runTurn(job: Job) {
       part.status = decision.allow ? 'allowed' : decision.expired ? 'expired' : 'denied';
       stream.updatePart(part);
       setStatus(bot.id, { state: 'tool', detail: toolName, chatId: chat.id });
-      if (decision.allow && decision.always && part.rule) {
+      const newRules = (part.rules || []).filter(Boolean);
+      if (decision.allow && decision.always && newRules.length) {
         const b = bots.get(bot.id);
-        if (b && !b.allowRules.includes(part.rule)) {
-          b.allowRules = [...b.allowRules, part.rule];
+        if (b && newRules.some((r) => !b.allowRules.includes(r))) {
+          b.allowRules = [...new Set([...b.allowRules, ...newRules])];
           b.updatedAt = Date.now();
           bots.set(b);
           bus.emit({ t: 'bot', bot: b });
@@ -466,6 +553,7 @@ async function runTurn(job: Job) {
       result = await session.run(content, hooks);
     }
     stream.finish(result);
+    void recordContext(chat.id, bot.id, session);
   } catch (e) {
     stream.fail(e);
     sessions.get(sessionKey(chat.id, bot.id))?.close();
@@ -657,6 +745,7 @@ export function resetChat(chatId: string) {
     }
   }
   chat.sessions = {};
+  chat.context = {};
   const msg = systemMessage(chat, '—— 新话题 ——', { uiOnly: true });
   for (const b of chat.botIds) chat.cursors[b] = msg.seq;
   for (const b of chat.botIds) void resetActSession(`${chatId}:${b}`);

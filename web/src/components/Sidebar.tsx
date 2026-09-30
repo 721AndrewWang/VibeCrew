@@ -131,7 +131,7 @@ export function Sidebar() {
       <div className="sb-head">
         <div className="brand">
           <Logo />
-          <span>VibeCrew</span>
+          <span>Crew</span>
         </div>
         <MenuButton
           title="新建"

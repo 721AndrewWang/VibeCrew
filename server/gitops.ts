@@ -1,6 +1,21 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { gitIn, isBinary } from './projects';
+
+/** git with `input` on stdin; the exit code is returned, not thrown (check-ignore exits 1 when nothing matches). */
+export function gitWithInput(dir: string, args: string[], input: string): Promise<{ code: number; stdout: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { cwd: dir, stdio: ['pipe', 'pipe', 'ignore'] });
+    let stdout = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d: string) => (stdout += d));
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code: code ?? 1, stdout }));
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
+  });
+}
 
 /** NUL-separated git output (-z): file names come through as they are, never quoted or escaped. */
 export function zList(out: string): string[] {

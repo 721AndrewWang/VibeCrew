@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import type { Bot, Chat } from '../shared/types';
+import type { Bot, Chat, Effort, PermissionLevel } from '../shared/types';
 import { bus } from './bus';
 import { BOT_TEMPLATES, DEFAULT_ALLOW_RULES, DEFAULT_ASK_RULES, DEFAULT_TEAM } from './data/catalog';
 import { bots, chats, messages, projects, routines, settings, uid } from './store';
 import { createProject, HttpError, listProjects } from './projects';
-import { forgetChat, invalidateBot, invalidateChat, isChatBusy, systemMessage } from './orchestrator';
+import { applyChatSettings, forgetChat, invalidateBot, invalidateChat, isChatBusy, systemMessage } from './orchestrator';
 import { memoryFile } from './agents/prompts';
 import { deleteTurns } from './agents/recorder';
 import { detachWorkspace } from './workspaces';
@@ -178,9 +178,38 @@ export function createGroup(input: { title?: string; botIds: string[]; leadBotId
   return chat;
 }
 
-export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botIds' | 'leadBotId' | 'projectId' | 'pinned' | 'maxHops'>>): Chat {
+type ChatPatch = Partial<Pick<Chat, 'title' | 'botIds' | 'leadBotId' | 'projectId' | 'pinned' | 'maxHops'>> & {
+  /** The composer's switches; null goes back to each bot's own setting. */
+  permission?: PermissionLevel | null;
+  model?: string | null;
+  effort?: Effort | null;
+};
+
+const LEVELS: PermissionLevel[] = ['auto', 'edits', 'ask', 'review', 'plan'];
+const EFFORTS: Effort[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+export function updateChat(id: string, patch: ChatPatch): Chat {
   const chat = chats.get(id);
   if (!chat) throw new HttpError(404, '对话不存在');
+  let switches = false;
+  if (patch.permission !== undefined) {
+    if (patch.permission === null) delete chat.permission;
+    else if (LEVELS.includes(patch.permission)) chat.permission = patch.permission;
+    else throw new HttpError(400, '未知的权限模式');
+    switches = true;
+  }
+  if (patch.model !== undefined) {
+    if (patch.model === null) delete chat.model;
+    else chat.model = String(patch.model).trim().slice(0, 200);
+    switches = true;
+  }
+  if (patch.effort !== undefined) {
+    if (patch.effort === null) delete chat.effort;
+    else if (EFFORTS.includes(patch.effort)) chat.effort = patch.effort;
+    else throw new HttpError(400, '未知的思考强度');
+    switches = true;
+  }
+  if (switches) applyChatSettings(chat.id);
   if (patch.projectId !== undefined && patch.projectId !== chat.projectId) assertWorkspaceIdle(chat);
   if (patch.title !== undefined && chat.kind === 'group') chat.title = patch.title.trim() || chat.title;
   if (patch.pinned !== undefined) chat.pinned = patch.pinned;
@@ -195,6 +224,7 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
     for (const b of removed) {
       delete chat.sessions[b];
       delete chat.cursors[b];
+      if (chat.context) delete chat.context[b];
     }
     if (!ids.includes(chat.leadBotId || '')) chat.leadBotId = ids[0];
     if (added.length) systemMessage(chat, `${added.map((b) => bots.get(b)!.name).join('、')} 加入了群聊`);
@@ -207,6 +237,7 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
     detachWorkspace(chat);
     chat.projectId = patch.projectId;
     chat.sessions = {};
+    chat.context = {};
     invalidateChat(chat.id);
     const p = projects.get(patch.projectId);
     systemMessage(chat, p ? `已切换到项目「${p.name}」` : '已解除项目绑定');
@@ -263,7 +294,7 @@ export async function initIfNeeded() {
     const group = createGroup({ title: 'Web 小队', botIds: team.map((b) => b.id), leadBotId: team[0]?.id, projectId: project?.id ?? null });
     systemMessage(
       group,
-      '欢迎来到 VibeCrew！这是你的 Web 开发小队。直接说需求，Chief 会拆解任务并 @ 队友分工；也可以 @Pixel、@Probe、@Lens 直接找人。输入 / 可以使用技能，右侧是项目的实时预览、文件和终端。',
+      '欢迎来到 Crew！这是你的 Web 开发小队。直接说需求，Chief 会拆解任务并 @ 队友分工；也可以 @Pixel、@Probe、@Lens 直接找人。输入 / 可以使用技能，右侧是项目的实时预览、文件和终端。',
       { uiOnly: true },
     );
   }

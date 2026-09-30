@@ -5,6 +5,7 @@ import { api, fileToBase64 } from '../api';
 import { desktop } from '../desktop';
 import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useChatProject, useStore } from '../store';
 import { cx } from '../utils';
+import { ContextRing, EffortSwitch, ModelSwitch, ModeSwitch } from './ChatSwitches';
 import { AttachmentChips } from './Message';
 import { Avatar, Glyph } from './ui';
 
@@ -322,17 +323,22 @@ export function Composer({ chat }: { chat: Chat }) {
               {speech.on ? <MicOff size={17} /> : <Mic size={17} />}
             </button>
           )}
-          <span className="spacer" />
-          <span className="composer-hint">Enter 发送 · Shift+Enter 换行</span>
-          {busy && !draft.text.trim() && !draft.attachments.length ? (
-            <button className="send-btn stop" title="停止" onClick={() => void api.stop(chat.id)}>
-              <Square size={13} fill="currentColor" />
-            </button>
-          ) : (
-            <button className="send-btn" title="发送" disabled={!draft.text.trim() && !draft.attachments.length} onClick={send}>
-              <ArrowUp size={18} />
-            </button>
-          )}
+          <ModeSwitch chat={chat} />
+          {/* Model, effort, context and send: wraps to its own row when the message box is narrow. */}
+          <div className="composer-right">
+            <ModelSwitch chat={chat} />
+            <EffortSwitch chat={chat} />
+            <ContextRing chat={chat} />
+            {busy && !draft.text.trim() && !draft.attachments.length ? (
+              <button className="send-btn stop" title="停止" onClick={() => void api.stop(chat.id)}>
+                <Square size={13} fill="currentColor" />
+              </button>
+            ) : (
+              <button className="send-btn" title="发送" disabled={!draft.text.trim() && !draft.attachments.length} onClick={send}>
+                <ArrowUp size={18} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
       <input

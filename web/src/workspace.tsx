@@ -12,7 +12,7 @@ export async function enableWorkspace(chat: Chat, opts: { confirm?: boolean } = 
       title: '在独立分支中工作？',
       body: (
         <>
-          VibeCrew 会给这个对话新建一个 Git 分支和一份单独的工作目录（git worktree）。机器人在那里改代码，不影响项目主目录和其他对话，多个任务可以放心并行；确认没问题后，在右侧「改动」里合并回主分支。
+          Crew 会给这个对话新建一个 Git 分支和一份单独的工作目录（git worktree）。机器人在那里改代码，不影响项目主目录和其他对话，多个任务可以放心并行；确认没问题后，在右侧「改动」里合并回主分支。
           <br />
           <br />
           机器人会在新目录里重新开始会话，最近的聊天内容会带过去。

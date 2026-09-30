@@ -3,7 +3,7 @@ import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Mous
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
 import { chatProjectId, focusTurn, openFileInEditor, toast, useStore } from '../store';
-import { cx, fmtClock, fmtDuration, toolDuration, toolInfo } from '../utils';
+import { cx, fmtClock, fmtDuration, modelLabel, toolDuration, toolInfo } from '../utils';
 import { Avatar, confirmDialog, Glyph } from './ui';
 import { Markdown } from './Markdown';
 
@@ -236,6 +236,12 @@ function ToolGroup({ parts, live, root }: { parts: ToolPart[]; live: boolean; ro
 
 // ---------------------------------------------------------------- approvals
 
+/** "Bash(git log*)" → "git log"; several joined for the "always allow" button. */
+function ruleNames(rules: string[]): string {
+  const names = rules.map((r) => r.replace(/^Bash\((.*?)(:?\*)?\)$/, '$1'));
+  return names.length > 4 ? `${names.slice(0, 4).join('、')} 等 ${names.length} 个` : names.join('、');
+}
+
 function ApprovalCard({ part }: { part: ApprovalPart }) {
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
@@ -269,9 +275,9 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
           <button className="btn primary sm" disabled={busy} onClick={() => decide('allow')}>
             允许
           </button>
-          {part.rule && (
-            <button className="btn sm" disabled={busy} onClick={() => decide('always')} title={`以后自动允许：${part.rule}`}>
-              总是允许 <code>{part.rule}</code>
+          {(part.rules?.length || part.rule) && (
+            <button className="btn sm" disabled={busy} onClick={() => decide('always')} title={`以后自动允许：${(part.rules || [part.rule]).join('、')}`}>
+              总是允许 <code>{ruleNames(part.rules || [part.rule!])}</code>
             </button>
           )}
           <button className="btn sm danger" disabled={busy} onClick={() => setDenying(true)}>
@@ -440,6 +446,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         {!live && msg.meta?.durationMs !== undefined && msg.status === 'done' && (
           <div className="msg-foot">
             用时 {fmtDuration(msg.meta.durationMs)}
+            {msg.meta.model ? ` · ${modelLabel(msg.meta.model)}` : ''}
             {msg.meta.costUsd ? ` · $${msg.meta.costUsd.toFixed(3)}` : ''}
           </div>
         )}

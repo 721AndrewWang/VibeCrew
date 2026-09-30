@@ -43,8 +43,20 @@ export function App() {
   const unread = useStore((s) => Object.values(s.chats).reduce((n, c) => n + (c.unread || 0), 0));
 
   useEffect(() => {
-    document.title = unread ? `(${unread}) VibeCrew` : 'VibeCrew';
+    document.title = unread ? `(${unread}) Crew` : 'Crew';
   }, [unread]);
+
+  // The browser tab's icon (served by the server) and the boot screen follow the chosen logo.
+  const logo = useStore((s) => s.settings.logo);
+  useEffect(() => {
+    try {
+      localStorage.setItem('vc-logo', logo);
+    } catch {
+      /* storage blocked */
+    }
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (link) link.href = `/icon.svg?logo=${logo}`;
+  }, [logo]);
 
   if (!booted) {
     return (
@@ -52,7 +64,7 @@ export function App() {
         <Logo size={56} />
         {bootError ? (
           <>
-            <div>无法连接到 VibeCrew 服务：{bootError}</div>
+            <div>无法连接到 Crew 服务：{bootError}</div>
             <button className="btn" onClick={() => location.reload()}>
               重试
             </button>
@@ -77,7 +89,7 @@ export function App() {
       </main>
       <Modals />
       <Toasts />
-      {!connected && <div className="offline-bar">与 VibeCrew 的连接已断开，正在重连…</div>}
+      {!connected && <div className="offline-bar">与 Crew 的连接已断开，正在重连…</div>}
     </div>
   );
 }

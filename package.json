@@ -1,15 +1,15 @@
 {
-  "name": "vibecrew",
-  "productName": "VibeCrew",
+  "name": "crew",
+  "productName": "Crew",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "VibeCrew — 本地运行的 Web 开发 AI 机器人小队（参考 Grokbot）",
+  "description": "Crew — 本地运行的 Web 开发 AI 机器人小队（参考 Grokbot）",
   "author": {
-    "name": "VibeCrew"
+    "name": "Crew"
   },
   "main": "desktop/main.cjs",
-  "desktopName": "vibecrew.desktop",
+  "desktopName": "crew.desktop",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -25,7 +25,7 @@
     "desktop:pack": "npm run build:desktop && node desktop/package.mjs",
     "desktop:install": "node desktop/install.mjs",
     "desktop:uninstall": "node desktop/install.mjs --uninstall",
-    "icons": "node desktop/gen-icons.mjs"
+    "icons": "tsx desktop/gen-icons.mjs"
   },
   "overrides": {
     "@anthropic-ai/claude-agent-sdk-linux-x64": "file:./vendor/sdk-binary-stub"
@@ -79,9 +79,9 @@
     "zustand": "^5.0.15"
   },
   "build": {
-    "appId": "com.vibecrew.desktop",
-    "productName": "VibeCrew",
-    "executableName": "vibecrew",
+    "appId": "com.crew.desktop",
+    "productName": "Crew",
+    "executableName": "crew",
     "asar": false,
     "npmRebuild": false,
     "directories": {
@@ -94,6 +94,7 @@
       "desktop/preload.cjs",
       "desktop/loading.html",
       "desktop/icons/**",
+      "desktop/logos/**",
       "dist-server/**",
       "web/dist/**",
       "server/inject/**",
@@ -106,7 +107,7 @@
       "category": "Development",
       "icon": "desktop/icons",
       "synopsis": "Web 开发 AI 机器人小队",
-      "artifactName": "VibeCrew-${version}.${ext}"
+      "artifactName": "Crew-${version}.${ext}"
     },
     "electronDist": "node_modules/electron/dist"
   }

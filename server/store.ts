@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type { AuthMode, Bot, Chat, ChatMessage, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 
@@ -92,6 +93,10 @@ export interface Settings {
   projectsRoot: string;
   defaultPermission: PermissionLevel;
   maxHops: number;
+  /** Also read by the desktop app (desktop/main.cjs) for its window, tray and Dock icons. */
+  logo: LogoId;
+  /** Refused for every bot, whatever its permission mode (PublicSettings.denyRules). */
+  denyRules: string[];
   /** Secret for LAN access and API calls. */
   token: string;
   /** Values for ${VAR} placeholders in plugin configs (e.g. GITHUB_TOKEN). */
@@ -111,6 +116,8 @@ const DEFAULT_SETTINGS: Settings = {
   projectsRoot: DEFAULT_PROJECTS_ROOT,
   defaultPermission: 'edits',
   maxHops: 8,
+  logo: DEFAULT_LOGO,
+  denyRules: [],
   token: '',
   pluginSecrets: {},
   initialized: false,
@@ -121,6 +128,7 @@ class SettingsStore {
 
   constructor() {
     this.data = { ...DEFAULT_SETTINGS, ...readJson<Partial<Settings>>(DATA.settings, {}) };
+    if (!isLogoId(this.data.logo)) this.data.logo = DEFAULT_LOGO;
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -151,6 +159,8 @@ class SettingsStore {
       projectsRoot: s.projectsRoot,
       defaultPermission: s.defaultPermission,
       maxHops: s.maxHops,
+      logo: s.logo,
+      denyRules: s.denyRules,
     };
   }
 

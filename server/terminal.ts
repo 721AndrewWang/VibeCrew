@@ -56,7 +56,7 @@ export function openTerminal(
     return existing;
   }
   const project = getProject(projectId);
-  const env = cleanEnv({ TERM: 'xterm-256color', COLORTERM: 'truecolor', VIBECREW_TERMINAL: '1' });
+  const env = cleanEnv({ TERM: 'xterm-256color', COLORTERM: 'truecolor', CREW_TERMINAL: '1' });
   const term: Term = {
     id,
     projectId,

@@ -32,7 +32,8 @@ export function chatProjectId(chat: Chat | null | undefined): string | null {
 }
 
 /** Where a project's dev command and static root are configured: a workspace follows its parent. */
-function configOf(project: Project): Project {
+/** Where a project's settings live: a workspace uses its parent's. */
+export function configOf(project: Project): Project {
   return (project.workspace && projects.get(project.workspace.parentId)) || project;
 }
 
@@ -184,18 +185,30 @@ export async function createProject(input: { name: string; template: string; par
   try {
     await run('git', ['init', '-q'], { cwd: dir });
     await run('git', ['add', '-A'], { cwd: dir });
-    await run('git', ['commit', '-q', '-m', '初始化项目（VibeCrew）'], { cwd: dir });
+    await run('git', ['commit', '-q', '-m', '初始化项目（Crew）'], { cwd: dir });
   } catch {
     /* git missing or no identity configured; the project still works */
   }
   return openExistingProject(dir, title);
 }
 
-export function updateProject(id: string, patch: Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot'>>): Project {
+type ProjectPatch = Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules'>>;
+
+const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) || undefined : undefined);
+
+export function updateProject(id: string, patch: ProjectPatch): Project {
   const p = getProject(id);
+  if (p.workspace) throw new HttpError(400, '工作区沿用原项目的设置，请在原项目里修改');
   if (patch.name !== undefined) p.name = patch.name.trim() || p.name;
   if (patch.devCommand !== undefined) p.devCommand = patch.devCommand.trim() || undefined;
   if (patch.staticRoot !== undefined) p.staticRoot = patch.staticRoot.trim() || undefined;
+  if (patch.setupCommand !== undefined) p.setupCommand = text(patch.setupCommand, 2000);
+  if (patch.commitGuide !== undefined) p.commitGuide = text(patch.commitGuide, 2000);
+  if (patch.noAttribution !== undefined) p.noAttribution = patch.noAttribution === true || undefined;
+  if (patch.askRules !== undefined) {
+    const rules = Array.isArray(patch.askRules) ? patch.askRules.map((r) => text(r, 300)).filter((r): r is string => !!r) : [];
+    p.askRules = rules.length ? [...new Set(rules)].slice(0, 50) : undefined;
+  }
   p.framework = detectFramework(p.path);
   p.updatedAt = Date.now();
   projects.set(p);

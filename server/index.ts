@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import express from 'express';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { appIconSvg } from '../shared/logos';
 import type { ClientEvent } from '../shared/types';
 import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
 import { bus } from './bus';
@@ -29,6 +30,15 @@ app.use('/api', apiRouter());
 
 const hasWeb = fs.existsSync(path.join(WEB_DIST, 'index.html'));
 if (hasWeb) {
+  // The favicon and the web app's icons follow the logo chosen in Settings → 外观.
+  app.get('/icon.svg', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.type('image/svg+xml').send(appIconSvg(settings.get().logo));
+  });
+  app.get(['/icon-192.png', '/icon-512.png'], (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(`logos/${settings.get().logo}-${req.path.includes('192') ? 192 : 512}.png`, { root: WEB_DIST }, (err) => err && next());
+  });
   app.use(express.static(WEB_DIST, { index: false, maxAge: '1h' }));
   app.get(/^\/(?!api\/).*/, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -38,7 +48,7 @@ if (hasWeb) {
   app.get('/', (_req, res) => {
     res
       .type('html')
-      .send('<meta charset="utf-8"><body style="font-family:system-ui;padding:40px"><h2>VibeCrew 服务已启动</h2><p>还没有构建界面：请运行 <code>npm run build</code> 后重启，或用 <code>npm run dev</code> 进入开发模式（界面在 5173 端口）。</p></body>');
+      .send('<meta charset="utf-8"><body style="font-family:system-ui;padding:40px"><h2>Crew 服务已启动</h2><p>还没有构建界面：请运行 <code>npm run build</code> 后重启，或用 <code>npm run dev</code> 进入开发模式（界面在 5173 端口）。</p></body>');
   });
 }
 
@@ -108,16 +118,16 @@ async function main() {
   startRoutines();
   void checkAuth(true).then((a) => {
     if (!a.cliFound) console.warn('⚠️  没有找到 Claude Code 命令行（claude）。请先安装：npm i -g @anthropic-ai/claude-code');
-    else if (!a.ready && a.method === 'provider') console.warn('⚠️  模型服务商还没配置好：请在 VibeCrew「设置 → 模型连接」里填写地址、Key 和模型。');
-    else if (!a.ready) console.warn('⚠️  Claude Code 还没有登录。请在终端运行 `claude auth login`，或在 VibeCrew「设置 → 模型连接」里填写 API Key、选择其他模型服务商。');
+    else if (!a.ready && a.method === 'provider') console.warn('⚠️  模型服务商还没配置好：请在 Crew「设置 → 模型连接」里填写地址、Key 和模型。');
+    else if (!a.ready) console.warn('⚠️  Claude Code 还没有登录。请在终端运行 `claude auth login`，或在 Crew「设置 → 模型连接」里填写 API Key、选择其他模型服务商。');
   });
 
   const s = settings.get();
-  const port = Number(process.env.VIBECREW_PORT) || s.port;
+  const port = Number(process.env.CREW_PORT) || s.port;
   const host = s.lanEnabled ? '0.0.0.0' : '127.0.0.1';
   server.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code === 'EADDRINUSE') {
-      console.error(`❌ 端口 ${port} 已被占用。VibeCrew 可能已经在运行（打开 http://localhost:${port}），或用 VIBECREW_PORT=其他端口 npm start。`);
+      console.error(`❌ 端口 ${port} 已被占用。Crew 可能已经在运行（打开 http://localhost:${port}），或用 CREW_PORT=其他端口 npm start。`);
       // The desktop app reads exit code 3 as "port taken".
       process.exit(3);
     }
@@ -137,7 +147,7 @@ async function main() {
     console.log(`  浏览器：    ${findChrome() || '未找到（截图/浏览器测试不可用）'}`);
     if (!hasWeb) console.log('\n  ⚠️  界面尚未构建，运行 npm run build 后重启。');
     console.log('');
-    if (process.argv.includes('--open') && !process.env.VIBECREW_DESKTOP) {
+    if (process.argv.includes('--open') && !process.env.CREW_DESKTOP) {
       const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
       spawn(opener, [local], { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
     }

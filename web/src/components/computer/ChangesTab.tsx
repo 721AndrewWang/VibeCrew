@@ -217,7 +217,23 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
   const [diff, setDiff] = useState('');
   const [msg, setMsg] = useState('');
   const [conflicts, setConflicts] = useState<string[] | null>(null);
-  const [busy, setBusy] = useState<'' | 'merge' | 'sync' | 'resolve' | 'abort'>('');
+  const [busy, setBusy] = useState<'' | 'merge' | 'sync' | 'resolve' | 'abort' | 'suggest'>('');
+  // The project's commit rules (Settings of the project): merges then need a message that follows them.
+  const guide = useStore((s) => s.projects[info.parentId]?.commitGuide);
+
+  /** The model writes the merge message; with `review`, the user reads it before merging. */
+  const suggest = async (review: boolean) => {
+    setBusy('suggest');
+    try {
+      const r = await api.suggestCommitMessage(chat.id);
+      setMsg(r.message);
+      if (review) toast('已按项目要求写好提交说明', '看一下没问题，再点一次合并', 'info');
+    } catch (e) {
+      toast('没能生成提交说明', (e as Error).message, 'error');
+    } finally {
+      setBusy('');
+    }
+  };
 
   const refresh = () =>
     api
@@ -351,17 +367,37 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
               ))}
             </div>
           )}
-          <div className="commit-box">
-            <input
-              className="input"
-              placeholder={`合并说明（默认用对话名「${chat.title}」）`}
-              value={msg}
-              onChange={(e) => setMsg(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && pending && !blocked && !st.merging && act('merge')}
-            />
-            <button className="btn primary" disabled={!pending || blocked || st.merging} onClick={() => act('merge')} title={`把这个分支的改动合成一个提交，放进 ${base}`}>
-              {busy === 'merge' ? <span className="spinner tiny" /> : <GitMerge size={14} />} 合并到 {base}
-            </button>
+          <div className={cx('commit-box', guide && 'stacked')}>
+            {guide ? (
+              <textarea
+                className="input mono"
+                rows={msg ? Math.min(8, msg.split('\n').length + 1) : 2}
+                placeholder={`提交说明，要按项目要求写：${guide}`}
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+              />
+            ) : (
+              <input
+                className="input"
+                placeholder={`合并说明（默认用对话名「${chat.title}」）`}
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && pending && !blocked && !st.merging && act('merge')}
+              />
+            )}
+            <div className="commit-actions">
+              <button className="btn" disabled={!pending || blocked || st.merging} onClick={() => suggest(false)} title="让模型根据这个分支的改动写提交说明">
+                {busy === 'suggest' ? <span className="spinner tiny" /> : <Sparkles size={14} />} 生成
+              </button>
+              <button
+                className="btn primary"
+                disabled={!pending || blocked || st.merging}
+                onClick={() => (guide && !msg.trim() ? suggest(true) : act('merge'))}
+                title={`把这个分支的改动合成一个提交，放进 ${base}`}
+              >
+                {busy === 'merge' ? <span className="spinner tiny" /> : <GitMerge size={14} />} 合并到 {base}
+              </button>
+            </div>
           </div>
           <div className="ws-actions">
             {st.behind > 0 && !st.merging && (

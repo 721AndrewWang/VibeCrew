@@ -181,7 +181,7 @@ export class TurnStream {
   }
 
   finish(result: SDKResultMessage) {
-    this.msg.meta = { costUsd: result.total_cost_usd, durationMs: result.duration_ms, numTurns: result.num_turns };
+    this.msg.meta = { costUsd: result.total_cost_usd, durationMs: result.duration_ms, numTurns: result.num_turns, model: mainModel(result.modelUsage) };
     const isError = result.is_error || result.subtype !== 'success';
     if (this.stopped) {
       this.msg.status = 'stopped';
@@ -207,7 +207,7 @@ export class TurnStream {
     else {
       this.msg.status = 'error';
       this.msg.error = /ENOENT|spawn/.test(text)
-        ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 VIBECREW_CLAUDE_PATH。`
+        ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 CREW_CLAUDE_PATH。`
         : text;
     }
     this.closeOpenTools('error');
@@ -221,4 +221,11 @@ export class TurnStream {
       .filter(Boolean)
       .join('\n\n');
   }
+}
+
+/** The model that produced most of a turn's output. */
+function mainModel(usage: Record<string, { outputTokens?: number }> | undefined): string | undefined {
+  const entries = Object.entries(usage || {});
+  if (!entries.length) return undefined;
+  return entries.reduce((a, b) => ((b[1].outputTokens || 0) > (a[1].outputTokens || 0) ? b : a))[0];
 }

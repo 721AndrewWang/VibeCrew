@@ -99,7 +99,7 @@ class DevServer {
     const child = this.spawnStep(command, project);
     this.proc = child;
     this.urlTimer = setTimeout(() => {
-      if (this.state.status === 'starting') this.append('\r\n\x1b[33m[VibeCrew] 没能从输出中识别到访问地址，可以在浏览器地址栏手动输入，例如 http://localhost:3000\x1b[0m\r\n');
+      if (this.state.status === 'starting') this.append('\r\n\x1b[33m[Crew] 没能从输出中识别到访问地址，可以在浏览器地址栏手动输入，例如 http://localhost:3000\x1b[0m\r\n');
     }, 45_000);
     child.on('exit', (code, signal) => {
       if (this.proc !== child) return;

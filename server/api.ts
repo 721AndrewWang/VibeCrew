@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
+import { isLogoId } from '../shared/logos';
 import type { Attachment, Bootstrap, RecordedStep } from '../shared/types';
 import { APP_VERSION, lanAddress } from './config';
 import { bus } from './bus';
@@ -25,7 +26,7 @@ import {
   writeProjectFile,
 } from './projects';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
-import { botStatuses, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
+import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
 import { skills, recordingToSkillBody } from './skills';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
 import { devServer, devServerStates } from './devserver';
@@ -37,7 +38,7 @@ import { authStatus, checkAuth, testConnection } from './claudeAuth';
 import { PROVIDER_PRESETS } from './data/providers';
 import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
 import { readMemory, memoryFile } from './agents/prompts';
-import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
+import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
 
 export function lanUrl(): string | undefined {
   const s = settings.get();
@@ -102,7 +103,7 @@ export function apiRouter() {
   r.use(express.json({ limit: '25mb' }));
 
   // `app` and `pid` let the desktop shell tell its own server apart from anything else on the port.
-  r.get('/health', (_req, res) => res.json({ ok: true, app: 'vibecrew', version: APP_VERSION, pid: process.pid }));
+  r.get('/health', (_req, res) => res.json({ ok: true, app: 'crew', version: APP_VERSION, pid: process.pid }));
   r.get('/bootstrap', (_req, res) => res.json(bootstrap()));
 
   // ------------------------------------------------------------ auth & settings
@@ -117,6 +118,11 @@ export function apiRouter() {
     if (typeof b.projectsRoot === 'string' && b.projectsRoot.trim()) patch.projectsRoot = path.resolve(b.projectsRoot.trim().replace(/^~(?=$|\/)/, os.homedir()));
     if (['auto', 'edits', 'ask', 'review', 'plan'].includes(b.defaultPermission)) patch.defaultPermission = b.defaultPermission;
     if (typeof b.maxHops === 'number') patch.maxHops = Math.max(0, Math.min(30, Math.round(b.maxHops)));
+    if (isLogoId(b.logo)) patch.logo = b.logo;
+    if (Array.isArray(b.denyRules)) {
+      const rules = b.denyRules.map((r: unknown) => (typeof r === 'string' ? r.trim().slice(0, 300) : '')).filter(Boolean);
+      patch.denyRules = [...new Set<string>(rules)].slice(0, 100);
+    }
     if (b.pluginSecrets && typeof b.pluginSecrets === 'object') {
       const next = { ...cur.pluginSecrets };
       for (const [k, v] of Object.entries(b.pluginSecrets)) {
@@ -128,10 +134,12 @@ export function apiRouter() {
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
     settings.update(patch);
     bus.emit({ t: 'settings', settings: settings.public() });
+    // Claude Code gets the deny list when a session starts.
+    if (patch.denyRules) invalidateAllSessions();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
-      bus.emit({ t: 'notify', title: '手机访问', body: patch.lanEnabled ? '已开启，重启 VibeCrew 后生效（主服务需要重新监听局域网地址）' : '已关闭，重启后生效', level: 'info' });
+      bus.emit({ t: 'notify', title: '手机访问', body: patch.lanEnabled ? '已开启，重启 Crew 后生效（主服务需要重新监听局域网地址）' : '已关闭，重启后生效', level: 'info' });
     }
     res.json({ settings: settings.public(), lanUrl: lanUrl() });
   });
@@ -236,6 +244,7 @@ export function apiRouter() {
   });
   r.get('/chats/:id/workspace/diff', async (req, res) => res.json({ diff: await workspaceDiff(req.params.id, str(req.query.path)) }));
   r.post('/chats/:id/workspace/merge', async (req, res) => res.json(await mergeWorkspace(req.params.id, str(req.body?.message) || undefined)));
+  r.post('/chats/:id/workspace/commit-message', async (req, res) => res.json({ message: await suggestCommitMessage(req.params.id) }));
   r.post('/chats/:id/workspace/sync', async (req, res) => res.json(await syncWorkspace(req.params.id)));
   r.post('/chats/:id/workspace/resolve', async (req, res) => res.json(await resolveConflicts(req.params.id)));
   r.post('/chats/:id/workspace/abort', async (req, res) => {
@@ -257,7 +266,12 @@ export function apiRouter() {
     if (b.mode === 'open') res.json(decorate(openExistingProject(str(b.path), str(b.name) || undefined)));
     else res.json(decorate(await createProject({ name: str(b.name), template: str(b.template) || 'static', parentDir: str(b.parentDir) || undefined })));
   });
-  r.patch('/projects/:id', (req, res) => res.json(decorate(updateProject(req.params.id, req.body || {}))));
+  r.patch('/projects/:id', (req, res) => {
+    const p = updateProject(req.params.id, req.body || {});
+    // Rules and commit settings reach the bots through their sessions.
+    invalidateProject(p.id);
+    res.json(decorate(p));
+  });
   r.delete('/projects/:id', async (req, res) => {
     if (getProject(req.params.id).workspace) throw new HttpError(400, '这是某个对话的独立工作区，请在那个对话里关闭它');
     // Unbinding closes the chats' workspaces: not while a bot works in one.

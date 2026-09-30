@@ -3,22 +3,25 @@
 // vibe-kanban gives every task attempt a worktree). Each bot turn is committed to that branch;
 // the user merges it back into the base branch (squashed into one commit) when it looks right.
 
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { Chat, Project, WorkspaceInfo, WorkspaceMergeResult, WorkspaceStatus } from '../shared/types';
 import { bus, notify } from './bus';
-import { DATA } from './config';
+import { cleanEnv, DATA, findClaudeExecutable } from './config';
+import { modelEnv } from './claudeAuth';
 import { slugify } from './data/projectTemplates';
 import { disposeDevServer } from './devserver';
-import { autoCommit, gitError, isMerging, statusLines, unresolvedConflicts, zList } from './gitops';
-import { invalidateChat, projectRunning, sendUserMessage, systemMessage, withChatLocked } from './orchestrator';
+import { autoCommit, gitError, gitWithInput, isMerging, statusLines, unresolvedConflicts, zList } from './gitops';
+import { holdTurns, invalidateChat, projectRunning, sendUserMessage, systemMessage, withChatLocked } from './orchestrator';
 import { closePreview } from './preview';
-import { decorate, gitIn, HttpError } from './projects';
+import { configOf, decorate, gitIn, HttpError } from './projects';
 import { bots, chats, messages, projects, uid } from './store';
 import { closeProjectTerminals } from './terminal';
 import { stopWatch } from './watcher';
 
-const BRANCH_PREFIX = 'vc/';
+const BRANCH_PREFIX = 'crew/';
 /** Messages a bot gets again as context when it moves into or out of a workspace. */
 const RECAP = 12;
 /** Merging without a working tree (`git merge-tree --write-tree`) needs Git 2.38. */
@@ -87,26 +90,121 @@ async function checkoutOf(repo: string, branch: string): Promise<string | null> 
   return null;
 }
 
+/** The agents' own context and settings, often kept out of git: CLAUDE.md, AGENTS.md, .claude/. */
+const AGENT_FILES = /(^|\/)(CLAUDE(\.local)?\.md|AGENTS\.md)$|(^|\/)\.claude\//;
+/** Never worth copying: dependencies, caches and build output. */
+const NOT_COPIED = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'dist', 'build', '.next']);
+const COPY_LIMIT = { files: 2000, bytes: 50 * 1024 * 1024 };
+/** Dotfiles inside .claude/ are tools' state (e.g. a hook's pending-validation marker), not settings. */
+const TOOL_STATE = /(^|\/)\.claude\/(.+\/)?\.[^/]+$/;
+
 /**
- * Gitignored env files are not part of a checkout, but dev servers usually need them. Only files
- * the new worktree ignores (by its committed .gitignore) are copied: anything else would be
- * committed on the branch and merged back.
+ * Files a new worktree lacks because git ignores them, but the work needs: .env files, the agents'
+ * context (CLAUDE.md, AGENTS.md, .claude/ settings, hooks and skills) and whatever the user keeps
+ * locally through .git/info/exclude. Only files the new worktree ignores as well are copied:
+ * anything else would be committed on the branch and merged back. Returns the top-level names.
  */
-async function copyEnvFiles(from: string, to: string): Promise<string[]> {
-  const copied: string[] = [];
-  let entries: fs.Dirent[] = [];
+async function copyLocalFiles(fromRepo: string, toRepo: string, prefix: string): Promise<string[]> {
+  let entries: string[];
   try {
-    entries = fs.readdirSync(from, { withFileTypes: true });
+    // Whole ignored folders come as one "dir/" entry.
+    entries = zList(await gitIn(fromRepo, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory']));
   } catch {
-    return copied;
+    return [];
   }
-  for (const e of entries) {
-    if (!e.isFile() || !/^\.env(\..+)?$/.test(e.name) || fs.existsSync(path.join(to, e.name))) continue;
-    if (!(await succeeds(to, ['check-ignore', '-q', '--', e.name]))) continue;
-    fs.copyFileSync(path.join(from, e.name), path.join(to, e.name));
-    copied.push(e.name);
+  if (!entries.length) return [];
+  // Which ignore file matched each entry: .git/info/exclude means the user keeps it locally on purpose.
+  const localOnly = new Set<string>();
+  const v = await gitWithInput(fromRepo, ['check-ignore', '-v', '-z', '--stdin'], entries.join('\0') + '\0').catch(() => ({ stdout: '', code: 1 }));
+  const fields = v.stdout.split('\0');
+  for (let i = 0; i + 3 < fields.length; i += 4) if (/(^|\/)info\/exclude$/.test(fields[i])) localOnly.add(fields[i + 3]);
+  const envFile = (rel: string) => rel === `${prefix}${path.posix.basename(rel)}` && /^\.env(\..+)?$/.test(path.posix.basename(rel));
+  const picked = entries.filter((e) => {
+    const rel = e.replace(/\/$/, '');
+    if (rel.split('/').some((part) => NOT_COPIED.has(part)) || TOOL_STATE.test(rel)) return false;
+    return envFile(rel) || /^\.env(\..+)?$/.test(rel) || AGENT_FILES.test(e) || localOnly.has(e) || localOnly.has(rel);
+  });
+
+  // Folders become their files, within limits; tools' state files inside .claude/ stay behind.
+  const files: string[] = [];
+  let bytes = 0;
+  const add = (rel: string) => {
+    const abs = path.join(fromRepo, rel);
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(abs);
+    } catch {
+      return;
+    }
+    if (st.isDirectory()) {
+      for (const name of fs.readdirSync(abs)) {
+        const child = path.posix.join(rel, name);
+        if (!NOT_COPIED.has(name) && !TOOL_STATE.test(child)) add(child);
+      }
+    } else if (st.isFile() && files.length < COPY_LIMIT.files && bytes + st.size <= COPY_LIMIT.bytes) {
+      files.push(rel);
+      bytes += st.size;
+    }
+  };
+  for (const e of picked) add(e.replace(/\/$/, ''));
+  if (!files.length) return [];
+
+  const check = await gitWithInput(toRepo, ['check-ignore', '-z', '--stdin'], files.join('\0') + '\0').catch(() => ({ stdout: '', code: 1 }));
+  const ignored = new Set(zList(check.stdout));
+  const copied = new Set<string>();
+  for (const rel of files) {
+    const dest = path.join(toRepo, rel);
+    if (!ignored.has(rel) || fs.existsSync(dest)) continue;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(fromRepo, rel), dest);
+    const top = picked.find((e) => rel === e.replace(/\/$/, '') || rel.startsWith(e.endsWith('/') ? e : `${e}/`));
+    copied.add(top || rel);
   }
-  return copied;
+  return [...copied].sort();
+}
+
+const SETUP_TIMEOUT_MS = 15 * 60_000;
+
+/**
+ * Runs the project's setup command (installing dependencies, say) in a new workspace. The chat's
+ * bots wait for it: messages sent meanwhile are queued.
+ */
+function prepareWorkspace(chat: Chat, ws: Project, command: string) {
+  systemMessage(chat, `正在准备工作区：${command}`, { uiOnly: true });
+  const started = Date.now();
+  const work = new Promise<void>((resolve) => {
+    let tail = '';
+    const keep = (d: Buffer) => {
+      tail = (tail + d.toString('utf8')).slice(-4000);
+    };
+    const child = spawn('bash', ['-c', command], { cwd: ws.path, env: cleanEnv(), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout?.on('data', keep);
+    child.stderr?.on('data', keep);
+    const timer = setTimeout(() => {
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, SETUP_TIMEOUT_MS);
+    const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+      clearTimeout(timer);
+      const secs = Math.round((Date.now() - started) / 1000);
+      const c = chats.get(chat.id);
+      if (c && code === 0) systemMessage(c, `工作区准备好了（${secs} 秒）。`, { uiOnly: true });
+      else if (c) {
+        const out = tail.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim().split('\n').slice(-15).join('\n');
+        systemMessage(c, `工作区准备命令没有成功（${signal === 'SIGKILL' ? '超时' : `退出码 ${code}`}，${secs} 秒），依赖可能不全。\n\`\`\`\n${out || '（没有输出）'}\n\`\`\``);
+      }
+      resolve();
+    };
+    child.on('error', (e) => {
+      tail += `\n${e.message}`;
+      finish(1, null);
+    });
+    child.on('close', finish);
+  });
+  holdTurns(chat.id, work);
 }
 
 /**
@@ -116,6 +214,7 @@ async function copyEnvFiles(from: string, to: string): Promise<string[]> {
 function restartBots(chat: Chat) {
   invalidateChat(chat.id);
   chat.sessions = {};
+  chat.context = {};
   const list = messages.sorted(chat.id);
   const topicStart = [...list].reverse().find((m) => m.role === 'system' && m.uiOnly && m.text === '—— 新话题 ——')?.seq ?? 0;
   const recent = list.filter((m) => m.seq > topicStart && !m.uiOnly && m.status !== 'streaming').slice(-RECAP);
@@ -169,7 +268,7 @@ async function doCreate(chatId: string): Promise<Project> {
     if (!fs.existsSync(wsPath)) {
       throw new HttpError(400, `项目文件夹 ${prefix.replace(/\/$/, '')} 还没有提交到 Git，工作区里没有它。先在右侧「改动」里提交一次再试。`);
     }
-    copied = await copyEnvFiles(parent.path, wsPath);
+    copied = await copyLocalFiles(repo, worktree, prefix);
     const now = Date.now();
     ws = {
       id: uid('p_'),
@@ -198,8 +297,10 @@ async function doCreate(chatId: string): Promise<Project> {
     `机器人接下来在这份副本里工作，不影响主目录和其他对话；每一轮的改动会自动提交到这个分支，确认没问题后在右侧「改动」里合并回 ${baseBranch}。`,
   ];
   if (uncommitted) notes.push(`主目录里还没提交的改动不会带进工作区。`);
-  if (copied.length) notes.push(`已复制 ${copied.join('、')}。`);
+  if (copied.length) notes.push(`已带上 git 之外的本地文件：${copied.slice(0, 8).join('、')}${copied.length > 8 ? ` 等 ${copied.length} 项` : ''}。`);
   systemMessage(chat, notes.join('\n'));
+  const setup = configOf(ws).setupCommand;
+  if (setup) prepareWorkspace(chat, ws, setup);
   return ws;
 }
 
@@ -311,7 +412,7 @@ async function doMerge(chatId: string, message?: string): Promise<WorkspaceMerge
   const { chat, ws, info } = requireWorkspace(chatId);
   if (projectRunning(info.parentId)) throw new HttpError(409, '有机器人正在项目主目录里工作，等它这一轮做完再合并');
   if (await isMerging(info.worktree)) throw new HttpError(409, `工作区里正在同步 ${info.baseBranch}，等冲突解决并提交后再合并`);
-  await saveWork(info, 'VibeCrew：合并前保存改动');
+  await saveWork(info, 'Crew：合并前保存改动');
 
   const baseRef = `refs/heads/${info.baseBranch}`;
   const baseHead = await revParse(info.repo, baseRef).catch(() => {
@@ -324,11 +425,20 @@ async function doMerge(chatId: string, message?: string): Promise<WorkspaceMerge
   if ('conflicts' in trial) return { ok: false, conflicts: trial.conflicts };
   if (trial.tree === (await revParse(info.repo, `${baseHead}^{tree}`))) throw new HttpError(409, `没有需要合并的改动，${info.baseBranch} 已经包含这些修改`);
 
-  const subjects = (await gitIn(info.repo, ['log', '--no-merges', '--format=%s', `${baseHead}..${head}`]))
-    .split('\n')
-    .filter((s) => s && !s.startsWith('VibeCrew：'));
-  const title = message?.trim() || chat.title;
-  const body = [title, '', ...subjects.slice(0, 40).map((s) => `- ${s}`), '', `VibeCrew 独立工作区 ${info.branch}`].join('\n');
+  const conf = configOf(ws);
+  const typed = message?.trim();
+  let body: string;
+  if (conf.commitGuide) {
+    // The project has its own rules: the message as written (or generated), nothing added.
+    if (!typed) throw new HttpError(400, '这个项目对提交信息有要求，请先填写合并说明，或点「生成」按要求写一条。');
+    body = typed;
+  } else {
+    const subjects = (await gitIn(info.repo, ['log', '--no-merges', '--format=%s', `${baseHead}..${head}`]))
+      .split('\n')
+      .filter((s) => s && !/^(Vibe)?Crew：/.test(s));
+    const footer = conf.noAttribution ? [] : ['', `Crew 独立工作区 ${info.branch}`];
+    body = [typed || chat.title, '', ...subjects.slice(0, 40).map((s) => `- ${s}`), ...footer].join('\n');
+  }
   let commit: string;
   try {
     commit = (await gitIn(info.repo, ['commit-tree', trial.tree, '-p', baseHead, '-m', body])).trim();
@@ -360,6 +470,86 @@ async function doMerge(chatId: string, message?: string): Promise<WorkspaceMerge
   return { ok: true, commit: commit.slice(0, 7), files: changed };
 }
 
+const SUGGEST_TIMEOUT_MS = 120_000;
+const MAX_DIFF_CHARS = 60_000;
+
+/**
+ * A commit message for everything the workspace would merge, written by the model: it follows
+ * the project's commit guide, else the style of the recent commits on the base branch.
+ */
+async function doSuggest(chatId: string): Promise<string> {
+  const { chat, ws, info } = requireWorkspace(chatId);
+  const cli = findClaudeExecutable();
+  if (!cli) throw new HttpError(400, '没有找到 Claude Code，没法生成提交说明');
+  await saveWork(info, 'Crew：保存改动');
+  const baseHead = await revParse(info.repo, `refs/heads/${info.baseBranch}`);
+  const head = await revParse(info.worktree, 'HEAD');
+  const range = `${baseHead}...${head}`;
+  const stat = (await gitIn(info.repo, ['diff', '--stat=120', range])).trim();
+  if (!stat) throw new HttpError(409, `没有需要合并的改动，${info.baseBranch} 已经包含这个分支的全部内容`);
+  let diff = await gitIn(info.repo, ['-c', 'core.quotePath=false', 'diff', '--no-color', '-U2', range]);
+  if (diff.length > MAX_DIFF_CHARS) diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n[… diff truncated …]`;
+  const recent = (await gitIn(info.repo, ['log', '-12', '--no-merges', '--format=%s', baseHead]).catch(() => '')).trim();
+  const asked = messages
+    .sorted(chat.id)
+    .filter((m) => m.role === 'user' && m.text.trim())
+    .slice(-6)
+    .map((m) => `- ${m.text.trim().replace(/\s+/g, ' ').slice(0, 300)}`)
+    .join('\n');
+  const guide = configOf(ws).commitGuide;
+  const prompt = [
+    'Write the git commit message for the change below. It becomes one squash commit.',
+    guide ? `This repository's rules for commit messages:\n${guide}` : 'Match the language and style of the recent commits: a short subject line, then a blank line and a brief body on what changed and why.',
+    recent && `Recent commit subjects on ${info.baseBranch}:\n${recent}`,
+    asked && `What the user asked for in this chat (context only):\n${asked}`,
+    `Files changed:\n${stat}`,
+    `Diff:\n${diff}`,
+    'Reply with the commit message only: no preamble, no code fences, no Co-Authored-By or other AI attribution.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const out = await new Promise<string>((resolve, reject) => {
+    // In a neutral folder, so the project's own Claude Code hooks do not run for this.
+    const child = spawn(cli, ['-p', '--output-format', 'json', '--max-turns', '1', '--model', 'sonnet'], {
+      cwd: os.tmpdir(),
+      env: cleanEnv(modelEnv()),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), SUGGEST_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      try {
+        const j = JSON.parse(stdout.trim().split('\n').pop() || '');
+        if (j.is_error || j.subtype !== 'success') return reject(new Error(String(j.result || '模型没有给出结果')));
+        resolve(String(j.result || ''));
+      } catch {
+        reject(new Error(code === null ? '等了 2 分钟没有回应' : stderr.trim().split('\n').slice(-2).join(' ') || `Claude Code 退出码 ${code}`));
+      }
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(prompt);
+  }).catch((e: Error) => {
+    throw new HttpError(502, `没能生成提交说明：${e.message}`);
+  });
+  const text = out
+    .trim()
+    .replace(/^```[a-z]*\n?|\n?```$/g, '')
+    .split('\n')
+    .filter((l) => !/^(co-authored-by|generated with|🤖)/i.test(l.trim()))
+    .join('\n')
+    .trim();
+  if (!text) throw new HttpError(502, '模型返回了空的提交说明，请再试一次');
+  return text;
+}
+
 /**
  * Brings new commits of the base branch into the workspace. On conflicts the merge is left in
  * progress (with conflict markers in the files) for a bot to resolve; see doResolve.
@@ -371,15 +561,15 @@ async function doSync(chatId: string): Promise<WorkspaceMergeResult> {
     const unresolved = await unresolvedConflicts(info.worktree);
     if (unresolved.length) return { ok: false, conflicts: unresolved };
     // Every conflict is fixed but not committed yet: conclude the merge.
-    await saveWork(info, `VibeCrew：同步 ${info.baseBranch} 的最新改动`);
+    await saveWork(info, `Crew：同步 ${info.baseBranch} 的最新改动`);
     systemMessage(chat, `已完成和 ${info.baseBranch} 的同步。`);
     return { ok: true, commit: (await revParse(info.worktree, 'HEAD')).slice(0, 7), files: 0 };
   }
-  await saveWork(info, 'VibeCrew：同步前保存改动');
+  await saveWork(info, 'Crew：同步前保存改动');
   const before = await revParse(info.worktree, 'HEAD');
   if (!(await count(info.worktree, `HEAD..${baseRef}`))) throw new HttpError(409, `已经是最新的了，${info.baseBranch} 没有新的提交`);
   try {
-    await gitIn(info.worktree, ['-c', 'commit.gpgsign=false', 'merge', '--no-verify', '--no-edit', '-q', '-m', `VibeCrew：同步 ${info.baseBranch} 的最新改动`, baseRef]);
+    await gitIn(info.worktree, ['-c', 'commit.gpgsign=false', 'merge', '--no-verify', '--no-edit', '-q', '-m', `Crew：同步 ${info.baseBranch} 的最新改动`, baseRef]);
   } catch (e) {
     if (await isMerging(info.worktree)) return { ok: false, conflicts: await unresolvedConflicts(info.worktree) };
     throw new HttpError(500, `同步失败：${gitError(e)}`);
@@ -400,7 +590,7 @@ async function doResolve(chatId: string): Promise<{ started: boolean; conflicts:
     lead ? `@${lead.name}` : '',
     `我在工作区里合并了 ${info.baseBranch} 的最新改动，这些文件有冲突：${conflicts.join('、')}。`,
     '请处理这些冲突：文本文件里的 <<<<<<< / ======= / >>>>>>> 标记要去掉，两边的改动按意图合在一起；二进制文件，或者一边删除一边修改的文件，决定保留哪个版本后用 git add（保留）或 git rm（删除）标记为已解决。改完检查一下页面和构建是否正常。',
-    '不需要自己提交，VibeCrew 会在这一轮结束后自动提交并完成这次合并。',
+    '不需要自己提交，Crew 会在这一轮结束后自动提交并完成这次合并。',
   ]
     .filter(Boolean)
     .join('\n');
@@ -463,7 +653,7 @@ async function disposeWorkspace(ws: Workspace, deleteBranch: boolean) {
   if (exists && !deleteBranch) {
     let r: Awaited<ReturnType<typeof autoCommit>>;
     try {
-      r = await autoCommit(info.worktree, 'VibeCrew：关闭工作区前保存改动');
+      r = await autoCommit(info.worktree, 'Crew：关闭工作区前保存改动');
     } catch (e) {
       throw new HttpError(500, `没能把工作区里的改动提交到分支（${gitError(e)}），为了不丢失改动，工作区没有关闭。`);
     }
@@ -552,6 +742,7 @@ export async function reconcileWorkspaces() {
 
 export const createWorkspace = (chatId: string) => withChatLocked(chatId, '切换', () => doCreate(chatId));
 export const mergeWorkspace = (chatId: string, message?: string) => withChatLocked(chatId, '合并', () => doMerge(chatId, message));
+export const suggestCommitMessage = (chatId: string) => withChatLocked(chatId, '生成提交说明', () => doSuggest(chatId));
 export const syncWorkspace = (chatId: string) => withChatLocked(chatId, '同步', () => doSync(chatId));
 export const resolveConflicts = (chatId: string) => withChatLocked(chatId, '处理冲突', () => doResolve(chatId));
 export const abortSync = (chatId: string) => withChatLocked(chatId, '放弃同步', () => doAbort(chatId));

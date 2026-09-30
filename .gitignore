@@ -19,8 +19,8 @@ node_modules
 *.pem
 *.key
 electron-builder.env
-# VibeCrew data dir, if VIBECREW_HOME points inside the repo (settings.json holds the API key)
-.vibecrew/
+# Crew data dir, if CREW_HOME points inside the repo (settings.json holds the API key)
+.crew/
 
 # Test and tool output
 coverage/

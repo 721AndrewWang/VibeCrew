@@ -22,7 +22,7 @@ import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
 import { showWorkspaceChanges } from '../../workspace';
 import { copyText, cx, shortPath } from '../../utils';
-import { confirmDialog, Glyph, MenuButton, Modal } from '../ui';
+import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
 
 // ---------------------------------------------------------------- shared bits
@@ -65,12 +65,17 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [name, setName] = useState(project.name);
   const [devCommand, setDevCommand] = useState(project.devCommand || '');
   const [staticRoot, setStaticRoot] = useState(project.staticRoot || '');
+  const [setupCommand, setSetupCommand] = useState(project.setupCommand || '');
+  const [commitGuide, setCommitGuide] = useState(project.commitGuide || '');
+  const [noAttribution, setNoAttribution] = useState(!!project.noAttribution);
+  const [askRules, setAskRules] = useState((project.askRules || []).join('\n'));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
-      await api.updateProject(project.id, { name, devCommand, staticRoot });
+      const rules = askRules.split('\n').map((r) => r.trim()).filter(Boolean);
+      await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules });
       toast('项目设置已保存', undefined, 'success');
       onDone();
     } catch (e) {
@@ -95,6 +100,42 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <label>静态文件目录</label>
           <input className="input mono" value={staticRoot} placeholder="静态文件目录，默认项目根目录" onChange={(e) => setStaticRoot(e.target.value)} />
           <div className="hint">没有开发服务器时，预览直接托管这个目录（相对项目根目录，例如 public 或 dist）。</div>
+        </div>
+        <div className="field">
+          <label>新工作区准备命令</label>
+          <input className="input mono" value={setupCommand} placeholder="例如 npm ci，或 uv sync && cd frontend && bun install" onChange={(e) => setSetupCommand(e.target.value)} />
+          <div className="hint">每开一个独立工作区都先在里面跑一遍（比如装依赖），跑完机器人才开始工作。</div>
+        </div>
+        <div className="field span-all">
+          <label>提交信息要求</label>
+          <textarea
+            className="input"
+            rows={2}
+            value={commitGuide}
+            placeholder="例如：英文，祈使句，第一行不超过 72 个字符，正文说明为什么改"
+            onChange={(e) => setCommitGuide(e.target.value)}
+          />
+          <div className="hint">机器人提交时照这个写；合并独立工作区时，合并说明也必须按它写，可以一键生成。</div>
+        </div>
+        <div className="field span-all">
+          <label>必须确认的操作</label>
+          <textarea
+            className="input mono"
+            rows={3}
+            value={askRules}
+            placeholder={'每行一条，例如\nBash(ssh:*)\nBash(docker compose down:*)'}
+            onChange={(e) => setAskRules(e.target.value)}
+          />
+          <div className="hint">在这个项目里工作的所有机器人，碰到这些操作都要先问你。写法和机器人设置里的「必须确认」一样。</div>
+        </div>
+        <div className="field span-all">
+          <div className="setting-row">
+            <div>
+              <div className="sr-title">提交不加 AI 署名</div>
+              <div className="hint">机器人的提交和 PR 不带 Co-Authored-By 之类的署名，合并提交里也不写 Crew。</div>
+            </div>
+            <Toggle on={noAttribution} onChange={setNoAttribution} />
+          </div>
         </div>
       </div>
       <div className="row">
@@ -167,7 +208,7 @@ function ProjectCard({ project, chatCount, workspaces }: { project: Project; cha
   const remove = async () => {
     const ok = await confirmDialog({
       title: `从列表移除「${project.name}」？`,
-      body: `只是从 VibeCrew 移除，不会删除文件。使用这个项目的对话会解除绑定${workspaces.length ? `，它们的 ${workspaces.length} 个独立工作区也会关闭（没合并的改动保留在各自的分支里）` : ''}。`,
+      body: `只是从 Crew 移除，不会删除文件。使用这个项目的对话会解除绑定${workspaces.length ? `，它们的 ${workspaces.length} 个独立工作区也会关闭（没合并的改动保留在各自的分支里）` : ''}。`,
       ok: '移除',
       danger: true,
     });

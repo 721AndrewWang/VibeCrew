@@ -105,11 +105,25 @@ function matchOne(rule: string, toolName: string, input: any, cwd: string, segme
 }
 
 /** True when the rules cover the whole action (every part of a compound shell command). */
+/** Commands that only read or print, and cannot write files themselves. */
+const HELPERS = new Set(['cd', 'pwd', 'true', 'false', 'echo', 'printf', 'head', 'tail', 'wc', 'cut', 'tr', 'nl', 'cat', 'basename', 'dirname', 'date', 'column']);
+
+/**
+ * A part of a command that needs no rule: a helper above, without command substitution or output
+ * written to a file (2>&1 and /dev/null are fine).
+ */
+export function harmless(seg: string): boolean {
+  const s = seg.trim().replace(/\s*(\d?>&\d|&?\d?>{1,2}\s*\/dev\/null)/g, '');
+  if (!s || /[`>]|\$\(/.test(s)) return false;
+  return HELPERS.has(s.split(/\s+/)[0]);
+}
+
 export function rulesAllow(rules: string[], toolName: string, input: any, cwd: string): boolean {
   if (!rules.length) return false;
   if (toolName === 'Bash') {
-    const segs = splitCommand(String(input?.command || ''));
-    return segs.length > 0 && segs.every((seg) => rules.some((r) => matchOne(r, toolName, input, cwd, seg)));
+    const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+    // `cd dir; git log | head`: only git log needs a rule.
+    return segs.length > 0 && segs.every((seg) => harmless(seg) || rules.some((r) => matchOne(r, toolName, input, cwd, seg)));
   }
   return rules.some((r) => matchOne(r, toolName, input, cwd));
 }
@@ -132,7 +146,7 @@ export function insideDir(dir: string, p: string | undefined): boolean {
 }
 
 /**
- * VibeCrew's approval gate. Claude Code has already applied the bot's allow/ask rules
+ * Crew's approval gate. Claude Code has already applied the bot's allow/ask rules
  * (passed as settings); this sees whatever it would have prompted for.
  */
 export function decide(
@@ -150,6 +164,11 @@ export function decide(
   }
   const askRule = !!opts.matchedAskRule || rulesTouch(bot.askRules, toolName, input, cwd);
   if (askRule) return { behavior: 'ask' };
+  // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
+  if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
+    const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+    if (segs.length && segs.every(harmless)) return { behavior: 'allow' };
+  }
   // Rules added with "always allow" during this session.
   if (rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow' };
   switch (level) {
@@ -212,14 +231,35 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
 }
 
 /** The rule "always allow" adds for this action. */
+/** The rule for one simple command, e.g. "git log --oneline" → Bash(git log*). */
+function commandRule(seg: string): string | undefined {
+  // Leading VAR=value assignments are not the command.
+  const tokens = seg.trim().split(/\s+/).filter(Boolean);
+  while (tokens.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+  if (!tokens.length) return undefined;
+  if (/^(npm|pnpm|yarn|bun)$/.test(tokens[0]) && tokens[1] === 'run' && tokens[2]) return `Bash(${tokens.slice(0, 3).join(' ')}*)`;
+  if (/^(npm|pnpm|yarn|bun|npx|bunx|uv|uvx|git|node|python3?|pip3?|docker|cargo|go|make)$/.test(tokens[0]) && tokens[1] && !tokens[1].startsWith('-')) return `Bash(${tokens[0]} ${tokens[1]}*)`;
+  return `Bash(${tokens[0]}*)`;
+}
+
+/**
+ * What "always allow" should add. For a compound command that is one rule per command it runs
+ * (helpers like cd or head need none): a rule for its first command alone would not cover the rest.
+ */
+export function suggestRules(toolName: string, input: any, cwd: string): string[] {
+  if (toolName !== 'Bash') {
+    const r = suggestRule(toolName, input, cwd);
+    return r ? [r] : [];
+  }
+  const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+  const needed = segs.filter((seg) => !harmless(seg));
+  return [...new Set((needed.length ? needed : segs.slice(0, 1)).map(commandRule).filter((r): r is string => !!r))];
+}
+
 export function suggestRule(toolName: string, input: any, cwd: string): string | undefined {
   if (toolName === 'Bash') {
-    const first = splitCommand(String(input?.command || ''))[0];
-    if (!first) return undefined;
-    const tokens = first.split(/\s+/);
-    if (/^(npm|pnpm|yarn|bun)$/.test(tokens[0]) && tokens[1] === 'run' && tokens[2]) return `Bash(${tokens.slice(0, 3).join(' ')}*)`;
-    if (/^(npm|pnpm|yarn|bun|npx|git|node|python3?|pip3?|docker|cargo|go|make)$/.test(tokens[0]) && tokens[1]) return `Bash(${tokens[0]} ${tokens[1]}*)`;
-    return `Bash(${tokens[0]}*)`;
+    const first = splitCommand(String(input?.command || '')).find((seg) => seg.trim());
+    return first ? commandRule(first) : undefined;
   }
   if (EDIT_TOOLS.has(toolName)) {
     const fp = filePathOf(input);

@@ -1219,9 +1219,18 @@ body.resizing iframe {
 
 .composer-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 2px 8px 8px 10px;
+}
+
+.composer-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  min-width: 0;
 }
 
 .composer-tools .icon-btn {
@@ -1239,6 +1248,108 @@ body.resizing iframe {
   font-size: 11px;
   color: var(--text-3);
   margin-right: 8px;
+}
+
+/* Claude Code-style switches under the message box: permission mode, model, effort. */
+.switch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 190px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.switch-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switch-pill svg {
+  flex: none;
+}
+
+.switch-pill:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.switch-pill .chev {
+  color: var(--text-3);
+}
+
+.switch-pill.warn {
+  color: var(--orange);
+}
+
+.switch-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ctx-ring {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.ctx-ring:hover {
+  background: var(--bg-hover);
+}
+
+.ctx-ring.warn {
+  color: var(--orange);
+}
+
+.ctx-ring.danger {
+  color: var(--red);
+}
+
+.ctx-track,
+.ctx-fill {
+  fill: none;
+  stroke-width: 2.2;
+}
+
+.ctx-track {
+  stroke: var(--border-strong);
+}
+
+.ctx-fill {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s;
+}
+
+.ctx-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 170px;
+}
+
+.switch-desc {
+  max-width: 280px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  white-space: normal;
 }
 
 .send-btn {

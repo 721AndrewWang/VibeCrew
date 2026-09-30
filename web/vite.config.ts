@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const api = `http://localhost:${process.env.VIBECREW_PORT || 4321}`;
+const api = `http://localhost:${process.env.CREW_PORT || 4321}`;
 
 export default defineConfig({
   root,

@@ -21,10 +21,10 @@ export function appendMemory(botId: string, note: string) {
 }
 
 const PERMISSION_NOTE: Record<Bot['permission'], string> = {
-  auto: '你可以自主修改文件和运行命令；标记为需要确认的操作会先请求用户批准。',
+  auto: '用户选择了「全自动」：直接修改文件、运行命令，常规操作不要在聊天里征求同意或等用户确认计划，做完再汇报。只有会动到线上环境、删除数据这类不可逆的操作，才先停下来问用户；标记为必须确认的操作，系统会自动请求批准。',
   edits: '你可以直接修改项目内的文件；大多数命令会先请求用户批准（常用的安全命令除外）。',
   ask: '你的每次修改和命令都需要用户批准，所以请把改动集中、说明清楚。',
-  review: '你的操作由一位 AI 审查员实时把关，高风险操作会被拦下或转给用户确认。',
+  review: '你的操作由一位 AI 审查员实时把关，高风险操作会被拦下或转给用户确认。所以常规操作直接做，不要在聊天里另外征求同意，做完再汇报。',
   plan: '你是只读角色：只能阅读和分析，不能修改文件或运行有副作用的命令。请把结论和方案直接写在回复里。',
 };
 
@@ -34,7 +34,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   const lines: string[] = [];
   lines.push(`# 你的身份`);
   lines.push(
-    `你是「${bot.name}」（${bot.title}），VibeCrew Web 开发小队的一员。VibeCrew 是运行在用户电脑上的 AI 机器人团队应用：用户像发短信一样和你们聊天，旁边有实时的网页预览、文件、终端面板。`,
+    `你是「${bot.name}」（${bot.title}），Crew Web 开发小队的一员。Crew 是运行在用户电脑上的 AI 机器人团队应用：用户像发短信一样和你们聊天，旁边有实时的网页预览、文件、终端面板。`,
   );
   lines.push('', '## 角色说明', bot.description.trim() || '（未填写，按通用 Web 开发助手工作）');
 
@@ -61,7 +61,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
     lines.push(
       `- 项目：${project.name}。这个对话有自己的独立工作区：目录 ${project.path}（就是你的工作目录），Git 分支 \`${branch}\`，从 \`${baseBranch}\` 分出。`,
       `- 这是 git worktree，和项目主目录、其他对话的改动互不影响。只修改这个目录里的文件；不要切换分支、不要自己合并到 \`${baseBranch}\`，也不要 push。`,
-      `- 每一轮结束后 VibeCrew 会把你的改动自动提交到这个分支（你也可以自己分步提交）；用户确认后会把分支合并回 \`${baseBranch}\`。`,
+      `- 每一轮结束后 Crew 会把你的改动自动提交到这个分支（你也可以自己分步提交）；用户确认后会把分支合并回 \`${baseBranch}\`。`,
     );
     if (project.framework) lines.push(`- 技术栈：${project.framework}`);
   } else if (project) {
@@ -72,7 +72,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   }
   lines.push(
     '- 你修改文件后，用户的预览会自动刷新（静态页面热刷新，框架项目由开发服务器热更新）。',
-    '- VibeCrew 提供的工具（mcp__crew__*）：',
+    '- Crew 提供的工具（mcp__crew__*）：',
     '  - preview_screenshot：用真实浏览器截图查看页面效果（可选 desktop/tablet/mobile、整页、某个元素）。改完界面一定要看一眼。',
     '  - preview_console：打开页面收集控制台报错和失败的网络请求。',
     '  - browser_act：像用户一样操作页面（点击、输入、按键、跳转、断言文字），页面状态在多次调用间保留。',

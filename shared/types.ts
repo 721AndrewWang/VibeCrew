@@ -1,5 +1,7 @@
 // Types shared by the server and the web client.
 
+import type { LogoId } from './logos';
+
 export type ID = string;
 
 /**
@@ -77,6 +79,23 @@ export interface Chat {
   maxHops: number;
   /** The chat's isolated workspace (a Project with `workspace` set); its bots work there instead. */
   workspaceId?: ID | null;
+  /** Set from the composer's switches for every bot in this chat; unset = each bot's own setting. */
+  permission?: PermissionLevel;
+  model?: string;
+  effort?: Effort;
+  /** botId -> how full its context window was after its last turn (the composer's ring). */
+  context?: Record<ID, ContextUsage>;
+}
+
+/** A bot's context window use, as Claude Code's /context reports it. */
+export interface ContextUsage {
+  /** The model the bot's session runs on. */
+  model?: string;
+  used: number;
+  /** The window it is measured against (where auto-compaction kicks in). */
+  max: number;
+  percentage: number;
+  at: number;
 }
 
 export interface ConsoleEntry {
@@ -150,6 +169,8 @@ export interface ApprovalPart {
   status: 'pending' | 'allowed' | 'denied' | 'expired';
   /** Rule that "always allow" would add, e.g. "Bash(npm run *)". */
   rule?: string;
+  /** All of them: a compound command needs one per command it runs. */
+  rules?: string[];
   reason?: string;
 }
 
@@ -180,7 +201,8 @@ export interface ChatMessage {
   error?: string;
   turnId?: ID;
   trigger?: MessageTrigger;
-  meta?: { costUsd?: number; durationMs?: number; numTurns?: number };
+  /** model: the one that did most of the turn (Claude Code may use a small model on the side). */
+  meta?: { costUsd?: number; durationMs?: number; numTurns?: number; model?: string };
   /** Files changed by this bot turn. */
   changes?: { files: string[]; reverted?: boolean };
   /** A note for the human only; never included in bot prompts. */
@@ -197,6 +219,14 @@ export interface Project {
   devCommand?: string;
   /** Directory (relative) served when there is no dev server. */
   staticRoot?: string;
+  /** Run in every new workspace of this project before the bots start there, e.g. "npm ci". */
+  setupCommand?: string;
+  /** How commit messages are written here, e.g. "English, imperative mood". Bots are told; merges follow it. */
+  commitGuide?: string;
+  /** No AI attribution in commits: neither Claude Code's Co-Authored-By trailer nor Crew's merge footer. */
+  noAttribution?: boolean;
+  /** Extra rules that always need the user's OK for every bot working here, e.g. "Bash(ssh:*)". */
+  askRules?: string[];
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -374,6 +404,10 @@ export interface PublicSettings {
   projectsRoot: string;
   defaultPermission: PermissionLevel;
   maxHops: number;
+  /** The app's logo and icon (Settings → 外观), for every device and the desktop app. */
+  logo: LogoId;
+  /** Actions no bot may take, in any project or mode, e.g. "Bash(*prod-server*)". */
+  denyRules: string[];
 }
 
 export interface BotStatus {
@@ -432,7 +466,7 @@ export interface AuthStatus {
   cliVersion?: string;
   loggedIn: boolean;
   method: string;
-  /** VibeCrew can run bots (CLI + login, or an API key). */
+  /** Crew can run bots (CLI + login, or an API key). */
   ready: boolean;
   checkedAt: number;
 }

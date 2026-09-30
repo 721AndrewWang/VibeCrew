@@ -1,4 +1,4 @@
-// Builds release/VibeCrew-<version>.AppImage. Run through `npm run desktop:pack`.
+// Builds release/Crew-<version>.AppImage. Run through `npm run desktop:pack`.
 import { build, Platform } from 'electron-builder';
 import { ensureElectron } from './electron-bin.mjs';
 

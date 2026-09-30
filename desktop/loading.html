@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
-    <title>VibeCrew</title>
+    <title>Crew</title>
     <style>
       :root {
         --bg: #f7f7f7;
@@ -120,8 +120,8 @@
   </head>
   <body>
     <main id="root">
-      <img src="icons/128x128.png" alt="" />
-      <h1 id="title">正在启动 VibeCrew…</h1>
+      <img id="logo" alt="" />
+      <h1 id="title">正在启动 Crew…</h1>
       <p id="hint">机器人小队马上就位</p>
       <div class="spinner" id="spinner"></div>
       <pre id="detail" hidden></pre>
@@ -133,6 +133,9 @@
     <script>
       const q = new URLSearchParams(location.search);
       const $ = (id) => document.getElementById(id);
+      // The logo chosen in Settings → 外观 (main.cjs passes it; its icons are in logos/).
+      const logo = q.get('logo');
+      $('logo').src = logo && /^[a-z]+$/.test(logo) ? `logos/${logo}/128x128.png` : 'icons/128x128.png';
       const msg = q.get('msg');
       if (msg) $('title').textContent = msg;
       if (q.get('state') === 'error') {
@@ -146,7 +149,7 @@
         }
         $('actions').hidden = false;
       }
-      const bridge = window.vibecrewDesktop;
+      const bridge = window.crewDesktop;
       $('retry').onclick = () => {
         $('actions').hidden = true;
         $('spinner').hidden = false;

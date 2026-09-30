@@ -1,5 +1,5 @@
 'use strict';
-// VibeCrew desktop shell: runs the VibeCrew server as a child process, shows the UI in a
+// Crew desktop shell: runs the Crew server as a child process, shows the UI in a
 // window, and keeps the bots working from the tray after the window is closed.
 
 const { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell } = require('electron');
@@ -11,19 +11,28 @@ const path = require('node:path');
 
 const APP_ROOT = path.join(__dirname, '..');
 const SERVER_ENTRY = path.join(APP_ROOT, 'dist-server', 'server.mjs');
-const HOME_DIR = path.resolve(process.env.VIBECREW_HOME || path.join(os.homedir(), '.vibecrew'));
+const HOME_DIR = path.resolve(process.env.CREW_HOME || path.join(os.homedir(), '.crew'));
+/** Crew used to be called VibeCrew: where its data and browser profile were. */
+const LEGACY_HOME = path.join(os.homedir(), '.vibecrew');
 const STATE_FILE = path.join(HOME_DIR, 'desktop.json');
 const LOG_DIR = path.join(HOME_DIR, 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'server.log');
-const ICON = path.join(__dirname, 'icons', '512x512.png');
-const TRAY_ICON = path.join(__dirname, 'icons', 'tray.png');
+const SETTINGS_FILE = path.join(HOME_DIR, 'settings.json');
+/** Icons of every logo in Settings → 外观 (npm run icons); icons/ has the default one. */
+const LOGOS_DIR = path.join(__dirname, 'logos');
 const LOADING_PAGE = path.join(__dirname, 'loading.html');
-const AUTOSTART_FILE = path.join(os.homedir(), '.config', 'autostart', 'vibecrew.desktop');
+const AUTOSTART_FILE = path.join(os.homedir(), '.config', 'autostart', 'crew.desktop');
+// Where desktop/install.mjs puts the app menu entry and the icon the Dock shows.
+const DESKTOP_ENTRY = path.join(os.homedir(), '.local', 'share', 'applications', 'crew.desktop');
+const ICON_THEME = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor');
+const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
 
 const startHidden = process.argv.includes('--hidden');
 const wantsQuit = process.argv.includes('--quit');
 
-app.setName('VibeCrew');
+app.setName('Crew');
+// Before anything reads the data folder (window state, chosen logo) or the browser profile.
+if (!wantsQuit && !legacyInstance()) migrateFromVibeCrew();
 
 /** @type {BrowserWindow | null} */
 let win = null;
@@ -47,6 +56,8 @@ let lastExternalOpen = 0;
 let loadedFrom = null;
 const crashes = [];
 let attachedMisses = 0;
+/** The logo chosen in Settings → 外观; null for the default icons. */
+let logo = null;
 
 // ---------------------------------------------------------------- small helpers
 
@@ -59,6 +70,77 @@ function readJson(file, fallback) {
 }
 
 const state = readJson(STATE_FILE, {});
+
+/** The logo in the server's settings, if its icons ship with this build. */
+function chosenLogo() {
+  const id = readJson(SETTINGS_FILE, {}).logo;
+  return typeof id === 'string' && /^[a-z]+$/.test(id) && fs.existsSync(path.join(LOGOS_DIR, id)) ? id : null;
+}
+
+const iconPath = (name) => (logo ? path.join(LOGOS_DIR, logo, name) : path.join(__dirname, 'icons', name));
+
+logo = chosenLogo();
+
+/** The pid of a running VibeCrew (the app's old name) from its single-instance lock, if any. */
+function legacyInstance() {
+  try {
+    const pid = Number(fs.readlinkSync(path.join(app.getPath('appData'), 'VibeCrew', 'SingletonLock')).split('-').pop());
+    if (!pid) return null;
+    process.kill(pid, 0);
+    return pid;
+  } catch {
+    return null;
+  }
+}
+
+/** Renames `from` to `to` when only the old one exists. */
+function moveIfAbsent(from, to) {
+  try {
+    if (fs.existsSync(to) || !fs.lstatSync(from).isDirectory()) return false;
+    fs.renameSync(from, to);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * First start after the rename: the data folder (~/.vibecrew) and the browser profile (with the
+ * page's theme and drafts) move to their new names. The server then moves the projects folder.
+ */
+function migrateFromVibeCrew() {
+  if (!process.env.CREW_HOME) moveIfAbsent(LEGACY_HOME, HOME_DIR);
+  if (!app.commandLine.hasSwitch('user-data-dir')) mergeProfile(path.join(app.getPath('appData'), 'VibeCrew'), app.getPath('userData'));
+}
+
+/**
+ * Moves the old browser profile's entries into the new one. Electron may already have created the
+ * new folder at startup, so entries are moved one by one (never over existing ones); the old
+ * instance's lock files are stale by now and are dropped.
+ */
+function mergeProfile(from, to) {
+  if (moveIfAbsent(from, to)) return;
+  let names;
+  try {
+    names = fs.readdirSync(from);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const src = path.join(from, name);
+    try {
+      if (name.startsWith('Singleton')) fs.rmSync(src, { force: true });
+      else if (!fs.existsSync(path.join(to, name))) fs.renameSync(src, path.join(to, name));
+    } catch {
+      /* left behind */
+    }
+  }
+  try {
+    fs.rmdirSync(from);
+  } catch {
+    /* something could not move: keep it */
+  }
+}
 
 function saveState() {
   try {
@@ -87,7 +169,7 @@ function logTail(lines = 30) {
 }
 
 function configuredPort() {
-  const fromEnv = Number(process.env.VIBECREW_PORT);
+  const fromEnv = Number(process.env.CREW_PORT);
   if (fromEnv) return fromEnv;
   const s = readJson(path.join(HOME_DIR, 'settings.json'), {});
   return Number(s.port) || 4321;
@@ -97,7 +179,7 @@ const appOrigin = () => `http://127.0.0.1:${serverPort}`;
 const childAlive = () => !!child && child.exitCode === null && child.signalCode === null;
 
 /**
- * What answers on the port: { kind: 'vibecrew', pid } for a VibeCrew server, 'free' when nothing
+ * What answers on the port: { kind: 'crew', pid } for a Crew server, 'free' when nothing
  * listens, 'foreign' when some other HTTP server answers, 'other' for timeouts and resets.
  */
 function probe(port) {
@@ -109,7 +191,7 @@ function probe(port) {
       res.on('end', () => {
         try {
           const j = JSON.parse(body);
-          resolve(j.ok === true && j.app === 'vibecrew' ? { kind: 'vibecrew', pid: j.pid } : { kind: 'foreign' });
+          resolve(j.ok === true && (j.app === 'crew' || j.app === 'vibecrew') ? { kind: 'crew', pid: j.pid } : { kind: 'foreign' });
         } catch {
           resolve({ kind: 'foreign' });
         }
@@ -136,7 +218,7 @@ function withoutAppDir(value, appdir) {
     .join(':');
 }
 
-const SHELL_MARK = '__VIBECREW_ENV__';
+const SHELL_MARK = '__CREW_ENV__';
 
 /**
  * Apps started from the dock or at login get a minimal environment: nothing from ~/.bashrc,
@@ -225,7 +307,7 @@ async function serverEnv(port) {
   const shell = await loginShellEnv(shellInput);
   if (shell) {
     for (const [k, v] of Object.entries(shell)) {
-      if (SHELL_ONLY.test(k) || DESKTOP_ONLY.test(k) || k.startsWith('VIBECREW_')) continue;
+      if (SHELL_ONLY.test(k) || DESKTOP_ONLY.test(k) || k.startsWith('CREW_')) continue;
       if (k === 'NODE_OPTIONS') nodeOptions = v;
       else if (k === 'PATH') env.PATH = [v, env.PATH].filter(Boolean).join(':');
       else env[k] = v;
@@ -241,10 +323,10 @@ async function serverEnv(port) {
 
   // The server itself runs without the user's NODE_OPTIONS; it hands them back to what it starts.
   delete env.NODE_OPTIONS;
-  if (nodeOptions) env.VIBECREW_USER_NODE_OPTIONS = nodeOptions;
+  if (nodeOptions) env.CREW_USER_NODE_OPTIONS = nodeOptions;
   env.ELECTRON_RUN_AS_NODE = '1';
-  env.VIBECREW_DESKTOP = '1';
-  env.VIBECREW_PORT = String(port);
+  env.CREW_DESKTOP = '1';
+  env.CREW_PORT = String(port);
   return env;
 }
 
@@ -263,7 +345,7 @@ async function startServer(port) {
     out = fs.openSync(LOG_FILE, 'a');
   } catch (e) {
     // Without a writable log the server can still run.
-    console.error(`[vibecrew] cannot open ${LOG_FILE}: ${e && e.message}`);
+    console.error(`[crew] cannot open ${LOG_FILE}: ${e && e.message}`);
   }
   log(`starting server on port ${port}`);
   const proc = spawn(process.execPath, [SERVER_ENTRY], { cwd: os.homedir(), env, stdio: ['ignore', out, out] });
@@ -291,7 +373,7 @@ function waitForServer(proc, port, ms) {
     const tick = async () => {
       if (gone()) return resolve('exited');
       const found = await probe(port);
-      if (found.kind === 'vibecrew' && found.pid === proc.pid) return resolve('ours');
+      if (found.kind === 'crew' && found.pid === proc.pid) return resolve('ours');
       if (gone()) return resolve('exited');
       if (quitting || Date.now() > until) return resolve('timeout');
       setTimeout(tick, 250);
@@ -328,7 +410,7 @@ async function onServerLost() {
   while (crashes.length && now - crashes[0] > 60_000) crashes.shift();
   crashes.push(now);
   if (crashes.length > 3) {
-    showError('VibeCrew 服务多次意外退出', logTail());
+    showError('Crew 服务多次意外退出', logTail());
     return;
   }
   showLoading('服务意外退出，正在重新启动…');
@@ -361,7 +443,7 @@ async function boot() {
     // Our own server may still be running (a retry, or a reload after a network hiccup).
     if (childAlive()) {
       const found = await probe(childPort);
-      if (found.kind === 'vibecrew' && child && found.pid === child.pid) {
+      if (found.kind === 'crew' && child && found.pid === child.pid) {
         attached = false;
         serverPort = childPort;
         await loadUi(`own:${found.pid}`);
@@ -373,7 +455,7 @@ async function boot() {
     let portRejected = false;
     for (let attempt = 0; attempt < 3 && !quitting; attempt++) {
       const found = await probe(port);
-      if (found.kind === 'vibecrew') {
+      if (found.kind === 'crew') {
         attached = true;
         attachedMisses = 0;
         serverPort = port;
@@ -393,7 +475,7 @@ async function boot() {
         port = free;
       }
       if (!fs.existsSync(SERVER_ENTRY)) {
-        showError('找不到 VibeCrew 服务文件', `缺少 ${SERVER_ENTRY}\n请先运行 npm run build:desktop`);
+        showError('找不到 Crew 服务文件', `缺少 ${SERVER_ENTRY}\n请先运行 npm run build:desktop`);
         return;
       }
       portRejected = false;
@@ -408,22 +490,22 @@ async function boot() {
       }
       if (result === 'timeout') {
         await stopServer();
-        showError('VibeCrew 服务启动超时', logTail());
+        showError('Crew 服务启动超时', logTail());
         return;
       }
       // It exited. Code 3 means the port could not be bound: look again, and if nothing
       // answers there, move on to another port.
       lostDuringBoot = false;
       if (proc.exitCode !== 3) {
-        showError('VibeCrew 服务没能启动', logTail());
+        showError('Crew 服务没能启动', logTail());
         return;
       }
       portRejected = true;
     }
-    if (!quitting) showError('VibeCrew 服务没能启动', logTail());
+    if (!quitting) showError('Crew 服务没能启动', logTail());
   } catch (e) {
     log(`boot failed: ${e && e.stack}`);
-    if (!quitting) showError('VibeCrew 服务没能启动', String((e && e.message) || e));
+    if (!quitting) showError('Crew 服务没能启动', String((e && e.message) || e));
   } finally {
     booting = false;
     if (lostDuringBoot && !quitting && !attached && !childAlive()) {
@@ -457,13 +539,13 @@ function isAppUrl(url) {
 
 function showLoading(message) {
   if (!win || win.isDestroyed()) return;
-  void win.loadFile(LOADING_PAGE, { query: { state: 'loading', msg: message } }).catch(() => {});
+  void win.loadFile(LOADING_PAGE, { query: { state: 'loading', msg: message, logo: logo || '' } }).catch(() => {});
 }
 
 function showError(title, detail) {
   log(`error: ${title}`);
   if (!win || win.isDestroyed()) return;
-  void win.loadFile(LOADING_PAGE, { query: { state: 'error', msg: title, detail: detail || '' } }).catch(() => {});
+  void win.loadFile(LOADING_PAGE, { query: { state: 'error', msg: title, detail: detail || '', logo: logo || '' } }).catch(() => {});
   showWindow();
 }
 
@@ -501,8 +583,8 @@ function createWindow() {
     y: typeof b.y === 'number' ? b.y : undefined,
     minWidth: 880,
     minHeight: 560,
-    title: 'VibeCrew',
-    icon: ICON,
+    title: 'Crew',
+    icon: iconPath('512x512.png'),
     show: false,
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#f7f7f7',
@@ -534,7 +616,7 @@ function createWindow() {
   win.on('maximize', rememberBounds);
   win.on('unmaximize', rememberBounds);
 
-  // Closing the window keeps VibeCrew running in the tray, like closing a chat app.
+  // Closing the window keeps Crew running in the tray, like closing a chat app.
   win.on('close', (e) => {
     if (quitting) return;
     e.preventDefault();
@@ -543,9 +625,9 @@ function createWindow() {
       state.trayNoticeShown = true;
       saveState();
       new Notification({
-        title: 'VibeCrew 仍在后台运行',
+        title: 'Crew 仍在后台运行',
         body: attached ? '窗口已隐藏，可以从托盘图标重新打开。' : '机器人和定时任务会继续工作。从托盘图标可以重新打开或退出。',
-        icon: ICON,
+        icon: iconPath('512x512.png'),
       }).show();
     }
   });
@@ -564,7 +646,7 @@ function createWindow() {
     const m = String(title).match(/^\((\d+)\)/);
     const unread = m ? Number(m[1]) : 0;
     app.setBadgeCount(unread);
-    if (tray) tray.setToolTip(unread ? `VibeCrew · ${unread} 条未读` : 'VibeCrew');
+    if (tray) tray.setToolTip(unread ? `Crew · ${unread} 条未读` : 'Crew');
   });
   wc.on('render-process-gone', (_e, details) => {
     log(`renderer gone: ${details.reason}`);
@@ -627,10 +709,10 @@ function setAutostart(on) {
         [
           '[Desktop Entry]',
           'Type=Application',
-          'Name=VibeCrew',
-          'Comment=在后台启动 VibeCrew，机器人和定时任务开机即可工作',
+          'Name=Crew',
+          'Comment=在后台启动 Crew，机器人和定时任务开机即可工作',
           `Exec=${launchCommand()} --hidden`,
-          'Icon=vibecrew',
+          'Icon=crew',
           'Terminal=false',
           'X-GNOME-Autostart-enabled=true',
           '',
@@ -649,29 +731,71 @@ function setAutostart(on) {
 function updateTray() {
   if (!tray) return;
   const menu = Menu.buildFromTemplate([
-    { label: '打开 VibeCrew', click: showWindow },
+    { label: '打开 Crew', click: showWindow },
     { label: '在浏览器中打开', enabled: !!serverPort, click: () => void shell.openExternal(`${appOrigin()}/`) },
     { type: 'separator' },
     { label: '开机自动启动（后台运行）', type: 'checkbox', checked: autostartEnabled(), click: (item) => setAutostart(item.checked) },
     { label: '查看服务日志', click: () => void shell.openPath(LOG_FILE) },
     { type: 'separator' },
-    { label: attached ? '退出（服务由其他进程运行，会继续工作）' : '退出 VibeCrew（停止所有机器人）', click: () => void quitApp() },
+    { label: attached ? '退出（服务由其他进程运行，会继续工作）' : '退出 Crew（停止所有机器人）', click: () => void quitApp() },
   ]);
   tray.setContextMenu(menu);
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createFromPath(TRAY_ICON));
-  tray.setToolTip('VibeCrew');
+  tray = new Tray(nativeImage.createFromPath(iconPath('tray.png')));
+  tray.setToolTip('Crew');
   tray.on('click', showWindow);
   updateTray();
+}
+
+/**
+ * The Dock and the app menu show the icon desktop/install.mjs put in the user's icon theme, so the
+ * installed app rewrites it to the chosen logo (and leaves everything alone when not installed).
+ */
+function syncDockIcons() {
+  if (!fs.existsSync(DESKTOP_ENTRY)) return;
+  let changed = false;
+  for (const s of ICON_SIZES) {
+    const dest = path.join(ICON_THEME, `${s}x${s}`, 'apps', 'crew.png');
+    try {
+      const png = fs.readFileSync(iconPath(`${s}x${s}.png`));
+      if (fs.existsSync(dest) && fs.readFileSync(dest).equals(png)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(`${dest}.tmp`, png);
+      fs.renameSync(`${dest}.tmp`, dest);
+      changed = true;
+    } catch (e) {
+      log(`icon ${s}x${s}: ${e && e.message}`);
+    }
+  }
+  if (!changed) return;
+  // Same refresh as install.mjs: GNOME notices the theme folder's new time.
+  const now = new Date();
+  try {
+    fs.utimesSync(ICON_THEME, now, now);
+  } catch {
+    /* no theme folder */
+  }
+  if (fs.existsSync(path.join(ICON_THEME, 'icon-theme.cache'))) spawn('gtk-update-icon-cache', ['-f', '-t', ICON_THEME], { stdio: 'ignore' }).on('error', () => {});
+}
+
+/** Follows Settings → 外观 → 应用图标: window, tray and Dock icons. */
+function applyLogo() {
+  const next = chosenLogo();
+  if (next === logo) return;
+  logo = next;
+  log(`logo: ${logo || 'default'}`);
+  if (win && !win.isDestroyed()) win.setIcon(nativeImage.createFromPath(iconPath('512x512.png')));
+  if (tray) tray.setImage(nativeImage.createFromPath(iconPath('tray.png')));
+  syncDockIcons();
 }
 
 function createMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
-        label: 'VibeCrew',
+        label: 'Crew',
         submenu: [
           { label: '隐藏窗口', accelerator: 'CmdOrCtrl+W', click: () => win && win.hide() },
           { label: '在浏览器中打开', click: () => serverPort && void shell.openExternal(`${appOrigin()}/`) },
@@ -718,7 +842,7 @@ async function quitApp() {
   saveState();
   if (!attached) await stopServer();
   if (tray) tray.destroy();
-  // Someone reopened VibeCrew while it was shutting down: start again once we are gone.
+  // Someone reopened Crew while it was shutting down: start again once we are gone.
   if (relaunchRequested) {
     app.relaunch({
       execPath: inOwnAppImage() ? process.env.APPIMAGE : process.execPath,
@@ -728,7 +852,7 @@ async function quitApp() {
   app.exit(0);
 }
 
-/** IPC is only for VibeCrew's own top-level page, never for previewed sites. */
+/** IPC is only for Crew's own top-level page, never for previewed sites. */
 function fromOwnPage(e) {
   const frame = e.senderFrame;
   if (!frame || !win || win.isDestroyed() || frame !== win.webContents.mainFrame) return false;
@@ -764,7 +888,7 @@ function isOwnFrame(url, isMainFrame) {
 function registerPermissions() {
   const ses = session.defaultSession;
   // Previewed sites run in iframes: like in Chrome they may write to the clipboard and go
-  // fullscreen, but they never read the clipboard; only VibeCrew itself shows notifications.
+  // fullscreen, but they never read the clipboard; only Crew itself shows notifications.
   ses.setPermissionRequestHandler((_wc, permission, cb, details) => {
     if (permission === 'clipboard-sanitized-write' || permission === 'fullscreen') return cb(true);
     cb(permission === 'notifications' && isOwnFrame(details.requestingUrl, details.isMainFrame));
@@ -777,8 +901,12 @@ function registerPermissions() {
 }
 
 if (wantsQuit) {
-  // `vibecrew --quit`: a running instance receives { quit: true } and shuts down.
+  // `crew --quit`: a running instance receives { quit: true } and shuts down.
   app.requestSingleInstanceLock({ quit: true });
+  app.exit(0);
+} else if (legacyInstance()) {
+  // The old VibeCrew holds the port and the data; running both would mix them up.
+  dialog.showErrorBox('旧版 VibeCrew 还在运行', 'VibeCrew 已改名为 Crew。请先从托盘菜单退出旧版 VibeCrew，再打开 Crew。');
   app.exit(0);
 } else if (!app.requestSingleInstanceLock({ quit: false })) {
   app.exit(0);
@@ -805,7 +933,10 @@ if (wantsQuit) {
     createMenu();
     createWindow();
     createTray();
-    showLoading('正在启动 VibeCrew…');
+    showLoading('正在启动 Crew…');
     void boot();
+    syncDockIcons();
+    // The server writes settings.json (atomically) when the logo is changed on any device.
+    fs.watchFile(SETTINGS_FILE, { interval: 1500 }, applyLogo);
   });
 }

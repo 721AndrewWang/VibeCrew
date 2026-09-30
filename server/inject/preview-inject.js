@@ -1,18 +1,18 @@
-// Injected into every page shown in the VibeCrew preview.
-// Talks to the VibeCrew window (the iframe parent) via postMessage:
+// Injected into every page shown in the Crew preview.
+// Talks to the Crew window (the iframe parent) via postMessage:
 // console capture, navigation tracking, element picking, demo recording, live reload.
 (function () {
-  if (window.__vibecrew) return;
-  var cfg = window.__VIBECREW_CFG__ || {};
+  if (window.__crew) return;
+  var cfg = window.__CREW_CFG__ || {};
   var inFrame = window.parent !== window;
   var hostOrigin = null;
   var outbox = [];
   var MAX_TEXT = 4000;
-  window.__vibecrew = { version: 1 };
+  window.__crew = { version: 1 };
 
   function post(msg) {
     if (!inFrame) return;
-    msg.__vibecrew = true;
+    msg.__crew = true;
     if (!hostOrigin) {
       if (outbox.length < 200) outbox.push(msg);
       return;
@@ -24,7 +24,7 @@
     if (!inFrame) return;
     // Only the URL and title go out before the host introduces itself.
     try {
-      window.parent.postMessage({ __vibecrew: true, type: type, url: location.href, title: document.title }, '*');
+      window.parent.postMessage({ __crew: true, type: type, url: location.href, title: document.title }, '*');
     } catch (e) { /* ignore */ }
   }
 
@@ -111,7 +111,7 @@
       var method = (init && init.method) || (input && input.method) || 'GET';
       var url = typeof input === 'string' ? input : (input && input.url) || String(input);
       return origFetch.apply(this, arguments).then(function (res) {
-        if (res.status >= 400 && url.indexOf('/__vibecrew') < 0) sendConsole('warn', '[network] ' + res.status + ' ' + method.toUpperCase() + ' ' + url);
+        if (res.status >= 400 && url.indexOf('/__crew') < 0) sendConsole('warn', '[network] ' + res.status + ' ' + method.toUpperCase() + ' ' + url);
         return res;
       }, function (err) {
         sendConsole('error', '[network] ' + method.toUpperCase() + ' ' + url + ' 失败: ' + fmt(err));
@@ -158,7 +158,7 @@
   window.addEventListener('hashchange', navChanged);
 
   // Keep the scroll position across live reloads.
-  var SCROLL_KEY = '__vibecrew_scroll:' + location.pathname;
+  var SCROLL_KEY = '__crew_scroll:' + location.pathname;
   try {
     var saved = sessionStorage.getItem(SCROLL_KEY);
     if (saved) {
@@ -178,7 +178,7 @@
   // ---------- live reload (static projects) ----------
   if (cfg.liveReload && window.EventSource) {
     try {
-      var es = new EventSource('/__vibecrew/events');
+      var es = new EventSource('/__crew/events');
       es.onmessage = function (ev) {
         var data = {};
         try { data = JSON.parse(ev.data); } catch (e) { return; }
@@ -353,10 +353,10 @@
   function ensureOverlay() {
     if (overlay) return;
     overlay = document.createElement('div');
-    overlay.setAttribute('data-vibecrew', 'overlay');
+    overlay.setAttribute('data-crew', 'overlay');
     overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #0a84ff;background:rgba(10,132,255,.12);border-radius:3px;transition:all .06s ease-out;display:none;';
     label = document.createElement('div');
-    label.setAttribute('data-vibecrew', 'label');
+    label.setAttribute('data-crew', 'label');
     label.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#0a84ff;color:#fff;font:600 11px/1.6 ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:4px;white-space:nowrap;display:none;box-shadow:0 2px 8px rgba(0,0,0,.25);';
     document.documentElement.appendChild(overlay);
     document.documentElement.appendChild(label);
@@ -389,7 +389,7 @@
 
   // ---------- element picker ----------
   var picking = false;
-  function isOwn(el) { return el && el.getAttribute && el.getAttribute('data-vibecrew'); }
+  function isOwn(el) { return el && el.getAttribute && el.getAttribute('data-crew'); }
 
   function onPickMove(ev) {
     var el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -498,7 +498,7 @@
     if (on) {
       if (!badge) {
         badge = document.createElement('div');
-        badge.setAttribute('data-vibecrew', 'badge');
+        badge.setAttribute('data-crew', 'badge');
         badge.textContent = '● 正在录制演示';
         badge.style.cssText = 'position:fixed;top:8px;right:8px;z-index:2147483647;background:#ff3b30;color:#fff;font:600 12px/1.8 -apple-system,system-ui,sans-serif;padding:2px 10px;border-radius:999px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.25);';
       }
@@ -513,7 +513,7 @@
   window.addEventListener('message', function (ev) {
     if (ev.source !== window.parent) return;
     var d = ev.data;
-    if (!d || d.__vibecrew_host !== true) return;
+    if (!d || d.__crew_host !== true) return;
     if (d.type === 'hello') {
       hostOrigin = ev.origin;
       var queued = outbox;

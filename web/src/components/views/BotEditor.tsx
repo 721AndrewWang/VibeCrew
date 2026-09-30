@@ -429,7 +429,7 @@ function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; patch: 
                           }
                         />
                       ))}
-                      <div className="hint">密钥保存在本机的 VibeCrew 设置里，所有机器人共用，不会写进项目。</div>
+                      <div className="hint">密钥保存在本机的 Crew 设置里，所有机器人共用，不会写进项目。</div>
                     </div>
                   ) : null}
                 </div>

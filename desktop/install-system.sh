@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Optional: install VibeCrew in /opt/VibeCrew with an AppArmor profile so it runs with
+# Optional: install Crew in /opt/Crew with an AppArmor profile so it runs with
 # Chromium's sandbox (how Ubuntu handles Google Chrome). Build first with `npm run desktop:pack`.
 #   sudo desktop/install-system.sh            install or update
 #   sudo desktop/install-system.sh --remove   remove the system install and the profile
@@ -13,8 +13,8 @@ fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/../release/linux-unpacked"
-DEST=/opt/VibeCrew
-PROFILE=/etc/apparmor.d/vibecrew
+DEST=/opt/Crew
+PROFILE=/etc/apparmor.d/crew
 
 if [ "${1:-}" = "--remove" ]; then
   if [ -f "$PROFILE" ]; then apparmor_parser -R "$PROFILE" 2>/dev/null || true; fi
@@ -24,8 +24,8 @@ if [ "${1:-}" = "--remove" ]; then
   exit 0
 fi
 
-if [ ! -x "$SRC/vibecrew" ]; then
-  echo "找不到 $SRC/vibecrew，请先运行 npm run desktop:pack"
+if [ ! -x "$SRC/crew" ]; then
+  echo "找不到 $SRC/crew，请先运行 npm run desktop:pack"
   exit 1
 fi
 
@@ -37,7 +37,7 @@ chmod -R go-w "$DEST.new"
 rm -rf "$DEST"
 mv "$DEST.new" "$DEST"
 
-install -m 644 "$HERE/apparmor/vibecrew" "$PROFILE"
+install -m 644 "$HERE/apparmor/crew" "$PROFILE"
 apparmor_parser -r "$PROFILE"
 
 echo "✅ 已安装到 $DEST，并启用了 AppArmor 规则（沙盒可用）。"

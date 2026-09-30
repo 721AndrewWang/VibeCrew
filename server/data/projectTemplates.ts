@@ -26,7 +26,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   </head>
   <body>
     <main class="hero">
-      <p class="eyebrow">VibeCrew</p>
+      <p class="eyebrow">Crew</p>
       <h1>${title}</h1>
       <p class="lead">这是一个空白的起点。在左边告诉你的机器人小队想做什么，它们会在这里把页面做出来。</p>
       <button id="cta" class="btn">点我试试</button>
@@ -143,7 +143,7 @@ btn.addEventListener('click', () => {
   </head>
   <body class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
     <main class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-6 text-center">
-      <span class="rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">VibeCrew</span>
+      <span class="rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">Crew</span>
       <h1 class="mt-6 text-4xl font-bold tracking-tight sm:text-6xl">${title}</h1>
       <p class="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-400">告诉你的机器人小队想做什么，它们会用 Tailwind 把页面做出来。</p>
       <div class="mt-10 flex gap-4">
@@ -237,7 +237,7 @@ export default function App() {
   const [count, setCount] = useState(0);
   return (
     <main className="hero">
-      <p className="eyebrow">VibeCrew · React</p>
+      <p className="eyebrow">Crew · React</p>
       <h1>${title}</h1>
       <p className="lead">告诉你的机器人小队想做什么，它们会在这里把应用做出来。</p>
       <button className="btn" onClick={() => setCount((c) => c + 1)}>
@@ -366,7 +366,7 @@ const count = ref(0);
 
 <template>
   <main class="hero">
-    <p class="eyebrow">VibeCrew · Vue</p>
+    <p class="eyebrow">Crew · Vue</p>
     <h1>${title}</h1>
     <p class="lead">告诉你的机器人小队想做什么，它们会在这里把应用做出来。</p>
     <button class="btn" @click="count++">已点击 {{ count }} 次</button>

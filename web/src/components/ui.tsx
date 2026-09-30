@@ -75,6 +75,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { logoOf, type LogoId } from '../../../shared/logos';
 import type { Bot, BotStatus } from '../../../shared/types';
 import { dismissToast, openChat, useStore } from '../store';
 import { cx } from '../utils';
@@ -129,15 +130,16 @@ export function Avatar({ bot, size = 36, status }: { bot?: Pick<Bot, 'emoji' | '
   );
 }
 
-/** The VibeCrew mark, drawn in the theme's logo colours (black / white by default, or the accent). */
-export function Logo({ size = 26, className }: { size?: number; className?: string }) {
+/**
+ * The Crew logo chosen in Settings → 外观 (or the one given), drawn in the theme's logo colours
+ * (black / white by default, or the accent).
+ */
+export function Logo({ size = 26, className, id }: { size?: number; className?: string; id?: LogoId }) {
+  const chosen = useStore((s) => s.settings.logo);
   return (
     <svg className={cx('logo', className)} width={size} height={size} viewBox="0 0 128 128" aria-hidden>
       <rect width="128" height="128" rx="28" style={{ fill: 'var(--logo-bg)' }} />
-      <path d="M34 52c0-12 9-21 21-21h18c12 0 21 9 21 21v12c0 12-9 21-21 21H60l-14 11c-2 1.5-4.5 0-4.5-2.5V83C37 79 34 72 34 64z" style={{ fill: 'var(--logo-fg)' }} />
-      <circle cx="55" cy="58" r="6" style={{ fill: 'var(--logo-bg)' }} />
-      <circle cx="75" cy="58" r="6" style={{ fill: 'var(--logo-bg)' }} />
-      <path d="M56 70c5 4 13 4 18 0" strokeWidth="4" strokeLinecap="round" fill="none" style={{ stroke: 'var(--logo-bg)' }} />
+      <g style={{ color: 'var(--logo-fg)' }} dangerouslySetInnerHTML={{ __html: logoOf(id || chosen).glyph }} />
     </svg>
   );
 }
