@@ -168,6 +168,14 @@ export function devServer(projectId: string): DevServer {
   return s;
 }
 
+/** Stops a project's dev server and drops it (its workspace was removed). */
+export async function disposeDevServer(projectId: string) {
+  const s = servers.get(projectId);
+  if (!s) return;
+  await s.stop();
+  servers.delete(projectId);
+}
+
 export function devServerStates(): DevServerState[] {
   return [...servers.values()].map((s) => s.state).filter((s) => s.status !== 'stopped');
 }

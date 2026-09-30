@@ -9,7 +9,7 @@ VibeCrew 是一个运行在你自己电脑上的「AI 机器人团队」应用�
 | Grokbot | VibeCrew |
 | --- | --- |
 | 有名字、角色的 Bot（Name / Title / Description） | 机器人：名字（用于 @）、头像、角色说明（系统提示词）、模型、思考强度、权限级别 |
-| 每个 Bot 有自己的云电脑（浏览器、文件、终端） | 每个对话绑定一个项目：**实时预览浏览器**、文件树 + 代码编辑器、真实终端、改动记录 |
+| 每个 Bot 有自己的云电脑（浏览器、文件、终端） | 每个对话绑定一个项目：**实时预览浏览器**、文件树 + 代码编辑器、真实终端、改动记录；还可以开「独立工作区」，拥有自己的 Git 分支和工作目录 |
 | iMessage 式聊天 | iMessage 式聊天，流式输出，工具调用折叠成“做了 N 个操作” |
 | 群聊、@ 提及、Bot 之间互相交接 | 群聊：没 @ 人时由负责人回复；机器人回复里 @ 队友会自动接力（有上限防止死循环）；@ 群外机器人会把它拉进群 |
 | Routines 定时 / 事件触发 | 定时任务：每 N 分钟、每天定点、Cron、**你保存文件后**、**Git 提交后** |
@@ -26,6 +26,7 @@ VibeCrew 是一个运行在你自己电脑上的「AI 机器人团队」应用�
 - **控制台一键修复**：预览里的报错、警告、失败的网络请求会被捕获，点「发给机器人修复」。
 - **机器人能“看见”页面**：机器人用无头 Chrome 截图（桌面 / 平板 / 手机）检查自己的改动，还能像用户一样点击、输入来测试流程。
 - **每轮改动可撤销**：机器人每一轮改了哪些文件都有记录，可以看 diff、一键撤销；右侧还能直接 Git 提交。
+- **独立工作区（借鉴 vibe-kanban）**：对话可以在自己的 Git 分支里工作（git worktree）。机器人、预览、文件、终端都用这份副本，几个对话同时改同一个项目也互不干扰；每一轮自动提交到分支，在「改动」里看和主分支的差异，一键合并回去（压成一个提交）。主分支有新提交可以同步进来，有冲突可以交给机器人解决。
 - **开发服务器托管**：自动识别 `npm run dev` 等命令，缺依赖自动安装，预览自动接入热更新；静态网页保存即刷新。
 - **截图 / 粘贴图片 / 语音输入**：把设计稿贴进来让机器人还原（`/clone-ui`），或者直接说话。
 
@@ -35,10 +36,25 @@ VibeCrew 是一个运行在你自己电脑上的「AI 机器人团队」应用�
 - Linux 上还需要 C/C++ 编译工具：终端组件 node-pty 在 Linux 上没有预编译包，`npm install` 会现场编译（缺少时整个安装会失败）。Ubuntu：`sudo apt install build-essential python3`
 - 已安装 [Claude Code](https://docs.claude.com/en/docs/claude-code)：`npm i -g @anthropic-ai/claude-code`
   - 并且**登录过**：在终端运行 `claude auth login`（订阅账号或 Console 账号都可以）
-  - 或者在 VibeCrew 的「设置」里改用 Anthropic API Key
+  - 或者在 VibeCrew 的「设置」里改用 Anthropic API Key，或者 DeepSeek、Kimi、智谱 GLM 等其他模型服务商（见下文）
 - Google Chrome 或 Chromium（用于机器人截图和浏览器测试；没有也能用，只是这两个功能不可用）
 - 桌面应用（AppImage）还需要 FUSE 2：Ubuntu 24.04 上是 `libfuse2t64`
 - Linux / macOS（Windows 未测试）
+
+### 使用其他模型服务商
+
+机器人一直由 Claude Code 驱动，但背后的模型可以换成其他服务商的：在「设置 → 模型连接」里选「使用其他模型服务商」，挑一家、填上 Key，点「测试连接」确认能用，再保存。
+
+| 服务商 | 说明 |
+| --- | --- |
+| DeepSeek、Kimi、智谱 GLM、通义千问（阿里云百炼）、MiniMax | 国内直连，按各家的价格计费 |
+| OpenRouter | 一个 Key 用几百种模型（Claude、GPT、Gemini…），需要能访问海外网络 |
+| Ollama | 在自己电脑上跑开源模型，不需要 Key（需要 Ollama 0.14 以上） |
+| 自定义 | 任何兼容 Anthropic Messages API 的地址，比如 LiteLLM、公司内部网关 |
+
+- 地址和推荐的模型来自各家的 Claude Code 接入说明，都可以改；每个机器人也能在自己的设置里单独选模型。
+- Key 只保存在本机的 `~/.vibecrew/settings.json`，只会发给你选的服务商；这时 Claude Code 也不会再向 Anthropic 发送统计数据。
+- Claude Code 是为 Claude 模型优化的，换成其他模型后效果和稳定性取决于那个模型（联网搜索这类功能可能用不了）。
 
 ## 安装与启动
 
@@ -108,6 +124,10 @@ npm run desktop:install
 - **新话题**：切换到不相关的任务时点标题栏的 ↻「开始新话题」，机器人会忘掉旧上下文，更快也更省用量。
 - **权限**：刚开始建议用默认的「自动改文件」；审批卡片上点「总是允许」会把规则加进机器人的白名单。
 - **撤销**：每条机器人消息下面的「改动了 N 个文件」可以查看和撤销；由命令（比如 `npm install`）造成的改动无法自动撤销。
+- **并行做几件事**：新建群聊时打开「在独立分支中工作」，或者点对话右上角的项目按钮开启。每个对话一个 `vc/…` 分支，做完在右侧「改动」里合并回主分支，合并时主目录里未提交的改动不会被覆盖（会提示你先处理）。
+  - 需要：项目是 Git 仓库（新建的项目自动就是）、Git 2.38 或更新、设置过 git 的用户名和邮箱（`git config --global user.name` / `user.email`）。
+  - 工作区放在 `~/.vibecrew/worktrees/`，第一次预览时会自动安装依赖，被 git 忽略的 `.env` 文件会复制过去。
+  - 关闭工作区时，还没合并的改动会留在它的分支里，不会丢；删除对话也一样。
 - **技能**：`/landing 咖啡店`、`/responsive`、`/fix-console`、`/polish`、`/review`、`/commit`……在「技能」页可以修改或新增。
 - **定时任务**：比如「每天 9 点让 Probe 跑一遍 `/fix-console`」，或者「每次 Git 提交后让 Lens `/review`」。
 - **只用浏览器时**：也可以在 Chrome 地址栏右侧点「安装 VibeCrew」，得到一个独立窗口（不过推荐上面的桌面应用，它有托盘和开机自启）。
@@ -147,6 +167,7 @@ server/            Node 服务（Express + WebSocket）
   inject/          注入到预览页面的脚本（圈选、控制台、录制、热刷新）
   devserver.ts     开发服务器托管
   routines.ts      定时任务与事件触发
+  workspaces.ts    独立工作区：git worktree、自动提交、合并、同步
   browser.ts       无头 Chrome（截图、控制台、页面操作）
 web/               React 界面（Vite）
 shared/types.ts    前后端共享的类型

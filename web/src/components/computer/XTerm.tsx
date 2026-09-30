@@ -4,23 +4,30 @@ import { FitAddon } from '@xterm/addon-fit';
 import { onTerminal, send } from '../../socket';
 import { useDarkMode } from './theme';
 
+// Neutral greys, matching the app's black / white / grey palette (styles/base.css).
 const DARK: ITheme = {
-  background: '#141418',
-  foreground: '#e6e6eb',
-  cursor: '#e6e6eb',
-  selectionBackground: 'rgba(10,132,255,0.35)',
-  black: '#1c1c21',
-  brightBlack: '#6b6b76',
+  background: '#0c0c0c',
+  foreground: '#e5e5e5',
+  cursor: '#e5e5e5',
+  selectionBackground: 'rgba(255,255,255,0.2)',
+  black: '#1a1a1a',
+  brightBlack: '#6b6b6b',
+  blue: '#6ea8ff',
+  brightBlue: '#94c0ff',
+  cyan: '#4fd1e8',
+  brightCyan: '#7fe0f0',
 };
 
 const LIGHT: ITheme = {
-  background: '#fbfbfd',
-  foreground: '#1c1c1f',
-  cursor: '#1c1c1f',
-  selectionBackground: 'rgba(10,132,255,0.25)',
-  black: '#1c1c1f',
-  white: '#8b8b94',
-  brightWhite: '#6b6b76',
+  background: '#f6f6f6',
+  foreground: '#111111',
+  cursor: '#111111',
+  selectionBackground: 'rgba(0,0,0,0.15)',
+  black: '#111111',
+  white: '#8c8c8c',
+  brightWhite: '#6b6b6b',
+  blue: '#2f6ff0',
+  brightBlue: '#1f55c9',
   yellow: '#b26b00',
   brightYellow: '#9a5b00',
   green: '#1f8a3a',

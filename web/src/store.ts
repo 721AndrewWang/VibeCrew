@@ -13,6 +13,7 @@ import type {
   PluginDef,
   PreviewInfo,
   Project,
+  ProviderPreset,
   PublicSettings,
   RecordedStep,
   Routine,
@@ -69,6 +70,7 @@ export interface AppState {
   auth: AuthStatus;
   features: { pty: boolean; browser: boolean };
   models: { id: string; label: string }[];
+  providers: ProviderPreset[];
   templates: BotTemplate[];
   plugins: PluginDef[];
   lanUrl?: string;
@@ -116,10 +118,23 @@ export const useStore = create<AppState>(() => ({
   booted: false,
   connected: false,
   version: '',
-  settings: { defaultModel: '', authMode: 'claude-code', hasApiKey: false, baseUrl: '', lanEnabled: false, port: 4321, projectsRoot: '', defaultPermission: 'edits', maxHops: 8 },
+  settings: {
+    defaultModel: '',
+    authMode: 'claude-code',
+    hasApiKey: false,
+    baseUrl: '',
+    provider: { preset: '', baseUrl: '', model: '', fastModel: '' },
+    hasProviderToken: false,
+    lanEnabled: false,
+    port: 4321,
+    projectsRoot: '',
+    defaultPermission: 'edits',
+    maxHops: 8,
+  },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false },
   models: [],
+  providers: [],
   templates: [],
   plugins: [],
   bots: {},
@@ -182,6 +197,7 @@ export async function boot() {
       auth: b.auth,
       features: b.features,
       models: b.models,
+      providers: b.providers || [],
       templates: b.templates,
       plugins: b.plugins,
       lanUrl: b.lanUrl,
@@ -492,11 +508,31 @@ export function closeModal() {
   set({ modal: null });
 }
 
-/** The chat whose project the computer pane shows. */
+/** The project a chat's bots work in: its isolated workspace when it has one, otherwise its project. */
+export function chatProjectId(chat: Chat | null | undefined, projects: Record<string, Project> = get().projects): string | null {
+  if (!chat) return null;
+  if (chat.workspaceId && projects[chat.workspaceId]) return chat.workspaceId;
+  return chat.projectId;
+}
+
+export function useChatProject(chat: Chat | null | undefined): Project | null {
+  return useStore((s) => {
+    const id = chatProjectId(chat, s.projects);
+    return id ? (s.projects[id] ?? null) : null;
+  });
+}
+
+/** The user's projects, without the chats' isolated workspaces. */
+export function listProjects(projects: Record<string, Project>): Project[] {
+  return Object.values(projects)
+    .filter((p) => !p.workspace)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** The project (or workspace) the computer pane of the open chat shows. */
 export function activeProjectId(): string | null {
   const s = get();
-  const c = s.activeChatId ? s.chats[s.activeChatId] : null;
-  return c?.projectId ?? null;
+  return chatProjectId(s.activeChatId ? s.chats[s.activeChatId] : null, s.projects);
 }
 
 export function dmOf(botId: string): Chat | undefined {

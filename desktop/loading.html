@@ -6,23 +6,26 @@
     <title>VibeCrew</title>
     <style>
       :root {
-        --bg: #f4f4f7;
-        --fg: #1c1c1f;
-        --muted: #8b8b94;
+        --bg: #f7f7f7;
+        --fg: #111111;
+        --muted: #8c8c8c;
         --card: #ffffff;
-        --border: #e2e2e8;
-        --accent: #0a84ff;
-        --red: #e5383b;
+        --border: #e6e6e6;
+        --accent: #171717;
+        --on-accent: #ffffff;
+        --red: #c43c3c;
         color-scheme: light dark;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #111114;
-          --fg: #f2f2f6;
-          --muted: #85858f;
-          --card: #1c1c21;
-          --border: #2b2b32;
-          --red: #ff5a52;
+          --bg: #0a0a0a;
+          --fg: #ededed;
+          --muted: #6b6b6b;
+          --card: #151515;
+          --border: #262626;
+          --red: #e06464;
+          --accent: #f2f2f2;
+          --on-accent: #0a0a0a;
         }
       }
       html,
@@ -105,7 +108,7 @@
       button.primary {
         background: var(--accent);
         border-color: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
       }
       .error h1 {
         color: var(--red);

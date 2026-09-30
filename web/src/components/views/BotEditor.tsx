@@ -4,7 +4,7 @@ import type { Bot, BotTemplate, Effort, McpServerEntry, PermissionLevel, PluginD
 import { api } from '../../api';
 import { dmOf, openChat, setView, toast, useStore } from '../../store';
 import { cx, EFFORT_OPTIONS, PERMISSION_INFO } from '../../utils';
-import { Avatar, Modal, Toggle } from '../ui';
+import { Avatar, confirmDialog, Glyph, Modal, Toggle } from '../ui';
 import { deleteBotFlow } from './BotsView';
 import { ProjectSelect } from './ProjectsView';
 
@@ -16,16 +16,32 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- shared inputs
 
-/** Model dropdown with a free-form "custom" option. */
+/** Claude model names, which another provider does not understand. */
+const CLAUDE_MODEL = /^claude-|^(opus|sonnet|haiku|fable)$/i;
+
+/** Model dropdown with a free-form "custom" option; lists the provider's models when one is used. */
 export function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const models = useStore((s) => s.models);
-  const known = models.some((m) => m.id === value);
-  const [custom, setCustom] = useState(!known && value !== '');
+  const claudeModels = useStore((s) => s.models);
+  const settings = useStore((s) => s.settings);
+  const providers = useStore((s) => s.providers);
+  const viaProvider = settings.authMode === 'provider';
+  const models = useMemo(() => {
+    if (!viaProvider) return claudeModels;
+    const p = settings.provider;
+    const preset = providers.find((x) => x.id === p.preset);
+    const ids = [...new Set([p.model, ...(preset?.models || []), p.fastModel].filter(Boolean))];
+    return [{ id: '', label: `跟随连接设置（${p.model || '未设置'}）` }, ...ids.map((id) => ({ id, label: id }))];
+  }, [viaProvider, claudeModels, settings.provider, providers]);
+  // A Claude model chosen earlier is ignored while another provider is used.
+  const ignored = viaProvider && CLAUDE_MODEL.test(value);
+  const shown = ignored ? '' : value;
+  const known = models.some((m) => m.id === shown);
+  const [custom, setCustom] = useState(!known && shown !== '');
   return (
     <div className="stack-sm">
       <select
         className="select"
-        value={custom ? '__custom__' : known ? value : ''}
+        value={custom ? '__custom__' : known ? shown : ''}
         onChange={(e) => {
           if (e.target.value === '__custom__') setCustom(true);
           else {
@@ -42,9 +58,23 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (v: 
         {!models.some((m) => m.id === '') && <option value="">默认模型</option>}
         <option value="__custom__">自定义…</option>
       </select>
-      {custom && <input className="input mono" value={value} placeholder="模型 ID，例如 claude-sonnet-5 或 opus" onChange={(e) => onChange(e.target.value.trim())} />}
+      {custom && (
+        <input
+          className="input mono"
+          value={shown}
+          placeholder={viaProvider ? '服务商的模型 ID' : '模型 ID，例如 claude-sonnet-5 或 opus'}
+          onChange={(e) => onChange(e.target.value.trim())}
+        />
+      )}
+      {ignored && <div className="hint">现在用的是其他模型服务商，之前选的 {value} 不会生效，机器人会用连接设置里的主力模型。</div>}
     </div>
   );
+}
+
+/** In the black / white / grey look avatars show a grey line icon; colour and emoji apply with a colour accent. */
+function MonoAvatarHint() {
+  if (document.documentElement.dataset.accent) return null;
+  return <div className="hint">现在是黑白灰外观，头像统一显示为灰色线条图标；在「设置 → 外观」选彩色主题色后，会显示这里的颜色和表情。</div>;
 }
 
 export function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -169,9 +199,7 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
               return (
                 <button key={t.id} className={cx('tpl-card', busy === t.id && 'busy')} disabled={!!busy} onClick={() => fromTemplate(t)}>
                   <div className="tpl-top">
-                    <span className="tpl-emoji" style={{ background: t.color }}>
-                      {t.emoji}
-                    </span>
+                    <Avatar bot={{ emoji: t.emoji, color: t.color, name: t.name }} size={40} />
                     <div className="tpl-id">
                       <div className="tpl-name">{t.name}</div>
                       <div className="tpl-title">{t.title}</div>
@@ -181,7 +209,7 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
                   <div className="tpl-desc">{firstLine(t.description)}</div>
                   <div className="tpl-foot">
                     <span className="badge" title={perm.desc}>
-                      {perm.icon} {perm.label}
+                      <Glyph emoji={perm.icon} size={11} /> {perm.label}
                     </span>
                     {usage[t.id] ? <span className="badge green">队伍里已有 {usage[t.id]} 位</span> : null}
                   </div>
@@ -219,6 +247,7 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
           <div className="field">
             <label>颜色</label>
             <ColorPicker value={form.color} onChange={(color) => setForm({ ...form, color })} />
+            <MonoAvatarHint />
           </div>
           <div className="field">
             <label>职位</label>
@@ -374,7 +403,9 @@ function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; patch: 
               return (
                 <div key={p.id} className="plugin-row">
                   <div className="plugin-main">
-                    <span className="plugin-icon">{p.icon}</span>
+                    <span className="plugin-icon">
+                      <Glyph emoji={p.icon} size={18} />
+                    </span>
                     <div className="plugin-text">
                       <div className="plugin-name">{p.name}</div>
                       <div className="plugin-desc">{p.description}</div>
@@ -528,6 +559,14 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
         return;
       }
     }
+    if (draft.projectId !== bot.projectId && dmOf(botId)?.workspaceId) {
+      const ok = await confirmDialog({
+        title: '切换项目？',
+        body: `和 ${bot.name} 的单聊正在独立工作区里工作，切换项目会关闭这个工作区。还没合并的改动会保留在它的分支里。`,
+        ok: '切换',
+      });
+      if (!ok) return;
+    }
     setSaving(true);
     try {
       await api.updateBot(botId, {
@@ -600,6 +639,7 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
             <div className="field grow">
               <label>颜色</label>
               <ColorPicker value={draft.color} onChange={(color) => patch({ color })} />
+              <MonoAvatarHint />
             </div>
           </div>
           <div className="form-grid">
@@ -651,7 +691,9 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
                 const on = draft.permission === level;
                 return (
                   <button key={level} className={cx('choice-card row-card', on && 'on')} onClick={() => patch({ permission: level })}>
-                    <span className="cc-icon">{info.icon}</span>
+                    <span className="cc-icon">
+                      <Glyph emoji={info.icon} size={18} />
+                    </span>
                     <div className="cc-text">
                       <div className="cc-title">{info.label}</div>
                       <div className="cc-desc">{info.desc}</div>

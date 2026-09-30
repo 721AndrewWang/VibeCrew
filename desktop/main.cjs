@@ -505,7 +505,7 @@ function createWindow() {
     icon: ICON,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111114' : '#f4f4f7',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#f7f7f7',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

@@ -6,9 +6,10 @@ import QRCode from 'qrcode';
 import type { Attachment, Bootstrap, RecordedStep } from '../shared/types';
 import { APP_VERSION, lanAddress } from './config';
 import { bus } from './bus';
-import { bots, chats, messages, projects, routines, settings } from './store';
+import { bots, chats, messages, projects, routines, settings, type Settings } from './store';
 import { MODEL_OPTIONS, PLUGINS, BOT_TEMPLATES } from './data/catalog';
 import {
+  allProjects,
   createProject,
   decorate,
   getProject,
@@ -16,7 +17,6 @@ import {
   gitStatus,
   HttpError,
   listDir,
-  listProjects,
   openExistingProject,
   projectTemplates,
   readProjectFile,
@@ -24,7 +24,7 @@ import {
   updateProject,
   writeProjectFile,
 } from './projects';
-import { createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
+import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { botStatuses, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
 import { skills, recordingToSkillBody } from './skills';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
@@ -33,9 +33,11 @@ import { ensurePreview, previewInfos, restartPreviews } from './preview';
 import { hasPty, listTerminals } from './terminal';
 import { hasBrowser, screenshot } from './browser';
 import { saveUpload, uploadFile, IMAGE_MIMES } from './uploads';
-import { authStatus, checkAuth } from './claudeAuth';
-import { listTurns, revertTurn, turnFileDiff } from './agents/recorder';
+import { authStatus, checkAuth, testConnection } from './claudeAuth';
+import { PROVIDER_PRESETS } from './data/providers';
+import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
 import { readMemory, memoryFile } from './agents/prompts';
+import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
 
 export function lanUrl(): string | undefined {
   const s = settings.get();
@@ -50,7 +52,7 @@ function bootstrap(): Bootstrap {
     settings: settings.public(),
     bots: bots.all().sort((a, b) => a.createdAt - b.createdAt),
     chats: chats.all(),
-    projects: listProjects().map(decorate),
+    projects: allProjects().map(decorate),
     skills: skills.list(),
     routines: routines.all(),
     templates: BOT_TEMPLATES,
@@ -59,6 +61,7 @@ function bootstrap(): Bootstrap {
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
+    providers: PROVIDER_PRESETS,
     features: { pty: hasPty, browser: hasBrowser() },
     auth: authStatus(),
     lanUrl: lanUrl(),
@@ -66,6 +69,33 @@ function bootstrap(): Bootstrap {
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+/** Connection fields from a request body (Settings page), applied over the saved settings. */
+function connectionPatch(b: Record<string, unknown>, cur: Settings): Partial<Settings> {
+  const patch: Partial<Settings> = {};
+  if (b.authMode === 'claude-code' || b.authMode === 'api-key' || b.authMode === 'provider') patch.authMode = b.authMode;
+  if (typeof b.apiKey === 'string') patch.apiKey = b.apiKey.trim();
+  if (typeof b.baseUrl === 'string') patch.baseUrl = b.baseUrl.trim();
+  if (b.provider && typeof b.provider === 'object') {
+    const p = b.provider as Record<string, unknown>;
+    patch.provider = {
+      preset: str(p.preset) || cur.provider.preset,
+      baseUrl: str(p.baseUrl).trim().replace(/\/+$/, ''),
+      model: str(p.model).trim(),
+      fastModel: str(p.fastModel).trim(),
+    };
+  }
+  if (typeof b.providerToken === 'string' && b.providerToken.trim()) patch.providerToken = b.providerToken.trim();
+  return patch;
+}
+
+/**
+ * Where a recorded turn happened: the chat's workspace at the time, or its project folder. Never
+ * another folder: restoring a workspace's snapshots over the project folder would clobber it.
+ */
+function turnProject(chatId: string, turnId: string) {
+  return projects.get(loadTurn(chatId, turnId)?.projectId);
+}
 
 export function apiRouter() {
   const r = express.Router();
@@ -81,11 +111,8 @@ export function apiRouter() {
   r.patch('/settings', async (req, res) => {
     const b = req.body || {};
     const cur = settings.get();
-    const patch: Partial<typeof cur> = {};
+    const patch: Partial<typeof cur> = connectionPatch(b, cur);
     if (typeof b.defaultModel === 'string') patch.defaultModel = b.defaultModel.trim();
-    if (b.authMode === 'claude-code' || b.authMode === 'api-key') patch.authMode = b.authMode;
-    if (typeof b.apiKey === 'string') patch.apiKey = b.apiKey.trim();
-    if (typeof b.baseUrl === 'string') patch.baseUrl = b.baseUrl.trim();
     if (typeof b.lanEnabled === 'boolean') patch.lanEnabled = b.lanEnabled;
     if (typeof b.projectsRoot === 'string' && b.projectsRoot.trim()) patch.projectsRoot = path.resolve(b.projectsRoot.trim().replace(/^~(?=$|\/)/, os.homedir()));
     if (['auto', 'edits', 'ask', 'review', 'plan'].includes(b.defaultPermission)) patch.defaultPermission = b.defaultPermission;
@@ -101,12 +128,18 @@ export function apiRouter() {
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
     settings.update(patch);
     bus.emit({ t: 'settings', settings: settings.public() });
-    if (patch.authMode || patch.apiKey !== undefined) void checkAuth(true);
+    if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
       bus.emit({ t: 'notify', title: '手机访问', body: patch.lanEnabled ? '已开启，重启 VibeCrew 后生效（主服务需要重新监听局域网地址）' : '已关闭，重启后生效', level: 'info' });
     }
     res.json({ settings: settings.public(), lanUrl: lanUrl() });
+  });
+
+  // Tries the connection as entered on the Settings page (not saved yet): one tiny prompt.
+  r.post('/settings/test-connection', async (req, res) => {
+    const cur = settings.get();
+    res.json(await testConnection({ ...cur, ...connectionPatch(req.body || {}, cur) }));
   });
 
   r.get('/lan', async (_req, res) => {
@@ -168,8 +201,7 @@ export function apiRouter() {
     const d = turnFileDiff(req.params.id, req.params.turnId, str(req.query.path));
     if (!d) throw new HttpError(404, '没有这个文件的记录');
     let current: string | null | undefined;
-    const chat = chats.get(req.params.id);
-    const project = projects.get(chat?.projectId);
+    const project = turnProject(req.params.id, req.params.turnId);
     if (project) {
       try {
         current = fs.readFileSync(resolveInProject(project, d.path), 'utf8');
@@ -181,8 +213,8 @@ export function apiRouter() {
   });
   r.post('/chats/:id/turns/:turnId/revert', (req, res) => {
     const chat = chats.get(req.params.id);
-    const project = projects.get(chat?.projectId);
-    if (!chat || !project) throw new HttpError(400, '对话没有绑定项目');
+    const project = turnProject(req.params.id, req.params.turnId);
+    if (!chat || !project) throw new HttpError(400, '这一轮改动所在的项目或工作区已经不在了');
     const result = revertTurn(chat.id, req.params.turnId, project.path, !!req.body?.force);
     if (!result.conflicts.length) {
       const msg = messages.get(chat.id, result.turn.messageId);
@@ -193,6 +225,22 @@ export function apiRouter() {
       }
     }
     res.json({ reverted: result.reverted, conflicts: result.conflicts, skipped: result.skipped });
+  });
+
+  // ------------------------------------------------------------ isolated workspaces
+  r.get('/chats/:id/workspace', async (req, res) => res.json(await workspaceStatus(req.params.id)));
+  r.post('/chats/:id/workspace', async (req, res) => res.json(decorate(await createWorkspace(req.params.id))));
+  r.delete('/chats/:id/workspace', async (req, res) => {
+    await removeWorkspace(req.params.id, req.query.deleteBranch === '1');
+    res.json({ ok: true });
+  });
+  r.get('/chats/:id/workspace/diff', async (req, res) => res.json({ diff: await workspaceDiff(req.params.id, str(req.query.path)) }));
+  r.post('/chats/:id/workspace/merge', async (req, res) => res.json(await mergeWorkspace(req.params.id, str(req.body?.message) || undefined)));
+  r.post('/chats/:id/workspace/sync', async (req, res) => res.json(await syncWorkspace(req.params.id)));
+  r.post('/chats/:id/workspace/resolve', async (req, res) => res.json(await resolveConflicts(req.params.id)));
+  r.post('/chats/:id/workspace/abort', async (req, res) => {
+    await abortSync(req.params.id);
+    res.json({ ok: true });
   });
 
   r.post('/approvals/:id', (req, res) => {
@@ -211,7 +259,9 @@ export function apiRouter() {
   });
   r.patch('/projects/:id', (req, res) => res.json(decorate(updateProject(req.params.id, req.body || {}))));
   r.delete('/projects/:id', async (req, res) => {
-    getProject(req.params.id);
+    if (getProject(req.params.id).workspace) throw new HttpError(400, '这是某个对话的独立工作区，请在那个对话里关闭它');
+    // Unbinding closes the chats' workspaces: not while a bot works in one.
+    for (const c of chats.all()) if (c.projectId === req.params.id) assertWorkspaceIdle(c);
     await devServer(req.params.id).stop();
     for (const c of chats.all()) if (c.projectId === req.params.id) updateChat(c.id, { projectId: null });
     projects.delete(req.params.id);
@@ -264,6 +314,11 @@ export function apiRouter() {
     const p = getProject(req.params.id);
     const message = str(req.body?.message).trim();
     if (!message) throw new HttpError(400, '请填写提交说明');
+    // In a workspace: under the chat's lock, and never with unresolved conflicts.
+    if (p.workspace) {
+      await commitWorkspace(p.workspace.chatId, message);
+      return res.json(await gitStatus(p));
+    }
     const st = await gitStatus(p);
     if (!st.repo) await git(p, ['init', '-q']);
     await git(p, ['add', '-A']);

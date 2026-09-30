@@ -75,6 +75,8 @@ export interface Chat {
   seq: number;
   /** Max automatic bot-to-bot handoffs after one user message. */
   maxHops: number;
+  /** The chat's isolated workspace (a Project with `workspace` set); its bots work there instead. */
+  workspaceId?: ID | null;
 }
 
 export interface ConsoleEntry {
@@ -198,7 +200,51 @@ export interface Project {
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
+  /** Set when this is a chat's isolated workspace: a git worktree of another project. */
+  workspace?: WorkspaceInfo;
 }
+
+/**
+ * A chat's own copy of a project: a git worktree on its own branch, so several chats can work on
+ * one project at the same time without touching each other's files. Merged back on request.
+ */
+export interface WorkspaceInfo {
+  /** The project it was branched from. */
+  parentId: ID;
+  chatId: ID;
+  /** e.g. vc/landing-k3x9 */
+  branch: string;
+  /** Branch the work is merged back into, e.g. main. */
+  baseBranch: string;
+  /** Top level of the main repository (the parent may be a subfolder of it). */
+  repo: string;
+  /** Top level of the worktree; the workspace's `path` is the same subfolder inside it. */
+  worktree: string;
+  createdAt: number;
+  mergedAt?: number;
+}
+
+export interface WorkspaceStatus {
+  branch: string;
+  baseBranch: string;
+  path: string;
+  /** The project's folder inside the repository ('' when it is the top); file paths below are from the top. */
+  prefix: string;
+  /** Commits on the workspace branch that the base branch does not have. */
+  ahead: number;
+  /** Commits on the base branch since the workspace branched off (or last synced). */
+  behind: number;
+  /** Uncommitted changes in the worktree. */
+  dirty: boolean;
+  /** Files that differ from the base branch, including uncommitted changes. */
+  files: { path: string; status: 'added' | 'modified' | 'deleted' | 'renamed' }[];
+  /** An unfinished `git merge` inside the workspace (conflicts being resolved). */
+  merging: boolean;
+  mergedAt?: number;
+}
+
+/** Merging into the base branch (or syncing from it) either succeeds or stops at conflicts; other failures are errors. */
+export type WorkspaceMergeResult = { ok: true; commit: string; files: number } | { ok: false; conflicts: string[] };
 
 export type DevServerStatus = 'stopped' | 'installing' | 'starting' | 'running' | 'error';
 
@@ -279,11 +325,50 @@ export type TurnSummary = Omit<TurnRecord, 'files'> & {
   files: { path: string; status: 'added' | 'modified' | 'deleted' | 'unknown'; source: 'tool' | 'watch' }[];
 };
 
+/**
+ * How the bots' Claude Code reaches a model: its own login, an Anthropic API key, or another
+ * provider's Anthropic-compatible endpoint (DeepSeek, Kimi, GLM, Qwen, OpenRouter, Ollama…).
+ */
+export type AuthMode = 'claude-code' | 'api-key' | 'provider';
+
+export interface ProviderSettings {
+  /** ProviderPreset id, or 'custom'. */
+  preset: string;
+  baseUrl: string;
+  /** Main model: Claude Code's opus / sonnet tiers and the bots' default. */
+  model: string;
+  /** Cheap model for background work (the haiku tier). */
+  fastModel: string;
+}
+
+/** A provider whose Anthropic-compatible endpoint Claude Code can use, with its recommended setup. */
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  description: string;
+  baseUrl: string;
+  model: string;
+  fastModel: string;
+  /** Sub-agents run on the main model rather than the fast one. */
+  subagentsUseMain?: boolean;
+  /** Further models to offer in the model pickers. */
+  models?: string[];
+  /** Where to get a key and read the provider's own instructions. */
+  docsUrl?: string;
+  /** Local servers that need some token but ignore its value. */
+  defaultToken?: string;
+  /** Variables the provider recommends (timeouts, compaction window). */
+  env?: Record<string, string>;
+  hint?: string;
+}
+
 export interface PublicSettings {
   defaultModel: string;
-  authMode: 'claude-code' | 'api-key';
+  authMode: AuthMode;
   hasApiKey: boolean;
   baseUrl: string;
+  provider: ProviderSettings;
+  hasProviderToken: boolean;
   lanEnabled: boolean;
   port: number;
   projectsRoot: string;
@@ -334,6 +419,7 @@ export interface Bootstrap {
   devServers: DevServerState[];
   previews: PreviewInfo[];
   models: { id: string; label: string }[];
+  providers: ProviderPreset[];
   features: { pty: boolean; browser: boolean };
   auth: AuthStatus;
   lanUrl?: string;

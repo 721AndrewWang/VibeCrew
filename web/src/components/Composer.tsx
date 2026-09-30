@@ -3,10 +3,10 @@ import { ArrowUp, Camera, ImagePlus, Mic, MicOff, MousePointerClick, Slash, Squa
 import type { Bot, Chat, Skill } from '../../../shared/types';
 import { api, fileToBase64 } from '../api';
 import { desktop } from '../desktop';
-import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useStore } from '../store';
+import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useChatProject, useStore } from '../store';
 import { cx } from '../utils';
 import { AttachmentChips } from './Message';
-import { Avatar } from './ui';
+import { Avatar, Glyph } from './ui';
 
 type Popup =
   | { type: 'mention'; query: string; start: number; index: number }
@@ -70,7 +70,8 @@ export function Composer({ chat }: { chat: Chat }) {
   const bots = useStore((s) => s.bots);
   const skills = useStore((s) => s.skills);
   const statuses = useStore((s) => s.statuses);
-  const project = useStore((s) => (chat.projectId ? s.projects[chat.projectId] : null));
+  // Element picking and screenshots use the preview the chat works in (its workspace, if any).
+  const project = useChatProject(chat);
   const auth = useStore((s) => s.auth);
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -239,8 +240,8 @@ export function Composer({ chat }: { chat: Chat }) {
   const placeholder = narrow
     ? `发消息${chat.kind === 'group' ? '，@ 队友' : ''}，/ 技能`
     : chat.kind === 'group'
-      ? `发消息给群聊，@ 指定队友，/ 使用技能${auth.ready ? '' : '（Claude 未连接）'}`
-      : `发消息给 ${members[0]?.name || ''}，/ 使用技能${auth.ready ? '' : '（Claude 未连接）'}`;
+      ? `发消息给群聊，@ 指定队友，/ 使用技能${auth.ready ? '' : '（模型未连接）'}`
+      : `发消息给 ${members[0]?.name || ''}，/ 使用技能${auth.ready ? '' : '（模型未连接）'}`;
 
   return (
     <div className={cx('composer', dragging && 'dragging')} onDragOver={(e) => (e.preventDefault(), setDragging(true))} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
@@ -249,7 +250,9 @@ export function Composer({ chat }: { chat: Chat }) {
           {popup.type === 'skill'
             ? skillItems.map((s, i) => (
                 <button key={s.name} className={cx('popup-item', i === popup.index && 'active')} onMouseDown={(e) => (e.preventDefault(), choose(i))} onMouseEnter={() => setPopup({ ...popup, index: i })}>
-                  <span className="pi-icon">{s.icon}</span>
+                  <span className="pi-icon">
+                    <Glyph emoji={s.icon} />
+                  </span>
                   <span className="pi-main">
                     <b>/{s.name}</b> {s.title}
                     {s.argsHint && <span className="pi-hint"> · {s.argsHint}</span>}
@@ -258,7 +261,11 @@ export function Composer({ chat }: { chat: Chat }) {
               ))
             : mentionItems.map((it, i) => (
                 <button key={it.bot?.id || 'all'} className={cx('popup-item', i === popup.index && 'active')} onMouseDown={(e) => (e.preventDefault(), choose(i))} onMouseEnter={() => setPopup({ ...popup, index: i })}>
-                  {it.all ? <span className="pi-icon">👥</span> : <Avatar bot={it.bot} size={22} />}
+                  {it.all ? (
+                    <span className="pi-icon">
+                      <Glyph emoji="👥" />
+                    </span>
+                  ) : <Avatar bot={it.bot} size={22} />}
                   <span className="pi-main">
                     <b>{it.all ? '所有人' : it.bot!.name}</b> <span className="pi-hint">{it.all ? '群里每个机器人都会回复' : it.bot!.title}</span>
                   </span>
@@ -267,7 +274,7 @@ export function Composer({ chat }: { chat: Chat }) {
               ))}
         </div>
       )}
-      <AttachmentChips items={draft.attachments} onRemove={(id) => removeAttachment(chat.id, id)} projectId={chat.projectId} />
+      <AttachmentChips items={draft.attachments} onRemove={(id) => removeAttachment(chat.id, id)} projectId={project?.id ?? null} />
       <div className="composer-box">
         <textarea
           ref={ta}

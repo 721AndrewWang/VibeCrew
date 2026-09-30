@@ -4,6 +4,7 @@ import type { Chat, Project } from '../../../../shared/types';
 import { api, type FileContent, type TreeEntry } from '../../api';
 import { addAttachment, attachmentId, setComputer, toast, updatePreview, useStore } from '../../store';
 import { cx, fmtBytes } from '../../utils';
+import { Glyph } from '../ui';
 import { CodeEditor } from './CodeEditor';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|ico|bmp)$/i;
@@ -204,7 +205,9 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
         <div className="editor-body">
           {!openPath && (
             <div className="empty">
-              <div className="big">📄</div>
+              <div className="big">
+                <Glyph emoji="📄" size={26} />
+              </div>
               <p>从左侧选择文件查看或编辑。机器人修改文件后，这里会自动刷新。</p>
             </div>
           )}

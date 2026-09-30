@@ -4,6 +4,7 @@ import type { Chat, ConsoleEntry, PreviewToHost, Project } from '../../../../sha
 import { api } from '../../api';
 import { addAttachment, attachmentId, openModal, previewOf, setComputer, toast, updatePreview, useStore, type Device } from '../../store';
 import { cx, fmtClock } from '../../utils';
+import { Glyph } from '../ui';
 
 const DEVICES: { id: Device; label: string; icon: typeof Laptop; w?: number; h?: number }[] = [
   { id: 'fill', label: '自适应', icon: Maximize },
@@ -54,7 +55,7 @@ function ConsoleDrawer({ projectId, chatId, entries, onClose }: { projectId: str
         </button>
       </div>
       <div className="console-list" ref={list}>
-        {!shown.length && <div className="muted" style={{ padding: 10 }}>{filter === 'problems' ? '没有错误或警告 🎉' : '还没有日志'}</div>}
+        {!shown.length && <div className="muted" style={{ padding: 10 }}>{filter === 'problems' ? '没有错误或警告' : '还没有日志'}</div>}
         {shown.map((e, i) => (
           <div key={i} className={cx('console-row', e.level)}>
             <span className="c-time">{fmtClock(e.ts)}</span>
@@ -320,7 +321,9 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
               </>
             ) : (
               <>
-                <div className="big">🚀</div>
+                <div className="big">
+                  <Glyph emoji="🚀" size={26} />
+                </div>
                 <h3>{ds?.status === 'error' ? '开发服务器出错了' : '开发服务器还没启动'}</h3>
                 <p className="muted">{ds?.error || `这个项目需要运行 ${project.devDetected} 才能预览`}</p>
                 <div className="row">

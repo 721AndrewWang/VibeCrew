@@ -12,6 +12,7 @@ import { apiRouter, lanUrl } from './api';
 import { guard, wsAllowed } from './security';
 import { initIfNeeded } from './entities';
 import { startRoutines } from './routines';
+import { reconcileWorkspaces } from './workspaces';
 import { checkAuth } from './claudeAuth';
 import { closeAllSessions } from './orchestrator';
 import { closeAllTerminals, closeTerminal, detachTerminals, openTerminal, terminalInput, terminalResize } from './terminal';
@@ -103,10 +104,12 @@ wss.on('connection', (ws: WebSocket) => {
 
 async function main() {
   await initIfNeeded();
+  await reconcileWorkspaces().catch((e) => console.warn('[workspace] reconcile:', e));
   startRoutines();
   void checkAuth(true).then((a) => {
     if (!a.cliFound) console.warn('⚠️  没有找到 Claude Code 命令行（claude）。请先安装：npm i -g @anthropic-ai/claude-code');
-    else if (!a.ready) console.warn('⚠️  Claude Code 还没有登录。请在终端运行 `claude auth login`，或在 VibeCrew 设置中填写 API Key。');
+    else if (!a.ready && a.method === 'provider') console.warn('⚠️  模型服务商还没配置好：请在 VibeCrew「设置 → 模型连接」里填写地址、Key 和模型。');
+    else if (!a.ready) console.warn('⚠️  Claude Code 还没有登录。请在终端运行 `claude auth login`，或在 VibeCrew「设置 → 模型连接」里填写 API Key、选择其他模型服务商。');
   });
 
   const s = settings.get();

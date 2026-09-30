@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg);
+  background: transparent;
 }
 
 .chat-layout.with-computer.computer-max .chat-col,
@@ -68,8 +68,8 @@ body.resizing iframe {
   height: 58px;
   padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
-  backdrop-filter: blur(12px);
+  background: color-mix(in oklab, var(--bg-elev) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
   flex: none;
 }
 
@@ -161,15 +161,44 @@ body.resizing iframe {
   color: var(--orange);
 }
 
+/* A notice card in the cool palette; the amber bar and label carry the warning. */
 .auth-banner {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 9px 14px;
-  background: var(--orange-soft);
-  border-bottom: 1px solid color-mix(in srgb, var(--orange) 30%, transparent);
+  margin: 10px 14px 2px;
+  padding: 9px 12px 9px 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 16%, var(--border));
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg-elev));
+  box-shadow: var(--shadow-1);
   font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+}
+
+.auth-banner::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--orange), color-mix(in oklab, var(--orange) 60%, var(--red)));
+}
+
+.auth-banner b {
+  color: var(--orange);
+}
+
+/* Black / white / grey: the bar and label turn neutral too. */
+:root:not([data-accent]) .auth-banner::before {
+  background: var(--text);
+}
+
+:root:not([data-accent]) .auth-banner b {
   color: var(--text);
 }
 
@@ -254,6 +283,12 @@ body.resizing iframe {
 
 .msg-name {
   font-weight: 650;
+  color: var(--bot-color, var(--text));
+}
+
+/* Black / white / grey: bot names in the text colour rather than each bot's own colour. */
+:root:not([data-accent]) .msg-name {
+  color: var(--text);
 }
 
 .msg-meta {
@@ -294,12 +329,13 @@ body.resizing iframe {
   color: var(--bubble-me-text);
   border-bottom-right-radius: 6px;
   white-space: pre-wrap;
+  box-shadow: 0 4px 14px var(--glow);
 }
 
 .bubble.me-bubble .mention {
-  color: #fff;
+  color: var(--bubble-me-text);
   font-weight: 650;
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in oklab, var(--bubble-me-text) 18%, transparent);
   padding: 0 3px;
   border-radius: 4px;
 }
@@ -376,9 +412,10 @@ body.resizing iframe {
   max-width: 80%;
   text-align: center;
   font-size: 12px;
-  color: var(--text-3);
-  background: var(--bg-sunken);
-  padding: 4px 12px;
+  color: var(--text-2);
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg-elev));
+  border: 1px solid color-mix(in oklab, var(--accent) 12%, var(--border));
+  padding: 5px 14px;
   border-radius: 12px;
   line-height: 1.6;
 }
@@ -743,10 +780,12 @@ body.resizing iframe {
 }
 
 .tool-icon {
+  display: grid;
+  place-items: center;
   width: 18px;
-  text-align: center;
   flex: none;
   font-size: 12px;
+  color: var(--text-3);
 }
 
 .tool-verb {
@@ -910,6 +949,10 @@ body.resizing iframe {
   cursor: pointer;
 }
 
+.thinking summary svg {
+  vertical-align: -2px;
+}
+
 .thinking-text {
   white-space: pre-wrap;
   padding: 6px 10px;
@@ -920,11 +963,11 @@ body.resizing iframe {
 /* ---------------------------------------------------------------- approvals */
 .approval {
   width: min(560px, 100%);
-  border: 1.5px solid var(--orange);
+  border: 1.5px solid color-mix(in oklab, var(--accent) 70%, var(--accent-2));
   border-radius: 14px;
-  background: var(--bg-elev);
+  background: color-mix(in oklab, var(--accent) 4%, var(--bg-elev));
   padding: 10px 12px;
-  box-shadow: 0 0 0 4px var(--orange-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 8px 24px var(--glow);
 }
 
 .approval:not(.pending) {
@@ -1001,6 +1044,7 @@ body.resizing iframe {
   padding: 4px 6px 4px 10px;
   border-radius: 10px;
   background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 16%, transparent);
   font-size: 12.5px;
   color: var(--accent-text);
 }
@@ -1202,8 +1246,9 @@ body.resizing iframe {
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px var(--glow);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1214,6 +1259,7 @@ body.resizing iframe {
 .send-btn:disabled {
   opacity: 0.35;
   cursor: default;
+  box-shadow: none;
 }
 
 .send-btn:not(:disabled):active {
@@ -1223,6 +1269,7 @@ body.resizing iframe {
 .send-btn.stop {
   background: var(--text);
   color: var(--bg);
+  box-shadow: none;
 }
 
 .popup {
@@ -1259,10 +1306,12 @@ body.resizing iframe {
 }
 
 .pi-icon {
+  display: grid;
+  place-items: center;
   width: 22px;
-  text-align: center;
   font-size: 15px;
   flex: none;
+  color: var(--text-2);
 }
 
 .pi-main {
@@ -1342,4 +1391,38 @@ body.resizing iframe {
   .ch-sub {
     max-width: 38vw;
   }
+}
+
+/* A chat working in its own git branch (isolated workspace). */
+.project-pill.isolated {
+  max-width: 320px;
+  border-color: color-mix(in srgb, var(--purple) 40%, var(--border));
+  color: var(--text);
+}
+
+.project-pill.isolated svg {
+  color: var(--purple);
+  flex: none;
+}
+
+.project-pill .pill-branch {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--purple);
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .project-pill .pill-branch {
+    display: none;
+  }
+}
+
+/* Links in messages are underlined: with a black / white accent, colour alone does not mark them. */
+.md a {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+  text-underline-offset: 2px;
 }

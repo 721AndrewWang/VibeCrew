@@ -1,38 +1,66 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ChevronLeft, FolderGit2, FolderPlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, RotateCcw, Settings2, Unlink, Users } from 'lucide-react';
+import { ArrowDown, ChevronLeft, FolderGit2, FolderPlus, GitBranch, GitMerge, LogOut, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, RotateCcw, Settings2, Unlink, Users } from 'lucide-react';
 import type { Chat } from '../../../shared/types';
 import { api } from '../api';
-import { loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore } from '../store';
+import { chatProjectId, listProjects, loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore } from '../store';
+import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { cx, fmtDay, isSameDay, statusLabel } from '../utils';
-import { Avatar, confirmDialog, GroupAvatar, MenuButton, type MenuItem } from './ui';
+import { Avatar, confirmDialog, GroupAvatar, Glyph, MenuButton, type MenuItem } from './ui';
 import { BotMessage, SystemMessage, UserMessage } from './Message';
 import { Composer } from './Composer';
 import { chatMenuItems } from './Sidebar';
 import { ComputerPane } from './computer/ComputerPane';
 
+/** Switching the project closes the chat's workspace (a branch with unmerged work is kept). */
+async function switchProject(chat: Chat, projectId: string | null) {
+  if (chat.workspaceId) {
+    const ok = await confirmDialog({
+      title: '切换项目？',
+      body: '这个对话的独立工作区属于当前项目，切换后会关闭它。还没合并的改动会保留在它的分支里。',
+      ok: '切换',
+    });
+    if (!ok) return;
+  }
+  await api.updateChat(chat.id, { projectId }).catch((e) => toast('切换失败', e.message, 'error'));
+}
+
 function ProjectPicker({ chat }: { chat: Chat }) {
   const projects = useStore((s) => s.projects);
   const project = chat.projectId ? projects[chat.projectId] : null;
+  const ws = chat.workspaceId ? projects[chat.workspaceId]?.workspace : undefined;
   const items = (): MenuItem[] => [
     { heading: '切换项目' },
-    ...Object.values(projects)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((p) => ({
-        label: p.name,
-        hint: p.id === chat.projectId ? '当前' : p.framework,
-        icon: <FolderGit2 size={15} />,
-        onClick: () => {
-          if (p.id !== chat.projectId) void api.updateChat(chat.id, { projectId: p.id }).catch((e) => toast('切换失败', e.message, 'error'));
-        },
-      })),
+    ...listProjects(projects).map((p) => ({
+      label: p.name,
+      hint: p.id === chat.projectId ? '当前' : p.framework,
+      icon: <FolderGit2 size={15} />,
+      onClick: () => {
+        if (p.id !== chat.projectId) void switchProject(chat, p.id);
+      },
+    })),
+    ...(project
+      ? ws
+        ? [
+            { separator: true },
+            { heading: `独立工作区 · ${ws.branch}` },
+            { label: '查看改动 / 合并', icon: <GitMerge size={15} />, onClick: showWorkspaceChanges },
+            { label: '关闭独立工作区…', icon: <LogOut size={15} />, onClick: () => void closeWorkspace(chat) },
+          ]
+        : [
+            { separator: true },
+            { label: '在独立分支中工作…', hint: '新建 Git 分支', icon: <GitBranch size={15} />, onClick: () => void enableWorkspace(chat) },
+          ]
+      : []),
     { separator: true },
     { label: '新建 / 打开项目…', icon: <FolderPlus size={15} />, onClick: () => openModal({ kind: 'newProject' }) },
-    ...(project ? [{ label: '解除绑定', icon: <Unlink size={15} />, onClick: () => void api.updateChat(chat.id, { projectId: null }) }] : []),
+    ...(project ? [{ label: '解除绑定', icon: <Unlink size={15} />, onClick: () => void switchProject(chat, null) }] : []),
   ];
+  const title = !project ? '绑定一个项目' : ws ? `${project.path}\n独立工作区：分支 ${ws.branch}（从 ${ws.baseBranch} 分出）` : project.path;
   return (
-    <MenuButton className={cx('project-pill', !project && 'none')} items={items} align="right" title={project ? project.path : '绑定一个项目'}>
-      <FolderGit2 size={14} />
+    <MenuButton className={cx('project-pill', !project && 'none', ws && 'isolated')} items={items} align="right" title={title}>
+      {ws ? <GitBranch size={14} /> : <FolderGit2 size={14} />}
       <span>{project ? project.name : '未绑定项目'}</span>
+      {ws && <span className="pill-branch">{ws.branch}</span>}
     </MenuButton>
   );
 }
@@ -117,11 +145,13 @@ function AuthBanner() {
         </>
       ) : settings.authMode === 'api-key' ? (
         <>API Key 未设置。</>
+      ) : settings.authMode === 'provider' ? (
+        <>模型服务商还没配置好（缺少地址、Key 或模型名）。</>
       ) : (
-        <>本机的 Claude Code 还没有登录。</>
+        <>本机的 Claude Code 还没有登录。也可以在设置里改用 API Key 或其他模型服务商（DeepSeek、Kimi、智谱 GLM…）。</>
       )}
       <span className="spacer" />
-      {auth.cliFound && settings.authMode !== 'api-key' && (
+      {auth.cliFound && settings.authMode === 'claude-code' && (
         <button className="btn sm" onClick={() => requestTerminal('claude auth login')}>
           在终端登录
         </button>
@@ -134,7 +164,7 @@ function AuthBanner() {
         onClick={async () => {
           const a = await api.auth(true);
           useStore.setState({ auth: a });
-          toast(a.ready ? '已连接 Claude' : '仍未登录', a.ready ? '机器人可以开始工作了' : '登录完成后再点一次「重新检测」', a.ready ? 'success' : 'warn');
+          toast(a.ready ? '模型已连接' : '还没有连接好', a.ready ? '机器人可以开始工作了' : '完成登录或设置后再点一次「重新检测」', a.ready ? 'success' : 'warn');
         }}
       >
         重新检测
@@ -180,7 +210,10 @@ function MessageList({ chat }: { chat: Chat }) {
   const st = useStore((s) => s.msgs[chat.id]);
   const bots = useStore((s) => s.bots);
   const statuses = useStore((s) => s.statuses);
-  const root = useStore((s) => (chat.projectId ? s.projects[chat.projectId]?.path : undefined));
+  const root = useStore((s) => {
+    const id = chatProjectId(chat, s.projects);
+    return id ? s.projects[id]?.path : undefined;
+  });
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const prevHeight = useRef<number | null>(null);
@@ -308,7 +341,9 @@ export function ChatView() {
   if (!chat) {
     return (
       <div className="empty" style={{ flex: 1 }}>
-        <div className="big">💬</div>
+        <div className="big">
+          <Glyph emoji="💬" size={26} />
+        </div>
         <h3>选择一个对话</h3>
         <p>从左侧选择机器人或群聊开始工作。</p>
         <button className="btn primary" onClick={() => openModal({ kind: 'newGroup' })}>

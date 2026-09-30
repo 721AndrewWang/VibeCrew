@@ -146,6 +146,10 @@ export function listTerminals(projectId: string) {
   return [...terms.values()].filter((t) => t.projectId === projectId).map((t) => ({ id: t.id, title: t.title, exited: t.exited }));
 }
 
+export function closeProjectTerminals(projectId: string) {
+  for (const t of [...terms.values()]) if (t.projectId === projectId) closeTerminal(t.id);
+}
+
 export function closeAllTerminals() {
   for (const id of [...terms.keys()]) closeTerminal(id);
 }

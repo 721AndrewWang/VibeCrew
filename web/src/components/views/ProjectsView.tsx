@@ -9,6 +9,7 @@ import {
   FolderGit2,
   FolderOpen,
   FolderPlus,
+  GitBranch,
   House,
   MoreHorizontal,
   Play,
@@ -18,9 +19,10 @@ import {
 } from 'lucide-react';
 import type { DevServerState, Project } from '../../../../shared/types';
 import { api } from '../../api';
-import { toast, useStore } from '../../store';
+import { listProjects, openChat, toast, useStore } from '../../store';
+import { showWorkspaceChanges } from '../../workspace';
 import { copyText, cx, shortPath } from '../../utils';
-import { confirmDialog, MenuButton, Modal } from '../ui';
+import { confirmDialog, Glyph, MenuButton, Modal } from '../ui';
 import { PageHead } from './BotsView';
 
 // ---------------------------------------------------------------- shared bits
@@ -28,7 +30,7 @@ import { PageHead } from './BotsView';
 /** Project picker used by the bot editor and the chat dialogs. */
 export function ProjectSelect({ value, onChange, noneLabel = '不绑定项目' }: { value: string | null; onChange: (v: string | null) => void; noneLabel?: string }) {
   const projects = useStore((s) => s.projects);
-  const list = useMemo(() => Object.values(projects).sort((a, b) => b.updatedAt - a.updatedAt), [projects]);
+  const list = useMemo(() => listProjects(projects), [projects]);
   return (
     <select className="select" value={value || ''} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{noneLabel}</option>
@@ -108,7 +110,37 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   );
 }
 
-function ProjectCard({ project, chatCount }: { project: Project; chatCount: number }) {
+/** The chats working on this project in their own branch. */
+function WorkspaceList({ workspaces }: { workspaces: Project[] }) {
+  const chats = useStore((s) => s.chats);
+  if (!workspaces.length) return null;
+  return (
+    <div className="pc-workspaces">
+      <span className="muted">独立工作区：</span>
+      {workspaces.map((w) => {
+        const chat = chats[w.workspace!.chatId];
+        return (
+          <button
+            key={w.id}
+            className="branch-pill"
+            title={`${w.path}\n打开对话「${chat?.title ?? ''}」查看改动`}
+            onClick={() => {
+              if (!chat) return;
+              openChat(chat.id);
+              showWorkspaceChanges();
+            }}
+          >
+            <GitBranch size={12} />
+            <span>{w.workspace!.branch}</span>
+            {chat && <span className="muted">· {chat.title}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProjectCard({ project, chatCount, workspaces }: { project: Project; chatCount: number; workspaces: Project[] }) {
   const dev = useStore((s) => s.devServers[project.id]);
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
@@ -135,7 +167,7 @@ function ProjectCard({ project, chatCount }: { project: Project; chatCount: numb
   const remove = async () => {
     const ok = await confirmDialog({
       title: `从列表移除「${project.name}」？`,
-      body: '只是从 VibeCrew 移除，不会删除文件。使用这个项目的对话会解除绑定。',
+      body: `只是从 VibeCrew 移除，不会删除文件。使用这个项目的对话会解除绑定${workspaces.length ? `，它们的 ${workspaces.length} 个独立工作区也会关闭（没合并的改动保留在各自的分支里）` : ''}。`,
       ok: '移除',
       danger: true,
     });
@@ -185,6 +217,7 @@ function ProjectCard({ project, chatCount }: { project: Project; chatCount: numb
             </span>
             <span className="muted">{chatCount ? `${chatCount} 个对话在用` : '没有对话在用'}</span>
           </div>
+          <WorkspaceList workspaces={workspaces} />
           {status === 'error' && dev?.error && <div className="pc-error">{dev.error}</div>}
         </div>
         <div className="pc-actions">
@@ -223,7 +256,12 @@ export function ProjectsView() {
   const projects = useStore((s) => s.projects);
   const chats = useStore((s) => s.chats);
   const [dialog, setDialog] = useState<null | 'create' | 'open'>(null);
-  const list = useMemo(() => Object.values(projects).sort((a, b) => b.updatedAt - a.updatedAt), [projects]);
+  const list = useMemo(() => listProjects(projects), [projects]);
+  const workspaces = useMemo(() => {
+    const m: Record<string, Project[]> = {};
+    for (const p of Object.values(projects)) if (p.workspace) (m[p.workspace.parentId] ||= []).push(p);
+    return m;
+  }, [projects]);
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const c of Object.values(chats)) if (c.projectId) m[c.projectId] = (m[c.projectId] || 0) + 1;
@@ -244,7 +282,9 @@ export function ProjectsView() {
 
         {list.length === 0 ? (
           <div className="card empty">
-            <div className="big">📁</div>
+            <div className="big">
+              <Glyph emoji="📁" size={26} />
+            </div>
             <h3>还没有项目</h3>
             <div>新建一个网站，或者打开电脑上已有的项目文件夹，机器人就能在里面工作。</div>
             <div className="row">
@@ -259,7 +299,7 @@ export function ProjectsView() {
         ) : (
           <div className="stack">
             {list.map((p) => (
-              <ProjectCard key={p.id} project={p} chatCount={counts[p.id] || 0} />
+              <ProjectCard key={p.id} project={p} chatCount={counts[p.id] || 0} workspaces={workspaces[p.id] || []} />
             ))}
           </div>
         )}

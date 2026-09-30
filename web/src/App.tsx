@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { closeModal, useStore } from './store';
 import { cx } from './utils';
 import { Sidebar } from './components/Sidebar';
-import { Toasts } from './components/ui';
+import { Logo, Toasts } from './components/ui';
 import { ChatView } from './components/ChatView';
 import { BotsView } from './components/views/BotsView';
 import { BotEditorDialog, NewBotDialog } from './components/views/BotEditor';
@@ -49,7 +49,7 @@ export function App() {
   if (!booted) {
     return (
       <div className="boot">
-        <img src="/icon.svg" alt="" />
+        <Logo size={56} />
         {bootError ? (
           <>
             <div>无法连接到 VibeCrew 服务：{bootError}</div>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, FolderPlus, Save, SlidersHorizontal, Trash2, Users } from 'lucide-react';
+import { Check, FolderPlus, GitBranch, GitMerge, LogOut, Save, SlidersHorizontal, Trash2, Users } from 'lucide-react';
 import type { Bot, Chat } from '../../../../shared/types';
 import { api } from '../../api';
-import { openChat, openModal, toast, useStore } from '../../store';
+import { listProjects, openChat, openModal, toast, useStore } from '../../store';
+import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../../workspace';
 import { cx } from '../../utils';
 import { Avatar, confirmDialog, GroupAvatar, Modal, Toggle } from '../ui';
 import { ProjectSelect } from './ProjectsView';
@@ -59,8 +60,9 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
     const s = useStore.getState();
     const active = s.activeChatId ? s.chats[s.activeChatId] : undefined;
     if (active?.projectId && s.projects[active.projectId]) return active.projectId;
-    return Object.values(s.projects).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id ?? null;
+    return listProjects(s.projects)[0]?.id ?? null;
   });
+  const [isolated, setIsolated] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const members = useMemo(() => selected.map((id) => botList.find((b) => b.id === id)).filter((b): b is Bot => !!b), [selected, botList]);
@@ -74,7 +76,8 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
       // Make it available immediately; the websocket event will follow.
       useStore.setState((s) => ({ chats: { ...s.chats, [chat.id]: chat } }));
       openChat(chat.id);
-      toast('群聊已创建', chat.title, 'success');
+      if (isolated && chat.projectId) await enableWorkspace(chat, { confirm: false });
+      else toast('群聊已创建', chat.title, 'success');
       onClose();
     } catch (e) {
       toast('创建群聊失败', (e as Error).message, 'error');
@@ -122,11 +125,70 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
           <div className="hint">群里的机器人都在这个项目文件夹里工作</div>
         </div>
       </div>
+      {projectId && (
+        <div className="setting-row">
+          <div>
+            <div className="sr-title">
+              <GitBranch size={14} /> 在独立分支中工作
+            </div>
+            <div className="hint">新建 Git 分支和单独的工作目录，不影响项目主目录和其他对话，适合同时推进几个任务；做完在「改动」里合并回主分支。项目需要是 Git 仓库。</div>
+          </div>
+          <Toggle on={isolated} onChange={setIsolated} />
+        </div>
+      )}
     </Modal>
   );
 }
 
 // ---------------------------------------------------------------- chat settings
+
+/** Workspace status plus the actions that change it (applied right away, not on save). */
+function WorkspaceRow({ chat, onDone }: { chat: Chat; onDone: () => void }) {
+  const ws = useStore((s) => (chat.workspaceId ? s.projects[chat.workspaceId]?.workspace : undefined));
+  const [busy, setBusy] = useState(false);
+  const run = async (fn: () => Promise<boolean>) => {
+    setBusy(true);
+    try {
+      if (await fn()) onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="setting-row">
+      <div>
+        <div className="sr-title">
+          <GitBranch size={14} /> 独立工作区
+        </div>
+        <div className="hint">
+          {ws
+            ? `机器人在分支 ${ws.branch}（从 ${ws.baseBranch} 分出）的单独目录里工作，不影响项目主目录和其他对话。`
+            : '给这个对话新建 Git 分支和单独的工作目录，多个任务可以并行，做完再合并回主分支。'}
+        </div>
+      </div>
+      {ws ? (
+        <div className="row">
+          <button
+            className="btn sm"
+            onClick={() => {
+              showWorkspaceChanges();
+              onDone();
+            }}
+          >
+            <GitMerge size={13} /> 改动 / 合并
+          </button>
+          <button className="btn sm" disabled={busy} onClick={() => run(() => closeWorkspace(chat))}>
+            <LogOut size={13} /> 关闭
+          </button>
+        </div>
+      ) : (
+        <button className="btn sm" disabled={busy} onClick={() => run(() => enableWorkspace(chat))}>
+          {busy ? <span className="spinner tiny" /> : <GitBranch size={13} />} 开启
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function ChatSettingsDialog({ chatId, onClose }: { chatId: string; onClose: () => void }) {
   const chat = useStore((s) => s.chats[chatId]);
@@ -170,6 +232,14 @@ function ChatSettingsForm({ chat, init, onClose }: { chat: Chat; init: Chat; onC
     if (projectId !== chat.projectId) patch.projectId = projectId;
     if (pinned !== !!chat.pinned) patch.pinned = pinned;
     if (!Object.keys(patch).length) return onClose();
+    if (patch.projectId !== undefined && chat.workspaceId) {
+      const ok = await confirmDialog({
+        title: '切换项目？',
+        body: '这个对话的独立工作区属于当前项目，切换后会关闭它。还没合并的改动会保留在它的分支里。',
+        ok: '切换',
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     try {
       await api.updateChat(chat.id, patch);
@@ -268,10 +338,14 @@ function ChatSettingsForm({ chat, init, onClose }: { chat: Chat; init: Chat; onC
           </button>
         </div>
         <div className="hint">
-          {projectId !== chat.projectId ? '切换项目后，机器人会在新项目里开始新的会话上下文（聊天记录保留）。' : '机器人在这个项目文件夹里工作，右侧面板预览它。'}
+          {projectId !== chat.projectId
+            ? `切换项目后，机器人会在新项目里开始新的会话上下文（聊天记录保留）。${chat.workspaceId ? '这个对话的独立工作区会关闭，没合并的改动保留在它的分支里。' : ''}`
+            : '机器人在这个项目文件夹里工作，右侧面板预览它。'}
           {!isGroup && ' 单聊的项目也是这个机器人的默认项目。'}
         </div>
       </div>
+
+      {chat.projectId && projectId === chat.projectId && <WorkspaceRow chat={chat} onDone={onClose} />}
 
       <div className="setting-row">
         <div>

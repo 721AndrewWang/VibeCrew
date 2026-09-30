@@ -13,6 +13,8 @@ import type {
   Routine,
   Skill,
   TurnSummary,
+  WorkspaceMergeResult,
+  WorkspaceStatus,
 } from '../../shared/types';
 
 export class ApiError extends Error {
@@ -90,6 +92,8 @@ export const api = {
   bootstrap: () => get<Bootstrap>('/api/bootstrap'),
   auth: (refresh = false) => get<AuthStatus>(`/api/auth${refresh ? '?refresh=1' : ''}`),
   updateSettings: (p: Record<string, unknown>) => patch<{ settings: PublicSettings; lanUrl?: string }>('/api/settings', p),
+  /** One tiny prompt through Claude Code with these (unsaved) connection settings. */
+  testConnection: (p: Record<string, unknown>) => post<{ ok: boolean; text: string; models?: string[]; ms: number }>('/api/settings/test-connection', p),
   lan: () => get<{ url?: string; qr: string | null; pluginSecretKeys: string[] }>('/api/lan'),
 
   createBot: (b: Partial<Bot> & { template?: string }) => post<Bot>('/api/bots', b),
@@ -111,6 +115,15 @@ export const api = {
   revertTurn: (chatId: string, turnId: string, force = false) =>
     post<{ reverted: string[]; conflicts: string[]; skipped: string[] }>(`/api/chats/${chatId}/turns/${turnId}/revert`, { force }),
   approve: (id: string, decision: 'allow' | 'always' | 'deny', message?: string) => post(`/api/approvals/${id}`, { decision, message }),
+
+  workspace: (chatId: string) => get<WorkspaceStatus>(`/api/chats/${chatId}/workspace`),
+  createWorkspace: (chatId: string) => post<Project>(`/api/chats/${chatId}/workspace`),
+  removeWorkspace: (chatId: string, deleteBranch = false) => del(`/api/chats/${chatId}/workspace${deleteBranch ? '?deleteBranch=1' : ''}`),
+  workspaceDiff: (chatId: string, path: string) => get<{ diff: string }>(`/api/chats/${chatId}/workspace/diff?path=${q(path)}`),
+  mergeWorkspace: (chatId: string, message?: string) => post<WorkspaceMergeResult>(`/api/chats/${chatId}/workspace/merge`, { message }),
+  syncWorkspace: (chatId: string) => post<WorkspaceMergeResult>(`/api/chats/${chatId}/workspace/sync`),
+  resolveConflicts: (chatId: string) => post<{ started: boolean; conflicts: string[] }>(`/api/chats/${chatId}/workspace/resolve`),
+  abortSync: (chatId: string) => post(`/api/chats/${chatId}/workspace/abort`),
 
   projectTemplates: () => get<{ id: string; name: string; description: string; needsInstall: boolean }[]>('/api/projects/templates'),
   createProject: (p: { name: string; template: string; parentDir?: string }) => post<Project>('/api/projects', { mode: 'create', ...p }),

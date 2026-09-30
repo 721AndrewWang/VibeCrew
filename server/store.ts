@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { Bot, Chat, ChatMessage, PermissionLevel, Project, PublicSettings, Routine } from '../shared/types';
+import type { AuthMode, Bot, Chat, ChatMessage, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 
 export function uid(prefix = ''): string {
@@ -80,9 +80,13 @@ export class Collection<T extends { id: string }> {
 
 export interface Settings {
   defaultModel: string;
-  authMode: 'claude-code' | 'api-key';
+  authMode: AuthMode;
   apiKey: string;
   baseUrl: string;
+  /** Another provider's Anthropic-compatible endpoint (authMode 'provider'). */
+  provider: ProviderSettings;
+  /** Sent as ANTHROPIC_AUTH_TOKEN; never leaves the server. */
+  providerToken: string;
   lanEnabled: boolean;
   port: number;
   projectsRoot: string;
@@ -100,6 +104,8 @@ const DEFAULT_SETTINGS: Settings = {
   authMode: 'claude-code',
   apiKey: '',
   baseUrl: '',
+  provider: { preset: '', baseUrl: '', model: '', fastModel: '' },
+  providerToken: '',
   lanEnabled: false,
   port: 4321,
   projectsRoot: DEFAULT_PROJECTS_ROOT,
@@ -138,6 +144,8 @@ class SettingsStore {
       authMode: s.authMode,
       hasApiKey: !!s.apiKey,
       baseUrl: s.baseUrl,
+      provider: s.provider,
+      hasProviderToken: !!s.providerToken,
       lanEnabled: s.lanEnabled,
       port: s.port,
       projectsRoot: s.projectsRoot,

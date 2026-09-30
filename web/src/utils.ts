@@ -28,6 +28,11 @@ export function fmtShort(ts: number) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** "22:52" today, otherwise "昨天 22:52", "周一 22:52", "9月3日 22:52". */
+export function fmtWhen(ts: number) {
+  return isSameDay(ts, Date.now()) ? fmtClock(ts) : `${fmtShort(ts)} ${fmtClock(ts)}`;
+}
+
 export function fmtDay(ts: number) {
   const now = Date.now();
   if (isSameDay(ts, now)) return '今天';

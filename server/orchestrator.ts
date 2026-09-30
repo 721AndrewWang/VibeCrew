@@ -3,13 +3,15 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ApprovalPart, Attachment, Bot, BotStatus, Chat, ChatMessage, MessageTrigger, Project } from '../shared/types';
 import { bus, internal, notify } from './bus';
 import { cleanEnv } from './config';
+import { botModel, modelEnv } from './claudeAuth';
 import { PLUGINS } from './data/catalog';
-import { devCommand, touchProject } from './projects';
+import { chatProjectId, devCommand, HttpError, touchProject } from './projects';
 import { bots, chats, messages, projects, settings, uid } from './store';
 import { skills } from './skills';
 import { readUpload, IMAGE_MIMES } from './uploads';
 import { ensureWatch } from './watcher';
 import { devServer } from './devserver';
+import { autoCommit, commitSubject, gitError } from './gitops';
 import { resetActSession } from './browser';
 import { crewServer } from './agents/crewTools';
 import { decide, describeAction, permissionModeFor, suggestRule } from './agents/permissions';
@@ -51,6 +53,8 @@ const sessions = new Map<string, AgentSession>();
 const staleSessions = new Set<string>();
 const statuses = new Map<string, BotStatus>();
 const approvals = new Map<string, PendingApproval>();
+/** Chats whose workspace is being changed by git (merge, sync…): new turns wait until it is done. */
+const locked = new Set<string>();
 /** projectId -> page the user is looking at in the preview. */
 const previewPages = new Map<string, string>();
 /** projectId -> when a bot turn in it last ended. */
@@ -136,15 +140,9 @@ export function parseMentions(text: string, candidates: Bot[]): Bot[] {
 
 const ALL_RE = /@(所有人|全体|all|everyone)(?![A-Za-z0-9_-])/i;
 
+/** The bots' environment: which endpoint, credentials and models their Claude Code uses. */
 function agentEnv(): Record<string, string> {
-  const s = settings.get();
-  const extra: Record<string, string | undefined> = {};
-  if (s.authMode === 'api-key' && s.apiKey) {
-    extra.ANTHROPIC_API_KEY = s.apiKey;
-    extra.CLAUDE_CODE_OAUTH_TOKEN = undefined;
-  }
-  if (s.baseUrl) extra.ANTHROPIC_BASE_URL = s.baseUrl;
-  return cleanEnv(extra);
+  return cleanEnv(modelEnv());
 }
 
 function substitute(value: string, env: Record<string, string>): string {
@@ -222,7 +220,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   const team = bots.all();
   const cfg: SessionConfig = {
     cwd: project?.path || os.homedir(),
-    model: bot.model || settings.get().defaultModel || undefined,
+    model: botModel(bot.model),
     effort: bot.effort,
     systemAppend: buildSystemAppend({ bot, chat, project, team, skills: skills.list() }),
     resume: chat.sessions[bot.id],
@@ -234,9 +232,9 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
         botId: bot.id,
         botName: bot.name,
         chatId: chat.id,
-        projectId: () => chats.get(chat.id)?.projectId ?? null,
+        projectId: () => chatProjectId(chats.get(chat.id)),
         currentPage: () => {
-          const pid = chats.get(chat.id)?.projectId;
+          const pid = chatProjectId(chats.get(chat.id));
           return pid ? previewPages.get(pid) : undefined;
         },
       }) as McpServerConfig,
@@ -300,7 +298,7 @@ function enqueue(job: Job) {
 }
 
 async function pump(chatId: string) {
-  if (running.has(chatId)) return;
+  if (running.has(chatId) || locked.has(chatId)) return;
   const q = queues.get(chatId);
   const job = q?.shift();
   if (!job) return;
@@ -316,13 +314,34 @@ async function pump(chatId: string) {
 }
 
 export function isChatBusy(chatId: string) {
-  return running.has(chatId) || !!queues.get(chatId)?.length;
+  return running.has(chatId) || !!queues.get(chatId)?.length || locked.has(chatId);
+}
+
+/**
+ * Runs a git operation on a chat's workspace while no bot turn can start there (messages sent
+ * meanwhile stay queued). Refuses when a turn is running or another operation is in progress.
+ */
+export async function withChatLocked<T>(chatId: string, what: string, fn: () => Promise<T>): Promise<T> {
+  if (running.has(chatId) || !!queues.get(chatId)?.length) throw new HttpError(409, `机器人正在工作，等这一轮结束再${what}`);
+  if (locked.has(chatId)) throw new HttpError(409, '上一个操作还没完成，请稍等');
+  locked.add(chatId);
+  try {
+    return await fn();
+  } finally {
+    locked.delete(chatId);
+    void pump(chatId);
+  }
+}
+
+/** A bot turn is running in the project (or workspace) right now. */
+export function projectRunning(projectId: string): boolean {
+  for (const r of running.values()) if (chatProjectId(chats.get(r.job.chatId)) === projectId) return true;
+  return false;
 }
 
 /** A bot is working in the project, or just finished (its file events are still arriving). */
 export function projectBusy(projectId: string): boolean {
-  for (const r of running.values()) if (chats.get(r.job.chatId)?.projectId === projectId) return true;
-  return Date.now() - (lastTurnEnd.get(projectId) || 0) < 4000;
+  return projectRunning(projectId) || Date.now() - (lastTurnEnd.get(projectId) || 0) < 4000;
 }
 
 // ---------------------------------------------------------------- turns
@@ -331,7 +350,8 @@ async function runTurn(job: Job) {
   const chat = chats.get(job.chatId);
   const bot = bots.get(job.botId);
   if (!chat || !bot || !chat.botIds.includes(bot.id)) return;
-  const project = projects.get(chat.projectId) ?? null;
+  // A chat with an isolated workspace works in its worktree instead of the project folder.
+  const project = projects.get(chatProjectId(chat)) ?? null;
   if (project) {
     ensureWatch(project.id);
     touchProject(project.id);
@@ -468,6 +488,17 @@ async function runTurn(job: Job) {
     bus.emit({ t: 'turn', turn: summarize(turn) });
   }
   msg.text = stream.finalText();
+  // In a workspace every turn becomes a commit on the chat's branch.
+  let unresolved: string[] | undefined;
+  let commitError: string | undefined;
+  if (project?.workspace) {
+    try {
+      unresolved = (await autoCommit(project.workspace.worktree, `${bot.name}：${commitSubject(msg.text, '更新文件')}`)).unresolved;
+    } catch (e) {
+      commitError = gitError(e);
+      console.warn('[workspace] auto-commit failed:', commitError);
+    }
+  }
   messages.put(msg);
   bus.emit({ t: 'msg', msg });
 
@@ -476,6 +507,10 @@ async function runTurn(job: Job) {
   setLastMessage(fresh, msg);
   fresh.unread = (fresh.unread || 0) + 1;
   emitChat(fresh);
+  if (unresolved?.length) systemMessage(fresh, `合并还没完成：${unresolved.join('、')} 还有冲突没处理（冲突标记，或者需要 git add / git rm 的文件）。处理完之后才会提交。`);
+  if (commitError && project?.workspace) {
+    systemMessage(fresh, `没能把这一轮的改动提交到分支 ${project.workspace.branch}：${commitError}。改动还在工作区的文件里，但在解决这个问题之前没法合并。`, { uiOnly: true });
+  }
   settleStatus(bot.id, msg.status === 'error' ? msg.error?.slice(0, 80) : undefined);
   if (msg.status === 'error') notify(`${bot.name} 出错了`, msg.error?.slice(0, 140) || '', { chatId: chat.id, level: 'error' });
   else if (msg.status === 'done') notify(`${bot.name} 完成了`, preview(msg.text).slice(0, 100) || '任务完成', { chatId: chat.id, level: 'success' });

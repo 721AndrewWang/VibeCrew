@@ -54,7 +54,7 @@ function injectHtml(html: string): string {
 function page(title: string, body: string): string {
   return injectHtml(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>body{font-family:-apple-system,system-ui,"PingFang SC","Noto Sans SC",sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;color:#555;background:#fafafa}
-@media (prefers-color-scheme:dark){body{background:#111;color:#aaa}}div{text-align:center;max-width:480px;padding:24px}h1{font-size:20px;color:inherit}code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:4px}ul{text-align:left;line-height:1.9}a{color:#0a84ff}</style>
+@media (prefers-color-scheme:dark){body{background:#111;color:#aaa}}div{text-align:center;max-width:480px;padding:24px}h1{font-size:20px;color:inherit}code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:4px}ul{text-align:left;line-height:1.9}a{color:inherit;text-decoration:underline}</style>
 </head><body><div>${body}</div></body></html>`);
 }
 
@@ -345,6 +345,12 @@ export async function restartPreviews() {
     const info = await ensurePreview(id);
     bus.emit({ t: 'preview', info });
   }
+}
+
+/** Shuts down one project's preview server (its workspace was removed). */
+export function closePreview(projectId: string) {
+  previews.get(projectId)?.close();
+  previews.delete(projectId);
 }
 
 export function closeAllPreviews() {

@@ -23,9 +23,11 @@ export const DATA = {
   uploads: path.join(HOME_DIR, 'uploads'),
   turns: path.join(HOME_DIR, 'turns'),
   memory: path.join(HOME_DIR, 'memory'),
+  /** Git worktrees of chats that work in an isolated workspace. */
+  worktrees: path.join(HOME_DIR, 'worktrees'),
 };
 
-for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory]) {
+for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 

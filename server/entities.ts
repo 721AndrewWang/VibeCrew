@@ -4,9 +4,10 @@ import { bus } from './bus';
 import { BOT_TEMPLATES, DEFAULT_ALLOW_RULES, DEFAULT_ASK_RULES, DEFAULT_TEAM } from './data/catalog';
 import { bots, chats, messages, projects, routines, settings, uid } from './store';
 import { createProject, HttpError, listProjects } from './projects';
-import { forgetChat, invalidateBot, invalidateChat, systemMessage } from './orchestrator';
+import { forgetChat, invalidateBot, invalidateChat, isChatBusy, systemMessage } from './orchestrator';
 import { memoryFile } from './agents/prompts';
 import { deleteTurns } from './agents/recorder';
+import { detachWorkspace } from './workspaces';
 
 const NAME_RE = /^[\p{L}\p{N}_-]{1,24}$/u;
 
@@ -32,6 +33,16 @@ function newChat(partial: Partial<Chat> & Pick<Chat, 'kind' | 'title' | 'botIds'
     maxHops: settings.get().maxHops,
     ...partial,
   };
+}
+
+/**
+ * Moving a chat to another project or deleting it removes its workspace, which must not happen
+ * under a running bot turn (or a merge in progress).
+ */
+export function assertWorkspaceIdle(chat: Chat | undefined) {
+  if (chat?.workspaceId && isChatBusy(chat.id)) {
+    throw new HttpError(409, `「${chat.title}」的机器人正在独立工作区里工作（或正在合并），等这一轮结束再操作`);
+  }
 }
 
 export function dmOf(botId: string): Chat | undefined {
@@ -88,6 +99,7 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
   if (!bot) throw new HttpError(404, '机器人不存在');
   const renamed = patch.name !== undefined && patch.name.trim() !== bot.name;
   if (renamed) checkName(patch.name!.trim(), id);
+  if (patch.projectId !== undefined && patch.projectId !== bot.projectId) assertWorkspaceIdle(dmOf(bot.id));
   const allowed: (keyof Bot)[] = ['name', 'emoji', 'color', 'title', 'description', 'model', 'effort', 'permission', 'allowRules', 'askRules', 'mcpServers', 'plugins', 'loadUserSettings', 'projectId'];
   for (const k of allowed) {
     if (patch[k] !== undefined) (bot as any)[k] = typeof patch[k] === 'string' ? (patch[k] as string).trim() : patch[k];
@@ -105,6 +117,8 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
     for (const b of bots.all()) invalidateBot(b.id);
   }
   if (patch.projectId !== undefined && dm.projectId !== bot.projectId) {
+    // The workspace belongs to the old project.
+    detachWorkspace(dm);
     dm.projectId = bot.projectId;
     dm.sessions = {};
     dmChanged = true;
@@ -123,6 +137,7 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
 export function deleteBot(id: string) {
   const bot = bots.get(id);
   if (!bot) return;
+  assertWorkspaceIdle(dmOf(id));
   for (const c of chats.all()) {
     if (c.kind === 'dm' && c.botIds[0] === id) deleteChat(c.id);
     else if (c.botIds.includes(id)) {
@@ -166,6 +181,7 @@ export function createGroup(input: { title?: string; botIds: string[]; leadBotId
 export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botIds' | 'leadBotId' | 'projectId' | 'pinned' | 'maxHops'>>): Chat {
   const chat = chats.get(id);
   if (!chat) throw new HttpError(404, '对话不存在');
+  if (patch.projectId !== undefined && patch.projectId !== chat.projectId) assertWorkspaceIdle(chat);
   if (patch.title !== undefined && chat.kind === 'group') chat.title = patch.title.trim() || chat.title;
   if (patch.pinned !== undefined) chat.pinned = patch.pinned;
   if (patch.maxHops !== undefined) chat.maxHops = Math.max(0, Math.min(30, Math.round(patch.maxHops)));
@@ -187,6 +203,8 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
   }
   if (patch.leadBotId !== undefined && chat.botIds.includes(patch.leadBotId || '')) chat.leadBotId = patch.leadBotId;
   if (patch.projectId !== undefined && patch.projectId !== chat.projectId) {
+    // The workspace belongs to the old project.
+    detachWorkspace(chat);
     chat.projectId = patch.projectId;
     chat.sessions = {};
     invalidateChat(chat.id);
@@ -209,7 +227,9 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
 export function deleteChat(id: string) {
   const chat = chats.get(id);
   if (!chat) return;
+  assertWorkspaceIdle(chat);
   forgetChat(id);
+  detachWorkspace(chat);
   messages.deleteChat(id);
   deleteTurns(id);
   for (const r of routines.all()) {

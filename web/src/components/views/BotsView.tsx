@@ -4,7 +4,7 @@ import type { Bot } from '../../../../shared/types';
 import { api } from '../../api';
 import { dmOf, openChat, openModal, toast, useStore } from '../../store';
 import { cx, PERMISSION_INFO, statusLabel } from '../../utils';
-import { Avatar, confirmDialog, MenuButton } from '../ui';
+import { Avatar, confirmDialog, Glyph, MenuButton } from '../ui';
 
 /** Shared header for the management pages. */
 export function PageHead({ title, sub, children }: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
@@ -87,7 +87,7 @@ function BotCard({ bot }: { bot: Bot }) {
       </div>
       <div className="bc-badges">
         <span className="badge" title={perm.desc}>
-          {perm.icon} {perm.label}
+          <Glyph emoji={perm.icon} size={11} /> {perm.label}
         </span>
         <span className="badge">{modelLabel(models, bot.model)}</span>
         {bot.plugins.length > 0 && (
@@ -132,7 +132,9 @@ export function BotsView() {
 
         {list.length === 0 ? (
           <div className="card empty">
-            <div className="big">🤖</div>
+            <div className="big">
+              <Glyph emoji="🤖" size={26} />
+            </div>
             <h3>还没有机器人</h3>
             <div>从模板添加一位前端工程师、测试工程师或代码审查员，组建你的 Web 开发小队。</div>
             <button className="btn primary" onClick={() => openModal({ kind: 'newBot' })}>

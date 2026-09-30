@@ -56,7 +56,15 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   }
 
   lines.push('', '## 工作环境');
-  if (project) {
+  if (project?.workspace) {
+    const { branch, baseBranch } = project.workspace;
+    lines.push(
+      `- 项目：${project.name}。这个对话有自己的独立工作区：目录 ${project.path}（就是你的工作目录），Git 分支 \`${branch}\`，从 \`${baseBranch}\` 分出。`,
+      `- 这是 git worktree，和项目主目录、其他对话的改动互不影响。只修改这个目录里的文件；不要切换分支、不要自己合并到 \`${baseBranch}\`，也不要 push。`,
+      `- 每一轮结束后 VibeCrew 会把你的改动自动提交到这个分支（你也可以自己分步提交）；用户确认后会把分支合并回 \`${baseBranch}\`。`,
+    );
+    if (project.framework) lines.push(`- 技术栈：${project.framework}`);
+  } else if (project) {
     lines.push(`- 项目：${project.name}，目录 ${project.path}（就是你的工作目录）`);
     if (project.framework) lines.push(`- 技术栈：${project.framework}`);
   } else {

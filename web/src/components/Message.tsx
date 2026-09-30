@@ -1,10 +1,10 @@
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useState, type CSSProperties, type ReactNode } from 'react';
 import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, MousePointerClick, Undo2, X, Zap, Film, ShieldCheck } from 'lucide-react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
-import { focusTurn, openFileInEditor, toast, useStore } from '../store';
+import { chatProjectId, focusTurn, openFileInEditor, toast, useStore } from '../store';
 import { cx, fmtClock, fmtDuration, toolDuration, toolInfo } from '../utils';
-import { Avatar, confirmDialog } from './ui';
+import { Avatar, confirmDialog, Glyph } from './ui';
 import { Markdown } from './Markdown';
 
 // ---------------------------------------------------------------- attachments
@@ -121,7 +121,7 @@ function ToolDetail({ part, root }: { part: ToolPart; root?: string }) {
     body = <pre className="tool-code">{JSON.stringify(input, null, 2).slice(0, 3000)}</pre>;
   }
   const fp = input.file_path as string | undefined;
-  const projectId = useStore((s) => (s.activeChatId ? s.chats[s.activeChatId]?.projectId : null));
+  const projectId = useStore((s) => (s.activeChatId ? chatProjectId(s.chats[s.activeChatId], s.projects) : null));
   return (
     <div className="tool-detail">
       {fp && projectId && root && fp.startsWith(root) && (
@@ -169,7 +169,9 @@ function ToolRow({ part, root }: { part: ToolPart; root?: string }) {
     return (
       <div className="tool-todo">
         <div className="tool-row static">
-          <span className="tool-icon">✅</span>
+          <span className="tool-icon">
+            <Glyph emoji="✅" size={13} />
+          </span>
           <span className="tool-verb">任务清单</span>
         </div>
         <TodoList todos={part.input.todos} />
@@ -180,7 +182,9 @@ function ToolRow({ part, root }: { part: ToolPart; root?: string }) {
     <div className={cx('tool', open && 'open', part.parent && 'nested')}>
       <button className="tool-row" onClick={() => setOpen(!open)}>
         <ChevronRight size={13} className="chev" />
-        <span className="tool-icon">{info.icon}</span>
+        <span className="tool-icon">
+          <Glyph emoji={info.icon} size={13} />
+        </span>
         <span className="tool-verb">{info.verb}</span>
         <span className="tool-target">{info.target}</span>
         <span className="tool-state">
@@ -357,6 +361,7 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
 
 export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, names, root }: { msg: ChatMessage; chat: Chat; bot?: Bot; showHead: boolean; names: string[]; root?: string }) {
   const live = msg.status === 'streaming';
+  const workProjectId = useStore((s) => chatProjectId(chat, s.projects));
   const blocks = groupParts(msg.parts || []);
   const hasText = (msg.parts || []).some((p) => p.type === 'text' && p.text.trim());
   const by = msg.trigger?.type === 'mention' && msg.trigger.by ? useStore.getState().bots[msg.trigger.by]?.name : null;
@@ -366,7 +371,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
       <div className="msg-body">
         {showHead && (
           <div className="msg-head">
-            <span className="msg-name" style={{ color: bot?.color }}>
+            <span className="msg-name" style={{ '--bot-color': bot?.color } as CSSProperties}>
               {bot?.name || '已删除的机器人'}
             </span>
             {by && <span className="msg-meta">回应 @{by}</span>}
@@ -384,13 +389,15 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
           ) : b.part.type === 'text' ? (
             b.part.text.trim() ? (
               <div key={b.index} className="bubble bot-bubble">
-                <Markdown text={b.part.text} names={names} projectId={chat.projectId} />
+                <Markdown text={b.part.text} names={names} projectId={workProjectId} />
               </div>
             ) : null
           ) : b.part.type === 'thinking' ? (
             b.part.text.trim() ? (
               <details key={b.index} className="thinking">
-                <summary>💭 思考过程</summary>
+                <summary>
+                  <Glyph emoji="💭" size={13} /> 思考过程
+                </summary>
                 <div className="thinking-text">{b.part.text}</div>
               </details>
             ) : null
@@ -449,6 +456,7 @@ function renderUserText(text: string, names: string[]) {
 
 export const UserMessage = memo(function UserMessage({ msg, chat, names, showTime }: { msg: ChatMessage; chat: Chat; names: string[]; showTime: boolean }) {
   const skill = msg.skill ? useStore.getState().skills.find((s) => s.name === msg.skill) : null;
+  const workProjectId = useStore((s) => chatProjectId(chat, s.projects));
   return (
     <div className="msg me">
       <div className="msg-body">
@@ -461,13 +469,13 @@ export const UserMessage = memo(function UserMessage({ msg, chat, names, showTim
             )}
             {skill && (
               <span className="badge accent" title={skill.description}>
-                {skill.icon} {skill.title}
+                <Glyph emoji={skill.icon} size={11} /> {skill.title}
               </span>
             )}
           </div>
         )}
         {msg.text && <div className="bubble me-bubble">{renderUserText(msg.text, names)}</div>}
-        {!!msg.attachments?.length && <AttachmentChips items={msg.attachments} projectId={chat.projectId} />}
+        {!!msg.attachments?.length && <AttachmentChips items={msg.attachments} projectId={workProjectId} />}
         {showTime && <div className="msg-time right">{fmtClock(msg.ts)}</div>}
       </div>
     </div>

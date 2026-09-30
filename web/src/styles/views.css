@@ -96,6 +96,10 @@
   font-size: 19px;
 }
 
+:root:not([data-accent]) .emoji-input {
+  filter: grayscale(1);
+}
+
 .note {
   display: flex;
   align-items: flex-start;
@@ -256,7 +260,7 @@
 .choice-card.on {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 4px 16px var(--glow);
 }
 
 .choice-card.row-card {
@@ -291,11 +295,13 @@
   flex: none;
   border-radius: 10px;
   background: var(--bg-sunken);
+  color: var(--text-2);
   font-size: 20px;
 }
 
 .choice-card.on .cc-icon {
   background: var(--bg-elev);
+  color: var(--text);
 }
 
 .cc-text {
@@ -316,7 +322,7 @@
   flex: none;
   border-radius: 50%;
   border: 1.5px solid var(--border-strong);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .choice-card.on .cc-radio,
@@ -338,12 +344,13 @@
   gap: 10px;
   padding: 16px;
   min-width: 0;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.18s, border-color 0.18s, transform 0.18s;
 }
 
 .bot-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-1);
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
+  box-shadow: 0 10px 28px var(--glow), var(--shadow-1);
+  transform: translateY(-1px);
 }
 
 .bot-card .avatar .status {
@@ -870,10 +877,16 @@
 }
 
 .si-icon {
+  display: grid;
+  place-items: center;
   width: 28px;
   flex: none;
   font-size: 18px;
-  text-align: center;
+  color: var(--text-2);
+}
+
+.skill-item.on .si-icon {
+  color: var(--accent-text);
 }
 
 .si-text {
@@ -895,6 +908,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tip-card svg {
+  vertical-align: -2px;
 }
 
 .tip-card {
@@ -926,6 +943,7 @@
   flex: none;
   border-radius: 12px;
   background: var(--bg-sunken);
+  color: var(--text-2);
   font-size: 24px;
 }
 
@@ -1159,7 +1177,7 @@
 .day-chip.on {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* ---------------------------------------------------------------- projects */
@@ -1181,8 +1199,9 @@
   height: 40px;
   flex: none;
   border-radius: 11px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow: 0 4px 12px var(--glow);
 }
 
 .pc-info {
@@ -1385,7 +1404,7 @@
   flex: none;
   border: 1.5px solid var(--border-strong);
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .pick-card.on .pick-check {
@@ -1448,6 +1467,7 @@
   gap: 10px;
   padding: 13px 18px;
   border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 4%, var(--bg-elev)), var(--bg-elev));
 }
 
 .sc-head h2 {
@@ -1462,9 +1482,10 @@
   width: 30px;
   height: 30px;
   flex: none;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  border-radius: 9px;
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px var(--glow);
 }
 
 .sc-body {
@@ -1517,7 +1538,13 @@
 }
 
 .callout.warn {
-  background: var(--orange-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 14%, var(--border));
+  border-left: 3px solid var(--orange);
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg-elev));
+}
+
+:root:not([data-accent]) .callout.warn {
+  border-left-color: var(--text);
 }
 
 .code-line {
@@ -1680,4 +1707,90 @@
   .kv .k {
     width: 72px;
   }
+}
+
+.pc-workspaces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.pc-workspaces .branch-pill .muted {
+  font-family: var(--font);
+  color: var(--text-3);
+}
+
+/* Model connection: provider presets and the connection test result. */
+.callout.ok {
+  background: var(--green-soft);
+}
+
+.callout.error {
+  background: var(--red-soft);
+  overflow-wrap: anywhere;
+}
+
+.provider-grid .pick-card {
+  align-items: flex-start;
+}
+
+.provider-grid .pick-title {
+  white-space: normal;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.provider-hint {
+  margin: -4px 0 12px;
+  line-height: 1.6;
+}
+
+/* Settings → 外观: accent presets. */
+.accent-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accent-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 52px;
+  padding: 6px 4px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.accent-swatch:hover {
+  background: var(--bg-hover);
+}
+
+.accent-swatch i {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.accent-swatch.on {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.accent-swatch.on i {
+  box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent);
+  transform: scale(1.04);
+}
+
+.test-ic {
+  vertical-align: -2px;
 }
