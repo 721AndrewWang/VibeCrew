@@ -72,5 +72,6 @@ tests/
 ## 发版
 
 1. 把 CHANGELOG 里「未发布」的内容挪到新版本号下面，写上日期。
-2. `npm version <patch|minor|major> --no-git-tag-version`，然后提交，再打 `v<版本号>` 标签。
-3. `npm run desktop:install` 重新打包、安装桌面版。
+2. `npm version <patch|minor|major> --no-git-tag-version`，提交，再打 `v<版本号>` 标签并推送。
+3. 推送标签后，GitHub Actions 的 Release 流程会构建 AppImage、挂到 GitHub Release 上，发布说明取自 CHANGELOG 里对应的那一节（标签必须和 package.json 的版本一致）。
+4. 本机要用新版的话 `npm run desktop:install`。
