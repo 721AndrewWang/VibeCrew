@@ -68,9 +68,10 @@ export function readTurnRows(file: string, sessionId: string, from: number, to: 
 export function buildTrace(rows: Row[], from: number): { steps: TraceStep[]; totals: TraceTotals } {
   const steps: TraceStep[] = [];
   const totals = emptyTotals();
-  // Rows of one API call share a message id and come one after another. Only adjacency counts:
-  // a mock endpoint may reuse an id across calls.
-  let lastCall: { key: string; index: number } | null = null;
+  // Rows of one API call share its request and message ids. Claude Code writes each block as its
+  // own row and may put the tool results of parallel calls in between, so the join is by id, not
+  // by adjacency.
+  const calls = new Map<string, number>();
   let last = from;
   for (const r of rows) {
     const t = Date.parse(r.timestamp!);
@@ -84,8 +85,9 @@ export function buildTrace(rows: Row[], from: number): { steps: TraceStep[]; tot
         return { type: 'text' as const, text: clip(String(c.text || '')) };
       });
       const key = `${r.requestId || ''}:${m.id || r.uuid || ''}`;
-      if (lastCall && lastCall.key === key) {
-        const s = steps[lastCall.index];
+      const seen = calls.get(key);
+      if (seen !== undefined) {
+        const s = steps[seen];
         if (s.kind === 'model') s.blocks.push(...blocks);
         continue;
       }
@@ -96,7 +98,7 @@ export function buildTrace(rows: Row[], from: number): { steps: TraceStep[]; tot
         output: u.output_tokens || 0,
         thinking: (u.output_tokens_details as any)?.thinking_tokens || 0,
       };
-      lastCall = { key, index: steps.length };
+      calls.set(key, steps.length);
       steps.push({ kind: 'model', at, waitMs: Math.max(0, t - last), model: m.model || '', effort: r.effort, sidechain: !!r.isSidechain, usage, blocks });
       totals.calls += 1;
       totals.input += usage.input;
@@ -106,7 +108,6 @@ export function buildTrace(rows: Row[], from: number): { steps: TraceStep[]; tot
       totals.thinking += usage.thinking;
       last = t;
     } else if (r.type === 'user' && r.message) {
-      lastCall = null;
       const content = r.message.content;
       const results = Array.isArray(content) ? content.filter((c: any) => c?.type === 'tool_result') : [];
       if (results.length) {
@@ -119,7 +120,6 @@ export function buildTrace(rows: Row[], from: number): { steps: TraceStep[]; tot
       }
       last = t;
     } else if (r.type === 'attachment' && r.attachment) {
-      lastCall = null;
       steps.push({ kind: 'attachment', at, type: String(r.attachment.type || 'attachment') });
     }
   }

@@ -26,6 +26,7 @@ export interface MockProvider {
 
 export async function startMockProvider(opts: { token: string; reply?: (req: MockRequest) => Reply }): Promise<MockProvider> {
   const requests: MockRequest[] = [];
+  let n = 0;
   const toolResults: string[] = [];
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -47,7 +48,10 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
         body,
       };
       requests.push(r);
-      const json = (status: number, data: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
+      // Like the real API: every response has its own message id and request id.
+      n += 1;
+      const msgId = `msg_mock_${n}`;
+      const json = (status: number, data: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'request-id': `req_mock_${n}` }).end(JSON.stringify(data));
       if (!r.url.startsWith('/v1/messages')) return json(404, { type: 'error', error: { type: 'not_found_error', message: 'nope' } });
       if (r.auth !== `Bearer ${opts.token}`) return json(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid api key (mock)' } });
       if (r.url.startsWith('/v1/messages/count_tokens')) return json(200, { input_tokens: 10 });
@@ -72,12 +76,12 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
       const stop = 'text' in reply ? 'end_turn' : 'tool_use';
       const usage = { input_tokens: 10, output_tokens: 4 };
       if (!r.stream) {
-        return json(200, { id: 'msg_mock', type: 'message', role: 'assistant', model: body.model, content: [block.final], stop_reason: stop, stop_sequence: null, usage });
+        return json(200, { id: msgId, type: 'message', role: 'assistant', model: body.model, content: [block.final], stop_reason: stop, stop_sequence: null, usage });
       }
-      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'request-id': `req_mock_${n}` });
       const ev = (type: string, data: object) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
       ev('message_start', {
-        message: { id: 'msg_mock', type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { ...usage, output_tokens: 1 } },
+        message: { id: msgId, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { ...usage, output_tokens: 1 } },
       });
       ev('content_block_start', { index: 0, content_block: block.start });
       ev('content_block_delta', { index: 0, delta: block.delta });

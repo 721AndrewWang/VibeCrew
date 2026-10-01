@@ -90,6 +90,45 @@ describe('buildTrace', () => {
   });
 });
 
+describe('parallel tool calls', () => {
+  it('are one API call even with their results written in between', () => {
+    const usage = { input_tokens: 12, cache_read_input_tokens: 34_000, cache_creation_input_tokens: 1500, output_tokens: 617, output_tokens_details: { thinking_tokens: 77 } };
+    const call = (uuid: string, block: object, ms: number) => ({
+      type: 'assistant',
+      sessionId: S,
+      requestId: 'req_7',
+      timestamp: at(ms),
+      uuid,
+      message: { id: 'msg_7', model: 'claude-opus-5-5', content: [block], usage },
+    });
+    const result = (id: string, ms: number) => ({
+      type: 'user',
+      sessionId: S,
+      timestamp: at(ms),
+      uuid: `r${id}`,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
+      toolUseResult: {},
+    });
+    const { steps, totals } = buildTrace(
+      [
+        call('c1', { type: 'thinking', thinking: '…' }, 7000),
+        call('c2', { type: 'tool_use', id: 't1', name: 'Edit', input: {} }, 7100),
+        result('t1', 8800),
+        call('c3', { type: 'tool_use', id: 't2', name: 'Edit', input: {} }, 10_500),
+        result('t2', 10_500),
+        call('c4', { type: 'tool_use', id: 't3', name: 'Edit', input: {} }, 10_600),
+        result('t3', 10_600),
+      ] as any,
+      T0,
+    );
+    expect(steps.map((s) => s.kind)).toEqual(['model', 'tool_result', 'tool_result', 'tool_result']);
+    expect(totals.calls).toBe(1);
+    expect(totals.output).toBe(617);
+    expect(totals.cacheRead).toBe(34_000);
+    if (steps[0].kind === 'model') expect(steps[0].blocks.map((b) => b.type)).toEqual(['thinking', 'tool_use', 'tool_use', 'tool_use']);
+  });
+});
+
 describe('turnTrace', () => {
   it('reads the turn from the transcript file, skipping other sessions, other turns and a torn line', () => {
     const home = tempDir('crew-trace');
