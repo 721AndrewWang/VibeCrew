@@ -22,7 +22,9 @@ beforeAll(async () => {
   const b = await crew.api('GET', '/bootstrap');
   const chief = b.bots.find((x: any) => x.name === 'Chief');
   await crew.api('PATCH', `/bots/${chief.id}`, { allowRules: [] });
-  chatId = (await crew.api('POST', '/chats', { title: 'Recover', botIds: [chief.id], projectId: b.projects[0].id, permission: 'ask' })).id;
+  chatId = (await crew.api('POST', '/chats', { title: 'Recover', botIds: [chief.id], projectId: b.projects[0].id })).id;
+  // Every step asks, so the turn stops at its first approval and can be killed there.
+  await crew.api('PATCH', `/chats/${chatId}`, { permission: 'ask' });
   worktree = (await crew.api('POST', `/chats/${chatId}/workspace`)).workspace.worktree;
 });
 afterAll(async () => {
