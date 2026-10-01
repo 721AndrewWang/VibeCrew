@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decide, harmless, permissionModeFor, rulesAllow, rulesTouch, splitCommand, suggestRules } from '../../server/agents/permissions';
+import { decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, splitCommand, suggestRules } from '../../server/agents/permissions';
 
 const cwd = '/home/u/BioBuddy';
 const bot = (over: Record<string, unknown> = {}) => ({ askRules: ['Bash(git push:*)'], allowRules: [], ...over }) as any;
@@ -70,6 +70,26 @@ describe('decide', () => {
   });
   it('a read-only bot cannot leave plan mode', () => {
     expect(decide(bot(), 'plan', 'ExitPlanMode', {}, cwd, {}).behavior).toBe('deny');
+  });
+  it('says what settled it, naming the rule and where it came from', () => {
+    const why = (d: ReturnType<typeof decide>) => d.because;
+    expect(why(decide(bot(), 'auto', 'Bash', bash('git push origin main'), cwd, {}))).toBe('机器人的「必须确认」规则 Bash(git push:*)');
+    expect(why(decide(bot({ askRules: [] }), 'auto', 'Bash', bash('git push'), cwd, { projectRules: ['Bash(git push*)'] }))).toBe('项目的「必须确认」规则 Bash(git push*)');
+    expect(why(decide(bot(), 'auto', 'Bash', bash('git push'), cwd, { matchedAskRule: 'Bash(git push:*)' }))).toContain('机器人的');
+    expect(why(decide(bot(), 'ask', 'Bash', bash('npm test'), cwd, {}))).toBe('权限是「每步确认」');
+    expect(why(decide(bot(), 'edits', 'Bash', bash('npm test'), cwd, {}))).toBe('权限是「自动改文件」，运行命令要先问');
+    expect(why(decide(bot(), 'edits', 'Bash', bash('cat a | head'), cwd, {}))).toContain('只读取和打印');
+    expect(why(decide(bot(), 'edits', 'Write', { file_path: '/etc/hosts' }, cwd, {}))).toContain('项目外');
+    expect(why(decide(bot({ allowRules: ['Bash(npm test*)'] }), 'ask', 'Bash', bash('npm test'), cwd, {}))).toBe('「总是允许」规则 Bash(npm test*)');
+    expect(why(decide(bot({ allowRules: ['Bash(npm test*)'] }), 'ask', 'Bash', bash('npm test && rm -rf dist'), cwd, {}))).toContain('只覆盖了命令的一部分');
+    expect(why(decide(bot(), 'auto', 'Read', { file_path: 'a' }, cwd, {}))).toBe('只读操作');
+  });
+});
+
+describe('matchingRule', () => {
+  it('names the first rule that touches any part of the command', () => {
+    expect(matchingRule(['Bash(*zero1*)', 'Bash(*zero3*)'], 'Bash', bash('cd x && ssh zero3 ls'), cwd)).toBe('Bash(*zero3*)');
+    expect(matchingRule(['Bash(*zero3*)'], 'Bash', bash('ls'), cwd)).toBeNull();
   });
 });
 

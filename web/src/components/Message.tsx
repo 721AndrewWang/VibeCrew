@@ -274,6 +274,7 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
         )}
       </div>
       {part.detail && <pre className="approval-detail">{part.detail}</pre>}
+      {part.because && <div className="approval-reason">为什么要问：{part.because}</div>}
       {part.reason && pending && <div className="approval-reason">{part.reason}</div>}
       {pending && !denying && (
         <div className="approval-actions">

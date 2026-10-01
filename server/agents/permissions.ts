@@ -6,7 +6,10 @@ const WEB_TOOLS = new Set(['WebFetch', 'WebSearch']);
 /** Tools without side effects; Claude Code normally runs them without asking. */
 const READ_ONLY = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'TodoWrite', 'Task', 'Agent', 'BashOutput', 'TaskOutput', 'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool']);
 
-export type Decision = { behavior: 'allow' } | { behavior: 'ask' } | { behavior: 'deny'; message: string };
+/** The outcome and, in words the user sees, what settled it. */
+export type Decision = { behavior: 'allow'; because: string } | { behavior: 'ask'; because: string } | { behavior: 'deny'; message: string; because: string };
+
+export const LEVEL_LABEL: Record<PermissionLevel, string> = { auto: '全自动', edits: '自动改文件', ask: '每步确认', review: '自动（AI 把关）', plan: '只读' };
 
 function parseRule(rule: string): { tool: string; spec?: string } {
   const m = rule.trim().match(/^([^()]+?)(?:\((.*)\))?$/);
@@ -128,14 +131,20 @@ export function rulesAllow(rules: string[], toolName: string, input: any, cwd: s
   return rules.some((r) => matchOne(r, toolName, input, cwd));
 }
 
-/** True when any rule matches any part of the action. */
-export function rulesTouch(rules: string[], toolName: string, input: any, cwd: string): boolean {
-  if (!rules.length) return false;
+/** The first rule that matches any part of the action, or null. */
+export function matchingRule(rules: string[], toolName: string, input: any, cwd: string): string | null {
+  if (!rules.length) return null;
   if (toolName === 'Bash') {
     const segs = splitCommand(String(input?.command || ''));
-    return segs.some((seg) => rules.some((r) => matchOne(r, toolName, input, cwd, seg)));
+    for (const seg of segs) for (const r of rules) if (matchOne(r, toolName, input, cwd, seg)) return r;
+    return null;
   }
-  return rules.some((r) => matchOne(r, toolName, input, cwd));
+  return rules.find((r) => matchOne(r, toolName, input, cwd)) ?? null;
+}
+
+/** True when any rule matches any part of the action. */
+export function rulesTouch(rules: string[], toolName: string, input: any, cwd: string): boolean {
+  return matchingRule(rules, toolName, input, cwd) !== null;
 }
 
 export function insideDir(dir: string, p: string | undefined): boolean {
@@ -148,31 +157,39 @@ export function insideDir(dir: string, p: string | undefined): boolean {
 /**
  * Crew's approval gate. Claude Code has already applied the bot's allow/ask rules
  * (passed as settings); this sees whatever it would have prompted for.
+ * `projectRules` are the project's own must-ask rules, named apart from the bot's.
  */
-export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown }): Decision {
-  if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow' };
-  if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow' };
+export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown; projectRules?: string[] }): Decision {
+  const mode = `权限是「${LEVEL_LABEL[level]}」`;
+  if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow', because: 'Crew 自己的工具' };
+  if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow', because: '只读操作' };
   if (toolName === 'ExitPlanMode' && level === 'plan') {
-    return { behavior: 'deny', message: '你是只读角色，不能执行修改。请直接在回复中给出方案或结论，由用户或队友来实施。' };
+    return { behavior: 'deny', message: '你是只读角色，不能执行修改。请直接在回复中给出方案或结论，由用户或队友来实施。', because: `${mode}，不能开始修改` };
   }
-  const askRule = !!opts.matchedAskRule || rulesTouch(bot.askRules, toolName, input, cwd);
-  if (askRule) return { behavior: 'ask' };
+  const botRule = matchingRule(bot.askRules, toolName, input, cwd);
+  if (botRule) return { behavior: 'ask', because: `机器人的「必须确认」规则 ${botRule}` };
+  const projectRule = opts.projectRules?.length ? matchingRule(opts.projectRules, toolName, input, cwd) : null;
+  if (projectRule) return { behavior: 'ask', because: `项目的「必须确认」规则 ${projectRule}` };
+  if (opts.matchedAskRule) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${String(opts.matchedAskRule)}` };
   // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
   if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
     const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
-    if (segs.length && segs.every(harmless)) return { behavior: 'allow' };
+    if (segs.length && segs.every(harmless)) return { behavior: 'allow', because: `${mode}，这条命令只读取和打印` };
   }
   // Rules added with "always allow" during this session.
-  if (rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow' };
+  const allowRule = matchingRule(bot.allowRules, toolName, input, cwd);
+  if (allowRule && rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow', because: `「总是允许」规则 ${allowRule}` };
   switch (level) {
     case 'auto':
-      return { behavior: 'allow' };
+      return { behavior: 'allow', because: mode };
     case 'edits':
-      if (EDIT_TOOLS.has(toolName)) return insideDir(cwd, filePathOf(input)) ? { behavior: 'allow' } : { behavior: 'ask' };
-      if (WEB_TOOLS.has(toolName)) return { behavior: 'allow' };
-      return { behavior: 'ask' };
+      if (EDIT_TOOLS.has(toolName)) {
+        return insideDir(cwd, filePathOf(input)) ? { behavior: 'allow', because: `${mode}，文件在项目里` } : { behavior: 'ask', because: `${mode}，但这个文件在项目外` };
+      }
+      if (WEB_TOOLS.has(toolName)) return { behavior: 'allow', because: `${mode}，联网查资料不改东西` };
+      return allowRule ? { behavior: 'ask', because: `${mode}；「总是允许」规则 ${allowRule} 只覆盖了命令的一部分` } : { behavior: 'ask', because: `${mode}，运行命令要先问` };
     default:
-      return { behavior: 'ask' };
+      return { behavior: 'ask', because: allowRule ? `${mode}；「总是允许」规则 ${allowRule} 只覆盖了命令的一部分` : mode };
   }
 }
 

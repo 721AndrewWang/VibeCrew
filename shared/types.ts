@@ -171,7 +171,10 @@ export interface ApprovalPart {
   rule?: string;
   /** All of them: a compound command needs one per command it runs. */
   rules?: string[];
+  /** Claude Code's own reason for prompting, when it gave one. */
   reason?: string;
+  /** What made Crew ask: the level, or the rule that matched. */
+  because?: string;
 }
 
 export type MessagePart = TextPart | ThinkingPart | ToolPart | ApprovalPart;

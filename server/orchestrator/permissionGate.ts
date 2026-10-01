@@ -2,9 +2,10 @@
 // answers to approval requests shown in the chat.
 
 import type { ApprovalPart, Bot, Chat, Project } from '../../shared/types';
-import { decide, describeAction, rulesTouch, suggestRules } from '../agents/permissions';
+import { decide, describeAction, matchingRule, suggestRules } from '../agents/permissions';
 import type { TurnStream } from '../agents/stream';
 import { bus, notify } from '../bus';
+import { logger } from '../log';
 import { configOf } from '../projects';
 import { bots, chats, settings, uid } from '../store';
 import { setStatus } from './botStatus';
@@ -18,13 +19,15 @@ interface PendingApproval {
   resolve: (d: { allow: boolean; always?: boolean; message?: string; expired?: boolean }) => void;
 }
 
+const log = logger('permission');
+
 const approvals = new Map<string, PendingApproval>();
 
 /** Why the action is refused outright (Settings → 默认值 → 禁止的操作), or null. Read fresh on every call. */
 export function deniedReason(toolName: string, input: unknown, cwd: string): string | null {
-  const rules = settings.get().denyRules || [];
-  if (!rules.length || !rulesTouch(rules, toolName, input, cwd)) return null;
-  return `这个操作被禁止了（设置 → 默认值 → 禁止的操作：${rules.join('、')}）。不要换一种写法绕过它；需要的话请用户自己来做。`;
+  const rule = matchingRule(settings.get().denyRules || [], toolName, input, cwd);
+  if (!rule) return null;
+  return `这个操作被禁止了（设置 → 默认值 → 禁止的操作：${rule}）。不要换一种写法绕过它；需要的话请用户自己来做。`;
 }
 
 /** The canUseTool hook for one turn of a bot in a chat. */
@@ -32,16 +35,20 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
   const { chat, bot, project, cwd, stream } = turn;
   return async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; matchedAskRule?: unknown; decisionReason?: string; title?: string }) => {
     const current = bots.get(bot.id) || bot;
+    const desc = describeAction(toolName, input, cwd);
     const refused = deniedReason(toolName, input, cwd);
-    if (refused) return { behavior: 'deny' as const, message: refused };
+    if (refused) {
+      log.warn(`${bot.name} in ${chat.id}: deny ${desc.title} — ${refused}`);
+      return { behavior: 'deny' as const, message: refused };
+    }
     // The project's own "must ask" rules apply to every bot working there.
     const projectRules = project ? configOf(project).askRules || [] : [];
     // The chat's mode switch is read each time: switching to 自动 applies to the running turn too.
     const level = effectiveBot(chats.get(chat.id) || chat, current).permission;
-    const d = decide(projectRules.length ? { ...current, askRules: [...current.askRules, ...projectRules] } : current, level, toolName, input, cwd, opts);
+    const d = decide(current, level, toolName, input, cwd, { ...opts, projectRules });
+    log[d.behavior === 'allow' ? 'debug' : 'info'](`${bot.name} in ${chat.id}: ${d.behavior} ${desc.title} — ${d.because}`);
     if (d.behavior === 'allow') return { behavior: 'allow' as const, updatedInput: input };
     if (d.behavior === 'deny') return { behavior: 'deny' as const, message: d.message };
-    const desc = describeAction(toolName, input, cwd);
     const part: ApprovalPart = {
       type: 'approval',
       id: uid('a_'),
@@ -53,6 +60,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
       rule: undefined,
       rules: suggestRules(toolName, input, cwd),
       reason: opts.decisionReason,
+      because: d.because,
     };
     part.rule = part.rules?.[0];
     stream.addPart(part);

@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '0 20 * * *' # 04:00 Beijing time
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,6 +14,7 @@ concurrency:
 jobs:
   check:
     name: Typecheck, lint, unit and integration tests
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -32,6 +34,7 @@ jobs:
 
   e2e:
     name: Browser tests
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -50,3 +53,22 @@ jobs:
           name: playwright-results
           path: test-results/
           retention-days: 7
+
+  # Crew leans on Claude Code's command line: permission modes, hooks, context usage, the
+  # replaced bundled binary. Claude Code ships often, so every night the CLI tests run against
+  # its newest release (and on demand), to find a break before a user does.
+  latest-claude-code:
+    name: Against the newest Claude Code
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code@latest && claude --version
+      - run: git config --global user.name ci && git config --global user.email ci@example.com
+      - run: npx vitest run tests/integration/claude-cli.test.ts
