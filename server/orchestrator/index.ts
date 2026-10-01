@@ -387,6 +387,8 @@ async function runTurn(job: Job) {
     }
     progress.cancel();
     stream.finish(result);
+    // Where to find this turn in Claude Code's transcript (none for the demo agent).
+    if (session.sessionId && !session.sessionId.startsWith('fake-')) msg.meta = { ...msg.meta, trace: { sessionId: session.sessionId, cwd, from: msg.ts, to: Date.now() } };
     void recordContext(chat.id, bot.id, session);
   } catch (e) {
     stream.fail(e);

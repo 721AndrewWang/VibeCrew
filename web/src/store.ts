@@ -112,7 +112,8 @@ export interface AppState {
     | { kind: 'botEditor'; botId: string }
     | { kind: 'newProject' }
     | { kind: 'chatSettings'; chatId: string }
-    | { kind: 'saveRecording'; projectId: string };
+    | { kind: 'saveRecording'; projectId: string }
+    | { kind: 'trace'; chatId: string; msgId: string };
 }
 
 const LS_UI = 'vc-ui';

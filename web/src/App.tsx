@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ChatView } from './components/ChatView';
 import { SaveRecordingDialog } from './components/computer/SaveRecordingDialog';
 import { Sidebar } from './components/Sidebar';
+import { TraceDialog } from './components/TraceDialog';
 import { Logo, Toasts } from './components/ui';
 import { BotEditorDialog } from './components/views/BotEditor';
 import { BotsView } from './components/views/BotsView';
@@ -30,6 +31,8 @@ function Modals() {
       return <ChatSettingsDialog chatId={modal.chatId} onClose={closeModal} />;
     case 'saveRecording':
       return <SaveRecordingDialog projectId={modal.projectId} onClose={closeModal} />;
+    case 'trace':
+      return <TraceDialog chatId={modal.chatId} msgId={modal.msgId} onClose={closeModal} />;
     default:
       return null;
   }

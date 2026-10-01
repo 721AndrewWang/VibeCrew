@@ -40,6 +40,7 @@ import { Approval, BotCreate, BotPatch, body, ChatPatch, GroupCreate, MessageSen
 import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
+import { turnTrace, turnTraceRaw } from './trace';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
 import { usageOf } from './usage';
 import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
@@ -161,6 +162,21 @@ export function apiRouter() {
   });
 
   r.get('/usage', (_req, res) => res.json(usageOf()));
+
+  // ------------------------------------------------------------ traces
+  r.get('/chats/:id/messages/:mid/trace', (req, res) => {
+    const m = messages.get(req.params.id, req.params.mid);
+    if (!m) throw new HttpError(404, '消息不存在');
+    if (req.query.raw === '1') {
+      const raw = m.meta?.trace ? turnTraceRaw(m.meta.trace) : null;
+      if (raw === null) throw new HttpError(404, '没有这一轮的会话记录');
+      res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('content-disposition', `attachment; filename="trace-${m.id}.jsonl"`);
+      res.send(raw);
+      return;
+    }
+    res.json(turnTrace(m.meta?.trace));
+  });
   r.get('/sandbox', (req, res) => res.json(sandboxStatus(req.query.refresh === '1')));
 
   r.get('/lan', async (_req, res) => {

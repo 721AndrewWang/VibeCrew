@@ -1,8 +1,8 @@
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
 import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
-import { chatProjectId, focusTurn, openFileInEditor, toast, useStore } from '../store';
+import { chatProjectId, focusTurn, openFileInEditor, openModal, toast, useStore } from '../store';
 import { cx, fmtClock, fmtDuration, modelLabel, toolDuration, toolInfo } from '../utils';
 import { Markdown } from './Markdown';
 import { Avatar, confirmDialog, Glyph } from './ui';
@@ -475,6 +475,11 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
             用时 {fmtDuration(msg.meta.durationMs)}
             {msg.meta.model ? ` · ${modelLabel(msg.meta.model)}` : ''}
             {msg.meta.costUsd ? ` · $${msg.meta.costUsd.toFixed(3)}` : ''}
+            {msg.meta.trace && (
+              <button className="link-btn" onClick={() => openModal({ kind: 'trace', chatId: msg.chatId, msgId: msg.id })} title="每次模型调用的 token 和内容">
+                <Route size={11} /> 轨迹
+              </button>
+            )}
           </div>
         )}
       </div>

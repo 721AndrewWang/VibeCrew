@@ -1546,3 +1546,113 @@ body.resizing iframe {
   text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
   text-underline-offset: 2px;
 }
+
+/* ---------------------------------------------------------------- turn trace */
+.msg-foot .link-btn {
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.msg-foot .link-btn:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+.trace-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.trace-totals b {
+  color: var(--text);
+  font-weight: 600;
+}
+.trace-steps {
+  display: flex;
+  flex-direction: column;
+}
+.trace-row {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+.trace-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.trace-head:disabled {
+  cursor: default;
+}
+.trace-head:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+.trace-at {
+  width: 56px;
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.trace-icon {
+  flex: none;
+  color: var(--text-2);
+}
+.trace-row.attachment .trace-title,
+.trace-row.attachment .trace-icon {
+  color: var(--text-3);
+}
+.trace-row.error .trace-title {
+  color: var(--danger, #c33);
+}
+.trace-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-tokens,
+.trace-wait {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.trace-bar {
+  position: absolute;
+  left: 70px;
+  bottom: 0;
+  height: 2px;
+  background: var(--text-3);
+  opacity: 0.5;
+}
+.trace-detail {
+  margin: 0 0 8px 70px;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

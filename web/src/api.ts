@@ -15,6 +15,7 @@ import type {
   Routine,
   Skill,
   TurnSummary,
+  TurnTrace,
   WorkspaceMergeResult,
   WorkspaceStatus,
 } from '../../shared/types';
@@ -95,6 +96,8 @@ export interface UploadResult {
 
 export const api = {
   bootstrap: () => get<Bootstrap>('/api/bootstrap'),
+  trace: (chatId: string, msgId: string) => get<TurnTrace>(`/api/chats/${chatId}/messages/${msgId}/trace`),
+  traceRawUrl: (chatId: string, msgId: string) => `/api/chats/${chatId}/messages/${msgId}/trace?raw=1`,
   auth: (refresh = false) => get<AuthStatus>(`/api/auth${refresh ? '?refresh=1' : ''}`),
   updateSettings: (p: Record<string, unknown>) => patch<{ settings: PublicSettings; lanUrl?: string }>('/api/settings', p),
   /** One tiny prompt through Claude Code with these (unsaved) connection settings. */

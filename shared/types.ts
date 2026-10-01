@@ -211,7 +211,7 @@ export interface ChatMessage {
   turnId?: ID;
   trigger?: MessageTrigger;
   /** model: the one that did most of the turn (Claude Code may use a small model on the side). */
-  meta?: { costUsd?: number; durationMs?: number; numTurns?: number; model?: string };
+  meta?: { costUsd?: number; durationMs?: number; numTurns?: number; model?: string; trace?: TraceRef };
   /** Files changed by this bot turn. */
   changes?: { files: string[]; reverted?: boolean };
   /** A note for the human only; never included in bot prompts. */
@@ -469,6 +469,46 @@ export interface BotTemplate {
   editScope?: string[];
   plugins?: string[];
 }
+
+/** Where the turn's trajectory is: Claude Code's transcript for the session, between these times. */
+export interface TraceRef {
+  sessionId: string;
+  cwd: string;
+  from: number;
+  to: number;
+}
+
+export interface TraceUsage {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  thinking: number;
+}
+
+export type TraceBlock = { type: 'thinking'; text: string } | { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; input: string };
+
+export type TraceStep =
+  /** One API call: what the model was asked at this point, and what it answered. */
+  | { kind: 'model'; at: number; waitMs: number; model: string; effort?: string; sidechain: boolean; usage: TraceUsage; blocks: TraceBlock[] }
+  | { kind: 'tool_result'; at: number; waitMs: number; toolUseId: string; isError: boolean; text: string }
+  /** What Crew (or a sub-agent) sent as the user message. */
+  | { kind: 'prompt'; at: number; text: string; sidechain: boolean }
+  /** Something Claude Code attached on its own (sandbox instructions, reminders). */
+  | { kind: 'attachment'; at: number; type: string };
+
+export interface TraceTotals {
+  calls: number;
+  tools: number;
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  thinking: number;
+  durationMs: number;
+}
+
+export type TurnTrace = { available: false; reason: string } | { available: true; sessionId: string; file: string; steps: TraceStep[]; totals: TraceTotals };
 
 export interface ModelOption {
   id: string;
