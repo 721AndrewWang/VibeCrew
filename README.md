@@ -165,13 +165,23 @@ Claude Agent SDK 默认会下载一个约 240MB 的内置 Claude Code 二进制�
 desktop/           桌面应用：Electron 主进程、托盘、加载页、打包与安装脚本、图标生成、AppArmor 规则
 server/            Node 服务（Express + WebSocket）
   agents/          机器人引擎：会话、流式事件、权限、提示词、自定义工具、改动记录
-  orchestrator.ts  排队、群聊路由、@ 接力、审批
+  orchestrator/    排队、群聊路由、@ 接力、审批
   preview.ts       预览服务器（静态 / 反向代理 + 注入脚本）
   inject/          注入到预览页面的脚本（圈选、控制台、录制、热刷新）
   devserver.ts     开发服务器托管
   routines.ts      定时任务与事件触发
-  workspaces.ts    独立工作区：git worktree、自动提交、合并、同步
+  workspaces/      独立工作区：git worktree、自动提交、合并、同步
   browser.ts       无头 Chrome（截图、控制台、页面操作）
+  log.ts           服务端日志
 web/               React 界面（Vite）
-shared/types.ts    前后端共享的类型
+shared/            前后端共享的类型和 logo 定义
+tests/             单元、集成、浏览器和桌面应用测试
+```
+
+## 参与开发
+
+架构说明见 [ARCHITECTURE.md](ARCHITECTURE.md)，开发流程、测试和代码风格见 [CONTRIBUTING.md](CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。提交前运行：
+
+```bash
+npm run check
 ```

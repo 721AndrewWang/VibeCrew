@@ -1,10 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import pkg from '../package.json';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION: string = pkg.version;
 export const APP_NAME = 'Crew';
 
 export const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,9 +33,7 @@ for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turn
   fs.mkdirSync(dir, { recursive: true });
 }
 
-export const DEFAULT_PROJECTS_ROOT = path.resolve(
-  process.env.CREW_PROJECTS || path.join(os.homedir(), 'CrewProjects'),
-);
+export const DEFAULT_PROJECTS_ROOT = path.resolve(process.env.CREW_PROJECTS || path.join(os.homedir(), 'CrewProjects'));
 
 /**
  * Variables that describe the Claude Code session Crew itself may have been launched from.
@@ -71,7 +70,10 @@ export function cleanEnv(extra: Record<string, string | undefined> = {}): Record
   // Paths the AppImage launcher prepended (its bundled libraries break system programs).
   for (const k of ['PATH', 'LD_LIBRARY_PATH', 'XDG_DATA_DIRS', 'GSETTINGS_SCHEMA_DIR']) {
     if (!out[k]) continue;
-    const v = out[k].split(':').filter((p) => p && !p.includes('/.mount_')).join(':');
+    const v = out[k]
+      .split(':')
+      .filter((p) => p && !p.includes('/.mount_'))
+      .join(':');
     if (v) out[k] = v;
     else delete out[k];
   }
@@ -105,22 +107,14 @@ export function findClaudeExecutable(refresh = false): string | null {
     const real = resolveExecutable(claudeCandidate);
     if (real) return real;
   }
-  const candidates = [
-    process.env.CREW_CLAUDE_PATH,
-    process.env.CLAUDE_PATH,
-  ].filter(Boolean) as string[];
+  const candidates = [process.env.CREW_CLAUDE_PATH, process.env.CLAUDE_PATH].filter(Boolean) as string[];
   try {
     const found = execFileSync('bash', ['-lc', 'command -v claude'], { encoding: 'utf8', timeout: 5000 }).trim();
     if (found) candidates.push(found);
   } catch {
     /* not on PATH */
   }
-  candidates.push(
-    path.join(os.homedir(), '.local', 'bin', 'claude'),
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  );
+  candidates.push(path.join(os.homedir(), '.local', 'bin', 'claude'), path.join(os.homedir(), '.claude', 'local', 'claude'), '/usr/local/bin/claude', '/opt/homebrew/bin/claude');
   for (const c of candidates) {
     const real = resolveExecutable(c);
     if (real) {
@@ -161,7 +155,11 @@ export function findChrome(): string | null {
   ].filter(Boolean) as string[];
   try {
     const pw = path.join(home, '.cache', 'ms-playwright');
-    for (const d of fs.readdirSync(pw).filter((d) => d.startsWith('chromium-')).sort().reverse()) {
+    for (const d of fs
+      .readdirSync(pw)
+      .filter((d) => d.startsWith('chromium-'))
+      .sort()
+      .reverse()) {
       candidates.push(path.join(pw, d, 'chrome-linux64', 'chrome'), path.join(pw, d, 'chrome-linux', 'chrome'));
     }
   } catch {

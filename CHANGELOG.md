@@ -1,0 +1,42 @@
+# 更新记录
+
+格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [未发布]
+
+## [0.2.0] - 2026-09-30
+
+### 新增
+
+- **独立工作区**：对话可以在自己的 git worktree 和分支里工作，每轮自动提交，在「改动」里看和主分支的差异，一键压成一个提交合并回去；主分支的新提交可以同步进来，冲突可以交给机器人解决。
+  - 新工作区会带上 git 之外、但干活需要的本地文件（`.env`、`CLAUDE.md`、`.claude/` 里的设置和 hook、`.git/info/exclude` 里的文件）。
+  - 项目设置里可以配准备命令（跑完机器人才开始）、提交信息要求（合并时可以一键生成）、提交不加 AI 署名、必须确认的操作。
+- **其他模型服务商**：DeepSeek、Kimi、智谱 GLM、通义千问、MiniMax、OpenRouter、Ollama，或者任何兼容 Anthropic 接口的地址。
+- **输入框开关**（和 Claude Code 一样）：每个对话可以单独切换权限模式、模型和思考强度；切换权限模式会马上作用到正在进行的这一轮。
+- **上下文用量小圆环**，点开能看到每个机器人的用量。回复底部和模型开关都会显示实际用的模型。
+- **禁止的操作**（设置 → 默认）：任何权限级别下都拦得住，全自动也不例外。
+- 设置 → 外观里有 6 个 logo 可选，Dock、托盘和窗口图标跟着变。
+- 浏览器的前进/后退可以切换对话；`#/chat/<id>` 链接能直接打开某个对话。
+
+### 变更
+
+- 改名为 **Crew**。第一次启动会把 `~/.vibecrew` 搬到 `~/.crew`，把 `~/VibeCrewProjects` 搬到 `~/CrewProjects`（保存的路径一起更新），浏览器资料也会迁移过来。安装新版时会清理旧版。
+- 界面和图标改成黑白灰，用线条图标。
+- 「总是允许」现在会给复合命令的每一段都加上规则。`cd`、`cat`、`echo` 这类无害命令不再需要确认。
+- 自动模式下，机器人做日常工作时不再在聊天里征求同意。
+
+### 工程
+
+- 测试：Vitest 跑单元和集成测试，Playwright 跑浏览器和桌面应用测试。集成测试会让真实的 Claude Code 命令行连本地的假模型接口，不需要账号。
+- Biome 负责格式和 lint，`npm run check` 一次跑完类型检查、lint 和测试。
+- GitHub Actions CI。
+- 服务端统一日志（`server/log.ts`，用 `CREW_LOG_LEVEL` 控制详细程度）。
+- 新增 ARCHITECTURE.md 和 CONTRIBUTING.md。
+
+## [0.1.0] - 2026-09-29
+
+第一个版本（当时叫 VibeCrew）：机器人团队、群聊和 @ 接力、实时预览、文件、终端、改动记录与撤销、定时任务、技能、录制演示、插件和 MCP、手机访问、桌面应用。
+
+[未发布]: https://github.com/krukteresa413-ops/VibeCrew/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/krukteresa413-ops/VibeCrew/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/krukteresa413-ops/VibeCrew/releases/tag/v0.1.0
