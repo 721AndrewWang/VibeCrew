@@ -35,6 +35,7 @@ import {
   writeProjectFile,
 } from './projects';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
+import { Approval, BotCreate, BotPatch, body, ChatPatch, GroupCreate, MessageSend, ProjectOpen, ProjectPatch, RoutineSave, SettingsPatch, SkillSave, Upload } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
@@ -113,13 +114,13 @@ export function apiRouter() {
   r.get('/auth', async (req, res) => res.json(await checkAuth(req.query.refresh === '1')));
 
   r.patch('/settings', async (req, res) => {
-    const b = req.body || {};
+    const b = body(SettingsPatch, req.body);
     const cur = settings.get();
     const patch: Partial<typeof cur> = connectionPatch(b, cur);
     if (typeof b.defaultModel === 'string') patch.defaultModel = b.defaultModel.trim();
     if (typeof b.lanEnabled === 'boolean') patch.lanEnabled = b.lanEnabled;
     if (typeof b.projectsRoot === 'string' && b.projectsRoot.trim()) patch.projectsRoot = path.resolve(b.projectsRoot.trim().replace(/^~(?=$|\/)/, os.homedir()));
-    if (['auto', 'edits', 'ask', 'review', 'plan'].includes(b.defaultPermission)) patch.defaultPermission = b.defaultPermission;
+    if (b.defaultPermission) patch.defaultPermission = b.defaultPermission;
     if (typeof b.maxHops === 'number') patch.maxHops = Math.max(0, Math.min(30, Math.round(b.maxHops)));
     if (isLogoId(b.logo)) patch.logo = b.logo;
     if (Array.isArray(b.denyRules)) {
@@ -150,7 +151,7 @@ export function apiRouter() {
   // Tries the connection as entered on the Settings page (not saved yet): one tiny prompt.
   r.post('/settings/test-connection', async (req, res) => {
     const cur = settings.get();
-    res.json(await testConnection({ ...cur, ...connectionPatch(req.body || {}, cur) }));
+    res.json(await testConnection({ ...cur, ...connectionPatch(body(SettingsPatch, req.body), cur) }));
   });
 
   r.get('/lan', async (_req, res) => {
@@ -159,8 +160,8 @@ export function apiRouter() {
   });
 
   // ------------------------------------------------------------ bots
-  r.post('/bots', (req, res) => res.json(createBot(req.body || {})));
-  r.patch('/bots/:id', (req, res) => res.json(updateBot(req.params.id, req.body || {})));
+  r.post('/bots', (req, res) => res.json(createBot(body(BotCreate, req.body))));
+  r.patch('/bots/:id', (req, res) => res.json(updateBot(req.params.id, body(BotPatch, req.body))));
   r.delete('/bots/:id', (req, res) => {
     deleteBot(req.params.id);
     res.json({ ok: true });
@@ -173,8 +174,8 @@ export function apiRouter() {
   });
 
   // ------------------------------------------------------------ chats
-  r.post('/chats', (req, res) => res.json(createGroup(req.body || {})));
-  r.patch('/chats/:id', (req, res) => res.json(updateChat(req.params.id, req.body || {})));
+  r.post('/chats', (req, res) => res.json(createGroup(body(GroupCreate, req.body))));
+  r.patch('/chats/:id', (req, res) => res.json(updateChat(req.params.id, body(ChatPatch, req.body))));
   r.delete('/chats/:id', (req, res) => {
     deleteChat(req.params.id);
     res.json({ ok: true });
@@ -187,8 +188,8 @@ export function apiRouter() {
     res.json({ messages: list.slice(-limit), hasMore: list.length > limit });
   });
   r.post('/chats/:id/messages', (req, res) => {
-    const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as Attachment[]).slice(0, 20) : undefined;
-    res.json(sendUserMessage(req.params.id, { text: str(req.body?.text), attachments }));
+    const b = body(MessageSend, req.body);
+    res.json(sendUserMessage(req.params.id, { text: b.text, attachments: b.attachments as Attachment[] | undefined }));
   });
   r.post('/chats/:id/stop', async (req, res) => {
     await stopChat(req.params.id);
@@ -256,8 +257,8 @@ export function apiRouter() {
   });
 
   r.post('/approvals/:id', (req, res) => {
-    const d = str(req.body?.decision);
-    const ok = resolveApproval(req.params.id, { allow: d === 'allow' || d === 'always', always: d === 'always', message: str(req.body?.message) || undefined });
+    const { decision: d, message } = body(Approval, req.body);
+    const ok = resolveApproval(req.params.id, { allow: d === 'allow' || d === 'always', always: d === 'always', message: message || undefined });
     if (!ok) throw new HttpError(410, '这个请求已经失效了');
     res.json({ ok: true });
   });
@@ -265,12 +266,12 @@ export function apiRouter() {
   // ------------------------------------------------------------ projects
   r.get('/projects/templates', (_req, res) => res.json(projectTemplates()));
   r.post('/projects', async (req, res) => {
-    const b = req.body || {};
-    if (b.mode === 'open') res.json(decorate(openExistingProject(str(b.path), str(b.name) || undefined)));
-    else res.json(decorate(await createProject({ name: str(b.name), template: str(b.template) || 'static', parentDir: str(b.parentDir) || undefined })));
+    const b = body(ProjectOpen, req.body);
+    if (b.mode === 'open') res.json(decorate(openExistingProject(b.path || '', b.name || undefined)));
+    else res.json(decorate(await createProject({ name: b.name || '', template: b.template || 'static', parentDir: b.parentDir || undefined, folder: b.folder })));
   });
   r.patch('/projects/:id', (req, res) => {
-    const p = updateProject(req.params.id, req.body || {});
+    const p = updateProject(req.params.id, body(ProjectPatch, req.body));
     // Rules and commit settings reach the bots through their sessions.
     invalidateProject(p.id);
     res.json(decorate(p));
@@ -376,7 +377,10 @@ export function apiRouter() {
   });
 
   // ------------------------------------------------------------ skills
-  r.post('/skills', (req, res) => res.json(skills.save(req.body || {}, str(req.body?.previousName) || undefined)));
+  r.post('/skills', (req, res) => {
+    const b = body(SkillSave, req.body);
+    res.json(skills.save(b, b.previousName || undefined));
+  });
   r.delete('/skills/:name', (req, res) => {
     skills.remove(req.params.name);
     res.json({ ok: true });
@@ -398,11 +402,11 @@ export function apiRouter() {
   });
 
   // ------------------------------------------------------------ routines
-  r.post('/routines', (req, res) => res.json(saveRoutine(req.body || {})));
+  r.post('/routines', (req, res) => res.json(saveRoutine(body(RoutineSave, req.body))));
   r.patch('/routines/:id', (req, res) => {
     const cur = routines.get(req.params.id);
     if (!cur) throw new HttpError(404, '任务不存在');
-    res.json(saveRoutine({ ...cur, ...(req.body || {}), id: cur.id }));
+    res.json(saveRoutine({ ...cur, ...body(RoutineSave.partial(), req.body), id: cur.id }));
   });
   r.delete('/routines/:id', (req, res) => {
     deleteRoutine(req.params.id);
@@ -417,11 +421,11 @@ export function apiRouter() {
 
   // ------------------------------------------------------------ uploads
   r.post('/uploads', (req, res) => {
-    const mime = str(req.body?.mime);
-    if (!IMAGE_MIMES.has(mime)) throw new HttpError(400, '只支持 PNG、JPEG、GIF、WebP 图片');
-    const buf = Buffer.from(str(req.body?.data), 'base64');
+    const b = body(Upload, req.body);
+    if (!IMAGE_MIMES.has(b.mime)) throw new HttpError(400, '只支持 PNG、JPEG、GIF、WebP 图片');
+    const buf = Buffer.from(b.data, 'base64');
     if (!buf.length || buf.length > 15 * 1024 * 1024) throw new HttpError(400, '图片为空或超过 15MB');
-    res.json(saveUpload(buf, mime, str(req.body?.name) || 'image'));
+    res.json(saveUpload(buf, b.mime, b.name || 'image'));
   });
   r.get('/uploads/:file', (req, res) => {
     const abs = uploadFile(req.params.file);

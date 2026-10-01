@@ -10,7 +10,8 @@
 └───────────────┬────────────────────────────────────────────────┘
                 │ spawn（ELECTRON_RUN_AS_NODE）
 ┌───────────────▼──────────── 服务（server/，Node + Express）─────┐
-│  api.ts      REST 接口           index.ts  HTTP + WebSocket 入口 │
+│  api.ts      REST 接口（请求形状由 schemas.ts 把关）             │
+│  index.ts    HTTP + WebSocket 入口                              │
 │  orchestrator/ 排队、群聊路由、@ 接力、权限审批                  │
 │  agents/     机器人会话：Claude Agent SDK query() → 系统 claude │
 │  workspaces/ git worktree 独立工作区：创建、自动提交、合并       │
