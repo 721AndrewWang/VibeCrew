@@ -5,6 +5,7 @@ import { api } from '../../../api';
 import { dmOf, openChat, setView, toast, useStore } from '../../../store';
 import { cx, PERMISSION_INFO } from '../../../utils';
 import { Avatar, Glyph, Modal } from '../../ui';
+import { modelLabel, tierMark, tierTitle } from '../BotsView';
 import { BOT_NAME_RE, ColorPicker, MonoAvatarHint } from './identity';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -15,6 +16,7 @@ function firstLine(s: string) {
 
 export function NewBotDialog({ onClose }: { onClose: () => void }) {
   const templates = useStore((s) => s.templates);
+  const models = useStore((s) => s.models);
   const bots = useStore((s) => s.bots);
   const [mode, setMode] = useState<'gallery' | 'blank'>('gallery');
   const [busy, setBusy] = useState<string | null>(null);
@@ -120,6 +122,11 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
                     <span className="badge" title={perm.desc}>
                       <Glyph emoji={perm.icon} size={11} /> {perm.label}
                     </span>
+                    <span className="badge" title={tierTitle(models, t.model || '')}>
+                      {modelLabel(models, t.model || '')}
+                      {tierMark(models, t.model || '')}
+                    </span>
+                    {t.editScope?.length ? <span className="badge">只改 {t.editScope[0]}…</span> : null}
                     {usage[t.id] ? <span className="badge green">队伍里已有 {usage[t.id]} 位</span> : null}
                   </div>
                 </button>

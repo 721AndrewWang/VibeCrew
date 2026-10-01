@@ -8,8 +8,9 @@ test('mode, model and effort switches change the chat for every bot', async ({ p
   await openChat(page, crew, group.id);
   const pills = page.locator('.composer .switch-pill');
   await expect(pills).toHaveCount(3);
-  // Lens asks at every step while the others edit freely: a mixed team.
-  await expect(pills.nth(0)).toContainText('各自设置');
+  // Lens is read-only and stays so whatever the switch says; the others all edit freely, so the
+  // switch shows their shared setting rather than 各自设置.
+  await expect(pills.nth(0)).toContainText('自动改文件');
 
   await pills.nth(0).click();
   await page.locator('.menu .menu-item', { hasText: '自动（AI 把关）' }).click();
@@ -25,7 +26,9 @@ test('mode, model and effort switches change the chat for every bot', async ({ p
 
   await pills.nth(0).click();
   await page.locator('.menu .menu-item', { hasText: '恢复各机器人自己的设置' }).click();
-  await expect(pills.nth(0)).toContainText('各自设置');
+  await expect(pills.nth(0)).toContainText('自动改文件');
+  const reset = (await bootstrap(crew)).chats.find((c: any) => c.id === group.id);
+  expect(reset.permission).toBeUndefined();
 });
 
 test('the context ring fills after a reply, lists each bot, and empties with a new topic', async ({ page, crew }) => {

@@ -388,7 +388,8 @@ export class FakeSession implements AgentSession {
         num_turns: 3,
         result: 'ok',
         stop_reason: 'end_turn',
-        total_cost_usd: 0,
+        // A demo turn costs a cent, so budgets and spend are visible in the UI and testable.
+        total_cost_usd: 0.01,
         usage: {},
         modelUsage: { [this.cfg.model || 'claude-opus-5-5']: { outputTokens: 120 } },
         permission_denials: [],

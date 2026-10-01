@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Attachment, Bot, Chat, ChatMessage, Project, Skill } from '../../shared/types';
 import { DATA } from '../config';
+import { MODEL_OPTIONS } from '../data/catalog';
 
 export function memoryFile(botId: string) {
   return path.join(DATA.memory, `${botId}.md`);
@@ -29,6 +30,17 @@ const PERMISSION_NOTE: Record<Bot['permission'], string> = {
 };
 
 /** Stable part of the system prompt, appended to Claude Code's own. */
+/** How a teammate is set up, so work gets routed to the role that fits (and costs the least). */
+function profileNote(b: Bot): string {
+  const bits: string[] = [];
+  if (b.permission === 'plan') bits.push('只读');
+  if (b.editScope?.length) bits.push(`只改 ${b.editScope.slice(0, 3).join('、')}${b.editScope.length > 3 ? ' 等' : ''}`);
+  const tier = MODEL_OPTIONS.find((m) => m.id === b.model)?.tier;
+  if (tier === 'low') bits.push('便宜模型，适合简单任务');
+  else if (tier === 'mid') bits.push('中档模型');
+  return bits.length ? `（${bits.join('；')}）` : '';
+}
+
 export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project | null; team: Bot[]; skills: Skill[] }): string {
   const { bot, chat, project, team, skills } = opts;
   const lines: string[] = [];
@@ -39,7 +51,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   const members = team.filter((b) => chat.botIds.includes(b.id));
   if (chat.kind === 'group') {
     lines.push('', `## 团队（群聊「${chat.title}」的成员）`);
-    for (const m of members) lines.push(`- @${m.name}：${m.title}${m.id === bot.id ? '（你自己）' : ''}`);
+    for (const m of members) lines.push(`- @${m.name}：${m.title}${m.id === bot.id ? '（你自己）' : ''}${profileNote(m)}`);
     lines.push(
       '',
       '协作规则：',
@@ -50,7 +62,10 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   } else {
     lines.push('', '## 当前对话', '这是你和用户的单聊，其他队友看不到这里的消息。如果需要多人协作，可以建议用户建一个群聊。');
     const others = team.filter((b) => b.id !== bot.id);
-    if (others.length) lines.push(`团队里的其他成员：${others.map((b) => `${b.name}（${b.title}）`).join('、')}。`);
+    if (others.length) lines.push(`团队里的其他成员：${others.map((b) => `${b.name}（${b.title}${profileNote(b)}）`).join('、')}。`);
+  }
+  if (bot.editScope?.length) {
+    lines.push('', '## 你负责的范围', `你只能修改这些路径：${bot.editScope.join('、')}。别的文件系统会拒绝你改，也不要用命令行绕过去；需要改别的地方就 @ 负责的队友，或者告诉用户。`);
   }
 
   lines.push('', '## 工作环境');

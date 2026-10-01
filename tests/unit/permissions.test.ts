@@ -86,6 +86,27 @@ describe('decide', () => {
   });
 });
 
+describe("a role's edit scope", () => {
+  const probe = bot({ editScope: ['tests/**', '**/*.spec.*'] });
+  it('refuses edits outside it, telling the bot to hand the file over', () => {
+    const d = decide(probe, 'auto', 'Write', { file_path: 'src/app.ts' }, cwd, {});
+    expect(d.behavior).toBe('deny');
+    expect(d.because).toBe('角色范围只包括 tests/**、**/*.spec.*');
+    if (d.behavior === 'deny') expect(d.message).toContain('@');
+  });
+  it('allows edits inside it, by relative or absolute path', () => {
+    expect(decide(probe, 'auto', 'Edit', { file_path: 'tests/unit/a.test.ts' }, cwd, {}).behavior).toBe('allow');
+    expect(decide(probe, 'auto', 'Write', { file_path: `${cwd}/web/app.spec.tsx` }, cwd, {}).behavior).toBe('allow');
+  });
+  it('does not limit reading or commands', () => {
+    expect(decide(probe, 'auto', 'Read', { file_path: 'src/app.ts' }, cwd, {}).behavior).toBe('allow');
+    expect(decide(probe, 'auto', 'Bash', bash('npm test'), cwd, {}).behavior).toBe('allow');
+  });
+  it('means nothing when empty', () => {
+    expect(decide(bot({ editScope: [] }), 'auto', 'Write', { file_path: 'src/app.ts' }, cwd, {}).behavior).toBe('allow');
+  });
+});
+
 describe('matchingRule', () => {
   it('names the first rule that touches any part of the command', () => {
     expect(matchingRule(['Bash(*host-a*)', 'Bash(*host-b*)'], 'Bash', bash('cd x && ssh host-b ls'), cwd)).toBe('Bash(*host-b*)');

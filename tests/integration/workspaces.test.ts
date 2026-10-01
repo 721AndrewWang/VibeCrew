@@ -419,7 +419,8 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
   });
 
   it('never loses work when git cannot commit', async () => {
-    const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === bots.probe);
+    // Pixel may write anywhere; Probe's role is limited to test files, so its demo write is refused.
+    const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === bots.pixel);
     const wsd = await api('POST', `/chats/${dm.id}/workspace`);
     expect(wsd.status, wsd.error).toBe(200);
     writeConfig(false); // git can no longer commit

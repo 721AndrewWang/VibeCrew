@@ -1522,6 +1522,12 @@
   box-shadow: 0 3px 10px var(--glow);
 }
 
+.badge .tier {
+  margin-left: 4px;
+  opacity: 0.6;
+  letter-spacing: -0.5px;
+}
+
 .notice {
   margin: 10px 0;
   padding: 10px 12px;

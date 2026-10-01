@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
+import type { ModelOption } from '../../../../../shared/types';
 import { useStore } from '../../../store';
 
 /** Claude model names, which another provider does not understand. */
 const CLAUDE_MODEL = /^claude-|^(opus|sonnet|haiku|fable)$/i;
+
+const TIER_LABEL = { high: '高档 $$$', mid: '中档 $$', low: '便宜 $' } as const;
 
 /** Model dropdown with a free-form "custom" option; lists the provider's models when one is used. */
 export function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -38,6 +41,7 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (v: 
         {models.map((m) => (
           <option key={m.id} value={m.id}>
             {m.label}
+            {(m as ModelOption).tier ? ` · ${TIER_LABEL[(m as ModelOption).tier!]}` : ''}
           </option>
         ))}
         {!models.some((m) => m.id === '') && <option value="">默认模型</option>}

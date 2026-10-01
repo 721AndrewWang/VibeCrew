@@ -15,7 +15,9 @@ export const test = base.extend<{ crew: CrewServer }>({
     await use(server);
     await server.stop();
   },
-  page: async ({ page }, use) => {
+  // Depends on crew so the page closes before the server stops: a request in flight at teardown
+  // would otherwise count as a page error.
+  page: async ({ page, crew: _crew }, use) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

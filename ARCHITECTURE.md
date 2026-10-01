@@ -48,6 +48,8 @@ shared/  前后端共用的类型（types.ts）和 logo 定义（logos.ts）
 | AI 审查员 `review` | auto | 由 Claude Code 的分类器把关 |
 | 全自动 `auto` | default | `canUseTool` 一律放行 |
 
+另外每个机器人可以有「只能修改的路径」（`editScope`，相对项目的 glob）：范围外的 Edit/Write 直接拒绝并让它 @ 队友，这是角色分工的硬约束而不是提示词。每月预算（`monthlyBudgetUsd`）按 Claude Code 报告的每轮费用累计（`server/usage.ts`），用完后 `runTurn` 直接跳过这个机器人的回合并在对话里说明一次。
+
 不管哪个级别，下面三层都会生效：
 
 - **沙盒**（`server/sandbox.ts`）：开着的时候，每个会话都带上 Claude Code 的 `sandbox` 选项，命令在 bubblewrap 里跑，网络只到本机加允许的域名（全局列表 + 项目列表）。`allowUnsandboxedCommands: false`，机器人不能用 `dangerouslyDisableSandbox` 跳出去；`autoAllowBashIfSandboxed: false`，Crew 自己的审批逻辑照常生效。这是唯一按「能不能连上」而不是「命令长什么样」来判断的一层，所以也是唯一算得上安全边界的一层。沙盒里所有连接都走 Claude Code 的代理（代理持有允许列表，`strictAllowlist` 让不在列表上的主机直接被拒，不会变成一个可能被放行的询问）；但沙盒自带的 `no_proxy` 让回环和内网地址走直连，而直连在隔离的网络命名空间里什么都连不上，所以要访问本机或局域网的服务，命令前要加 `env -u no_proxy -u NO_PROXY`（提示词里已经告诉机器人了）。机器不满足依赖时（Linux 要 bubblewrap 和 socat）设置页会提示，机器人在没有沙盒的情况下运行。

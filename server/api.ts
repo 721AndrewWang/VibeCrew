@@ -41,6 +41,7 @@ import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
+import { usageOf } from './usage';
 import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
 
 const log = logger('api');
@@ -67,6 +68,7 @@ function bootstrap(): Bootstrap {
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
+    usage: usageOf(),
     providers: PROVIDER_PRESETS,
     features: { pty: hasPty, browser: hasBrowser(), sandbox: sandboxStatus() },
     auth: authStatus(),
@@ -158,6 +160,7 @@ export function apiRouter() {
     res.json(await testConnection({ ...cur, ...connectionPatch(body(SettingsPatch, req.body), cur) }));
   });
 
+  r.get('/usage', (_req, res) => res.json(usageOf()));
   r.get('/sandbox', (req, res) => res.json(sandboxStatus(req.query.refresh === '1')));
 
   r.get('/lan', async (_req, res) => {

@@ -166,6 +166,24 @@ export function decide(bot: Bot, level: PermissionLevel, toolName: string, input
   if (toolName === 'ExitPlanMode' && level === 'plan') {
     return { behavior: 'deny', message: '你是只读角色，不能执行修改。请直接在回复中给出方案或结论，由用户或队友来实施。', because: `${mode}，不能开始修改` };
   }
+  // A role's lane: edits outside it are refused, so the work goes to the teammate whose lane it is.
+  if (
+    EDIT_TOOLS.has(toolName) &&
+    bot.editScope?.length &&
+    !rulesAllow(
+      bot.editScope.map((g) => `Edit(${g})`),
+      toolName,
+      input,
+      cwd,
+    )
+  ) {
+    const scope = bot.editScope.join('、');
+    return {
+      behavior: 'deny',
+      message: `这个文件不在你负责的范围内（你只能修改：${scope}）。不要用命令行绕过去改它；请 @ 负责它的队友来改，或者让用户在你的设置里调整「只能修改的路径」。`,
+      because: `角色范围只包括 ${scope}`,
+    };
+  }
   const botRule = matchingRule(bot.askRules, toolName, input, cwd);
   if (botRule) return { behavior: 'ask', because: `机器人的「必须确认」规则 ${botRule}` };
   const projectRule = opts.projectRules?.length ? matchingRule(opts.projectRules, toolName, input, cwd) : null;

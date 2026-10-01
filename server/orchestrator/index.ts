@@ -16,6 +16,7 @@ import { chatProjectId, configOf, HttpError, touchProject } from '../projects';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid } from '../store';
+import { monthSpend, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
 import { setStatus } from './botStatus';
 import { ALL_RE, emitChat, parseMentions, preview, setLastMessage, systemMessage } from './chatLog';
@@ -30,6 +31,9 @@ export { effectiveBot, setPreviewPage } from './turnContext';
 const log = logger('orchestrator');
 
 const PROGRESS_SAVE_MS = 3000;
+
+/** chatId:botId → when the chat was last told the bot's budget is spent. */
+const budgetNotices = new Map<string, number>();
 
 /** Runs fn at most once per `ms`, on the trailing edge; cancel() drops a pending call. */
 function throttle(ms: number, fn: () => void) {
@@ -296,6 +300,19 @@ async function runTurn(job: Job) {
     touchProject(project.id);
   }
 
+  // A role with a monthly budget stops taking turns once it is spent (said once an hour per chat).
+  if (bot.monthlyBudgetUsd) {
+    const spent = monthSpend(bot.id);
+    if (spent >= bot.monthlyBudgetUsd) {
+      const key = `${chat.id}:${bot.id}`;
+      if (Date.now() - (budgetNotices.get(key) || 0) > 3600_000) {
+        budgetNotices.set(key, Date.now());
+        systemMessage(chat, `${bot.name} 这个月的预算（$${bot.monthlyBudgetUsd.toFixed(2)}）已经用完（已用 $${spent.toFixed(2)}），先不接任务。可以在它的设置里提高预算或去掉上限。`);
+      }
+      return;
+    }
+  }
+
   const cursor = chat.cursors[bot.id] ?? 0;
   const unseen = messages.sorted(chat.id).filter((m) => m.seq > cursor && !m.uiOnly && !(m.role === 'bot' && m.botId === bot.id) && m.status !== 'streaming');
 
@@ -401,6 +418,7 @@ async function runTurn(job: Job) {
   }
   messages.put(msg);
   bus.emit({ t: 'msg', msg });
+  bus.emit({ t: 'usage', usage: usageOf() });
 
   const fresh = chats.get(chat.id);
   if (!fresh) return;

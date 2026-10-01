@@ -48,6 +48,10 @@ export interface Bot {
   plugins: string[];
   /** Load the user's own Claude Code settings (their MCP servers, plugins, skills). */
   loadUserSettings: boolean;
+  /** Paths (globs, relative to the project) this role may edit; anything else is refused. Empty = no limit. */
+  editScope?: string[];
+  /** Spend cap per calendar month in USD; the bot stops taking turns once reached. */
+  monthlyBudgetUsd?: number;
   /** Project used by this bot's direct chat. */
   projectId: ID | null;
   template?: string;
@@ -459,7 +463,30 @@ export interface BotTemplate {
   title: string;
   description: string;
   permission: PermissionLevel;
+  /** The role's capability profile: what it costs and what it may touch, not only how it talks. */
+  model?: string;
+  effort?: Effort;
+  editScope?: string[];
   plugins?: string[];
+}
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  /** Rough price class, for choosing a role's model. */
+  tier?: 'high' | 'mid' | 'low';
+}
+
+/** What a bot's turns cost over a period. */
+export interface BotUsage {
+  costUsd: number;
+  turns: number;
+  durationMs: number;
+}
+
+export interface UsageSummary {
+  today: BotUsage;
+  month: BotUsage;
 }
 
 export interface Bootstrap {
@@ -475,7 +502,9 @@ export interface Bootstrap {
   statuses: Record<ID, BotStatus>;
   devServers: DevServerState[];
   previews: PreviewInfo[];
-  models: { id: string; label: string }[];
+  models: ModelOption[];
+  /** botId → spend today and this month. */
+  usage: Record<ID, UsageSummary>;
   providers: ProviderPreset[];
   features: { pty: boolean; browser: boolean; sandbox: SandboxStatus };
   auth: AuthStatus;
@@ -501,6 +530,7 @@ export type ServerEvent =
   | { t: 'bot'; bot: Bot }
   | { t: 'bot_deleted'; id: ID }
   | { t: 'bot_status'; botId: ID; status: BotStatus }
+  | { t: 'usage'; usage: Record<ID, UsageSummary> }
   | { t: 'msg'; msg: ChatMessage }
   | { t: 'msg_deleted'; chatId: ID; id: ID }
   | { t: 'msg_part'; chatId: ID; id: ID; index: number; part: MessagePart }

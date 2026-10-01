@@ -1,4 +1,4 @@
-import type { BotTemplate, PluginDef } from '../../shared/types';
+import type { BotTemplate, ModelOption, PluginDef } from '../../shared/types';
 
 export const BOT_TEMPLATES: BotTemplate[] = [
   {
@@ -8,6 +8,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#5e5ce6',
     title: '技术负责人 · 拆解需求、分派任务',
     permission: 'edits',
+    effort: 'high',
     description: [
       '你是这支 Web 开发小队的技术负责人（Chief of Staff）。',
       '收到需求后：',
@@ -24,6 +25,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#0a84ff',
     title: '前端工程师 · 页面与交互',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'medium',
     plugins: ['context7'],
     description: [
       '你是资深前端工程师，精通 HTML、CSS、JavaScript/TypeScript、React、Vue 和 Tailwind CSS。',
@@ -42,6 +45,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#ff9f0a',
     title: '全栈工程师 · 接口、数据与工程化',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'medium',
     plugins: ['context7'],
     description: [
       '你是全栈工程师，负责后端 API、数据模型、Node.js 服务、构建配置、依赖管理和部署脚本。',
@@ -57,6 +62,9 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#30d158',
     title: '测试工程师 · 浏览器验收',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'low',
+    editScope: ['tests/**', 'test/**', 'e2e/**', '**/*.test.*', '**/*.spec.*', 'playwright.config.*', 'vitest.config.*'],
     description: [
       '你是 QA 测试工程师。你用浏览器工具像真实用户一样测试页面：',
       '- browser_act：点击、输入、提交表单、跳转，走通关键流程；',
@@ -73,7 +81,9 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     emoji: '🔍',
     color: '#bf5af2',
     title: '代码审查 · 只读',
-    permission: 'ask',
+    permission: 'plan',
+    model: 'claude-sonnet-5',
+    effort: 'low',
     description: [
       '你是严格但友善的代码审查员。你审查最近的改动（用 git diff / git log，或用户指定的文件），关注：',
       '正确性和边界情况、安全隐患（XSS、注入、密钥泄露）、性能、可访问性、可维护性与一致性。',
@@ -88,6 +98,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#ff375f',
     title: 'UI/UX 设计师 · 视觉与体验',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'medium',
     description: [
       '你是 UI/UX 设计师，擅长设计系统、配色、字体排版、间距节奏、交互细节和情感化设计。',
       '先给出简洁的设计方向（风格关键词、配色、字体、圆角/阴影/间距规范），再直接用 CSS/Tailwind 落地；',
@@ -102,6 +114,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#64d2ff',
     title: '文案与 SEO',
     permission: 'edits',
+    model: 'claude-haiku-4-5',
+    effort: 'low',
     description: [
       '你负责页面文案与 SEO：标题、卖点、CTA、微文案、错误提示，以及 meta 标签、Open Graph、结构化数据、语义化标题层级和多语言。',
       '文案简洁有力、符合目标用户语境，避免空话。只改文字和 meta，不动布局逻辑；需要改结构时 @Pixel。',
@@ -165,13 +179,13 @@ export const PLUGINS: PluginDef[] = [
   },
 ];
 
-export const MODEL_OPTIONS = [
-  { id: '', label: '跟随 Claude Code 默认' },
-  { id: 'claude-opus-5', label: 'Claude Opus 5' },
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+export const MODEL_OPTIONS: ModelOption[] = [
+  { id: '', label: '跟随 Claude Code 默认', tier: 'high' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'high' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', tier: 'high' },
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', tier: 'high' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'mid' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'low' },
 ];
 
 export const DEFAULT_ALLOW_RULES = [

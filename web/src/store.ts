@@ -22,6 +22,7 @@ import type {
   ServerEvent,
   Skill,
   TurnSummary,
+  UsageSummary,
 } from '../../shared/types';
 import { api } from './api';
 import { desktop } from './desktop';
@@ -71,6 +72,8 @@ export interface AppState {
   settings: PublicSettings;
   auth: AuthStatus;
   features: { pty: boolean; browser: boolean; sandbox: SandboxStatus };
+  /** botId → spend today and this month. */
+  usage: Record<string, UsageSummary>;
   models: { id: string; label: string }[];
   providers: ProviderPreset[];
   templates: BotTemplate[];
@@ -155,6 +158,7 @@ export const useStore = create<AppState>(() => ({
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },
+  usage: {},
   models: [],
   providers: [],
   templates: [],
@@ -218,6 +222,7 @@ export async function boot() {
       settings: b.settings,
       auth: b.auth,
       features: b.features,
+      usage: b.usage || {},
       models: b.models,
       providers: b.providers || [],
       templates: b.templates,
@@ -324,6 +329,9 @@ export function applyEvent(ev: ServerEvent) {
       if (ev.msg.chatId === s.activeChatId && ev.msg.role === 'bot' && ev.msg.status !== 'streaming' && !document.hidden) void api.read(ev.msg.chatId).catch(() => {});
       break;
     }
+    case 'usage':
+      set({ usage: ev.usage });
+      break;
     case 'msg_deleted': {
       const st = s.msgs[ev.chatId];
       if (st) set({ msgs: { ...s.msgs, [ev.chatId]: { ...st, list: st.list.filter((m) => m.id !== ev.id) } } });

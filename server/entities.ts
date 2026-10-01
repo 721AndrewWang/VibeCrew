@@ -61,7 +61,16 @@ function ensureDm(bot: Bot): Chat {
   return chat;
 }
 
-export function createBot(input: Partial<Bot> & { template?: string }): Bot {
+/** Trimmed, deduplicated globs, or undefined when there are none. */
+function cleanScope(scope: string[] | undefined): string[] | undefined {
+  const out = [...new Set((scope || []).map((g) => g.trim()).filter(Boolean))];
+  return out.length ? out : undefined;
+}
+
+/** A request may send null to clear the budget. */
+type BotInput = Partial<Omit<Bot, 'monthlyBudgetUsd'>> & { monthlyBudgetUsd?: number | null };
+
+export function createBot(input: BotInput & { template?: string }): Bot {
   const tpl = BOT_TEMPLATES.find((t) => t.id === input.template);
   let name = (input.name ?? tpl?.name ?? '').trim();
   if (!name) throw new HttpError(400, '请填写名字');
@@ -78,14 +87,16 @@ export function createBot(input: Partial<Bot> & { template?: string }): Bot {
     color: input.color || tpl?.color || '#0a84ff',
     title: input.title?.trim() || tpl?.title || 'Web 开发助手',
     description: input.description?.trim() || tpl?.description || '',
-    model: input.model ?? '',
-    effort: input.effort ?? '',
+    model: input.model ?? tpl?.model ?? '',
+    effort: input.effort ?? tpl?.effort ?? '',
     permission: input.permission || tpl?.permission || settings.get().defaultPermission,
     allowRules: input.allowRules ?? [...DEFAULT_ALLOW_RULES],
     askRules: input.askRules ?? [...DEFAULT_ASK_RULES],
     mcpServers: input.mcpServers ?? {},
     plugins: input.plugins ?? tpl?.plugins ?? [],
     loadUserSettings: input.loadUserSettings ?? true,
+    editScope: cleanScope(input.editScope) ?? (tpl?.editScope ? [...tpl.editScope] : undefined),
+    monthlyBudgetUsd: input.monthlyBudgetUsd || undefined,
     projectId: input.projectId !== undefined ? input.projectId : (listProjects()[0]?.id ?? null),
     template: tpl?.id,
     createdAt: now,
@@ -97,7 +108,7 @@ export function createBot(input: Partial<Bot> & { template?: string }): Bot {
   return bot;
 }
 
-export function updateBot(id: string, patch: Partial<Bot>): Bot {
+export function updateBot(id: string, patch: BotInput): Bot {
   const bot = bots.get(id);
   if (!bot) throw new HttpError(404, '机器人不存在');
   const renamed = patch.name !== undefined && patch.name.trim() !== bot.name;
@@ -118,10 +129,17 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
     'plugins',
     'loadUserSettings',
     'projectId',
+    'editScope',
+    'monthlyBudgetUsd',
   ];
   for (const k of allowed) {
     if (patch[k] !== undefined) (bot as any)[k] = typeof patch[k] === 'string' ? (patch[k] as string).trim() : patch[k];
   }
+  // An empty scope or budget means none.
+  const scope = cleanScope(bot.editScope);
+  if (scope) bot.editScope = scope;
+  else delete bot.editScope;
+  if (!bot.monthlyBudgetUsd) delete bot.monthlyBudgetUsd;
   bot.updatedAt = Date.now();
   bots.set(bot);
   bus.emit({ t: 'bot', bot });
