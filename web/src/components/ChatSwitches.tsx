@@ -1,5 +1,5 @@
+import { Brain, Check, ChevronDown, Eye, Hand, type LucideIcon, Pencil, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
-import { Brain, Check, ChevronDown, Eye, Hand, Pencil, Rocket, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
 import type { Bot, Chat, Effort, PermissionLevel } from '../../../shared/types';
 import { api } from '../api';
 import { toast, useStore } from '../store';
@@ -59,7 +59,9 @@ export function ModeSwitch({ chat }: { chat: Chat }) {
   const Icon = value ? MODE_ICON[value] : ShieldCheck;
   const items = (): MenuItem[] => [
     { heading: readOnly.length && working.length ? `这个对话里机器人的权限（${readOnly.map((b) => b.name).join('、')} 是只读角色，保持只读）` : '这个对话里机器人的权限' },
-    ...MODE_ORDER.map((m) => item(PERMISSION_INFO[m].label, PERMISSION_INFO[m].desc, chat.permission === m || (!chat.permission && value === m), () => void save(chat, { permission: m }), MODE_ICON[m])),
+    ...MODE_ORDER.map((m) =>
+      item(PERMISSION_INFO[m].label, PERMISSION_INFO[m].desc, chat.permission === m || (!chat.permission && value === m), () => void save(chat, { permission: m }), MODE_ICON[m]),
+    ),
     ...resetItem(chat, 'permission'),
   ];
   return (
@@ -93,8 +95,7 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
     (b) => chat.context![b.id].model!,
   );
   const actual = running ? modelLabel(running) : '';
-  const label =
-    value === undefined ? actual || '各自的模型' : value === '' ? (actual ? `默认 · ${actual}` : '默认模型') : models.find((m) => m.id === value)?.label || value;
+  const label = value === undefined ? actual || '各自的模型' : value === '' ? (actual ? `默认 · ${actual}` : '默认模型') : models.find((m) => m.id === value)?.label || value;
   const items = (): MenuItem[] => [
     { heading: actual ? `这个对话用的模型（现在是 ${actual}）` : '这个对话用的模型' },
     ...models.map((m) =>

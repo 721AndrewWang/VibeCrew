@@ -36,7 +36,6 @@ export class TurnStream {
   private blockToPart = new Map<number, number>();
   private jsonBuf = new Map<number, string>();
   private streamedIds = new Set<string>();
-  private inStreamedMessage = false;
   errorCode: string | null = null;
   stopped = false;
 
@@ -83,7 +82,6 @@ export class TurnStream {
           this.blockToPart.clear();
           this.jsonBuf.clear();
           if (ev.message?.id) this.streamedIds.add(ev.message.id);
-          this.inStreamedMessage = true;
           this.onActivity('thinking');
         } else if (ev.type === 'content_block_start') {
           const b = ev.content_block;
@@ -112,8 +110,6 @@ export class TurnStream {
             }
             this.updatePart(p);
           }
-        } else if (ev.type === 'message_stop') {
-          this.inStreamedMessage = false;
         }
         return;
       }
@@ -190,10 +186,7 @@ export class TurnStream {
       this.msg.status = 'error';
       const resultText = result.subtype === 'success' ? (result as any).result : '';
       this.msg.error =
-        (this.errorCode && ERROR_TEXT[this.errorCode]) ||
-        (result.subtype === 'error_max_turns' ? '达到了最大轮数限制。' : '') ||
-        (typeof resultText === 'string' && resultText) ||
-        '执行出错。';
+        (this.errorCode && ERROR_TEXT[this.errorCode]) || (result.subtype === 'error_max_turns' ? '达到了最大轮数限制。' : '') || (typeof resultText === 'string' && resultText) || '执行出错。';
       this.closeOpenTools('error');
     } else {
       this.msg.status = 'done';
@@ -206,9 +199,7 @@ export class TurnStream {
     if (this.stopped) this.msg.status = 'stopped';
     else {
       this.msg.status = 'error';
-      this.msg.error = /ENOENT|spawn/.test(text)
-        ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 CREW_CLAUDE_PATH。`
-        : text;
+      this.msg.error = /ENOENT|spawn/.test(text) ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 CREW_CLAUDE_PATH。` : text;
     }
     this.closeOpenTools('error');
   }

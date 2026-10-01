@@ -1,13 +1,16 @@
 import fs from 'node:fs';
 import type { Bot, Chat, Effort, PermissionLevel } from '../shared/types';
-import { bus } from './bus';
-import { BOT_TEMPLATES, DEFAULT_ALLOW_RULES, DEFAULT_ASK_RULES, DEFAULT_TEAM } from './data/catalog';
-import { bots, chats, messages, projects, routines, settings, uid } from './store';
-import { createProject, HttpError, listProjects } from './projects';
-import { applyChatSettings, forgetChat, invalidateBot, invalidateChat, isChatBusy, systemMessage } from './orchestrator';
 import { memoryFile } from './agents/prompts';
 import { deleteTurns } from './agents/recorder';
+import { bus } from './bus';
+import { BOT_TEMPLATES, DEFAULT_ALLOW_RULES, DEFAULT_ASK_RULES, DEFAULT_TEAM } from './data/catalog';
+import { logger } from './log';
+import { applyChatSettings, forgetChat, invalidateBot, invalidateChat, isChatBusy, systemMessage } from './orchestrator';
+import { createProject, HttpError, listProjects } from './projects';
+import { bots, chats, messages, projects, routines, settings, uid } from './store';
 import { detachWorkspace } from './workspaces';
+
+const log = logger('init');
 
 const NAME_RE = /^[\p{L}\p{N}_-]{1,24}$/u;
 
@@ -100,7 +103,22 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
   const renamed = patch.name !== undefined && patch.name.trim() !== bot.name;
   if (renamed) checkName(patch.name!.trim(), id);
   if (patch.projectId !== undefined && patch.projectId !== bot.projectId) assertWorkspaceIdle(dmOf(bot.id));
-  const allowed: (keyof Bot)[] = ['name', 'emoji', 'color', 'title', 'description', 'model', 'effort', 'permission', 'allowRules', 'askRules', 'mcpServers', 'plugins', 'loadUserSettings', 'projectId'];
+  const allowed: (keyof Bot)[] = [
+    'name',
+    'emoji',
+    'color',
+    'title',
+    'description',
+    'model',
+    'effort',
+    'permission',
+    'allowRules',
+    'askRules',
+    'mcpServers',
+    'plugins',
+    'loadUserSettings',
+    'projectId',
+  ];
   for (const k of allowed) {
     if (patch[k] !== undefined) (bot as any)[k] = typeof patch[k] === 'string' ? (patch[k] as string).trim() : patch[k];
   }
@@ -282,7 +300,7 @@ export async function initIfNeeded() {
     try {
       project = await createProject({ name: '我的第一个网站', template: 'static', folder: 'my-first-site' });
     } catch (e) {
-      console.warn('[init] 无法创建示例项目：', (e as Error).message);
+      log.warn('无法创建示例项目：', (e as Error).message);
     }
   }
   const team: Bot[] = [];

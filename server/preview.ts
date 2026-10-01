@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
-import type { PreviewInfo } from '../shared/types';
+import type { PreviewInfo, Project } from '../shared/types';
 import { bus, internal } from './bus';
 import { INJECT_SCRIPT } from './config';
 import { devServer } from './devserver';
@@ -110,7 +110,7 @@ class PreviewServer {
 
   info(): PreviewInfo {
     const t = this.target();
-    let project;
+    let project: Project | null;
     try {
       project = getProject(this.projectId);
     } catch {
@@ -149,7 +149,7 @@ class PreviewServer {
   }
 
   private serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
-    let project;
+    let project: Project;
     try {
       project = getProject(this.projectId);
     } catch {
@@ -228,32 +228,29 @@ class PreviewServer {
     delete headers['accept-encoding'];
     if (typeof headers.origin === 'string') headers.origin = t.origin;
     if (typeof headers.referer === 'string') headers.referer = headers.referer.replace(selfOrigin, t.origin);
-    const upstream = http.request(
-      { hostname: t.hostname, port: t.port || 80, path: req.url, method: req.method, headers },
-      (up) => {
-        const h: http.OutgoingHttpHeaders = { ...up.headers };
-        delete h['x-frame-options'];
-        delete h['content-security-policy'];
-        if (typeof h.location === 'string' && h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/';
-        const ct = String(up.headers['content-type'] || '');
-        if (ct.includes('text/html')) {
-          const chunks: Buffer[] = [];
-          up.on('data', (c) => chunks.push(c));
-          up.on('end', () => {
-            const body = injectHtml(Buffer.concat(chunks).toString('utf8'));
-            delete h['content-length'];
-            delete h['content-encoding'];
-            delete h['transfer-encoding'];
-            h['cache-control'] = 'no-store';
-            res.writeHead(up.statusCode || 200, h);
-            res.end(body);
-          });
-          return;
-        }
-        res.writeHead(up.statusCode || 200, h);
-        up.pipe(res);
-      },
-    );
+    const upstream = http.request({ hostname: t.hostname, port: t.port || 80, path: req.url, method: req.method, headers }, (up) => {
+      const h: http.OutgoingHttpHeaders = { ...up.headers };
+      delete h['x-frame-options'];
+      delete h['content-security-policy'];
+      if (typeof h.location === 'string' && h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/';
+      const ct = String(up.headers['content-type'] || '');
+      if (ct.includes('text/html')) {
+        const chunks: Buffer[] = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          const body = injectHtml(Buffer.concat(chunks).toString('utf8'));
+          delete h['content-length'];
+          delete h['content-encoding'];
+          delete h['transfer-encoding'];
+          h['cache-control'] = 'no-store';
+          res.writeHead(up.statusCode || 200, h);
+          res.end(body);
+        });
+        return;
+      }
+      res.writeHead(up.statusCode || 200, h);
+      up.pipe(res);
+    });
     upstream.on('error', (e) => {
       if (res.headersSent) return res.end();
       res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });

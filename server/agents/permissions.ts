@@ -149,14 +149,7 @@ export function insideDir(dir: string, p: string | undefined): boolean {
  * Crew's approval gate. Claude Code has already applied the bot's allow/ask rules
  * (passed as settings); this sees whatever it would have prompted for.
  */
-export function decide(
-  bot: Bot,
-  level: PermissionLevel,
-  toolName: string,
-  input: any,
-  cwd: string,
-  opts: { matchedAskRule?: unknown },
-): Decision {
+export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown }): Decision {
   if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow' };
   if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow' };
   if (toolName === 'ExitPlanMode' && level === 'plan') {
@@ -208,9 +201,22 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
     case 'Bash':
       return { title: input?.description ? `运行命令：${short(input.description, 60)}` : '运行命令', detail: String(input?.command || '') };
     case 'Write':
-      return { title: `写入文件 ${rel(input?.file_path)}`, detail: String(input?.content || '').split('\n').slice(0, 40).join('\n') };
+      return {
+        title: `写入文件 ${rel(input?.file_path)}`,
+        detail: String(input?.content || '')
+          .split('\n')
+          .slice(0, 40)
+          .join('\n'),
+      };
     case 'Edit':
-      return { title: `修改文件 ${rel(input?.file_path)}`, detail: `- ${String(input?.old_string || '').split('\n').join('\n- ')}\n+ ${String(input?.new_string || '').split('\n').join('\n+ ')}` };
+      return {
+        title: `修改文件 ${rel(input?.file_path)}`,
+        detail: `- ${String(input?.old_string || '')
+          .split('\n')
+          .join('\n- ')}\n+ ${String(input?.new_string || '')
+          .split('\n')
+          .join('\n+ ')}`,
+      };
     case 'MultiEdit':
       return { title: `修改文件 ${rel(input?.file_path)}（${input?.edits?.length || 0} 处）` };
     case 'NotebookEdit':

@@ -1,19 +1,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  query,
   type CanUseTool,
   type McpServerConfig,
   type Options,
   type PermissionResult,
   type PreToolUseHookInput,
   type Query,
+  query,
   type SDKMessage,
   type SDKResultMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage, Effort } from '../../shared/types';
 import { APP_VERSION, findClaudeExecutable } from '../config';
+import { logger } from '../log';
+
+const log = logger('session');
 
 type UserContent = SDKUserMessage['message']['content'];
 
@@ -127,7 +130,10 @@ export class BotSession implements AgentSession {
     return !!this.active;
   }
 
-  constructor(cfg: SessionConfig, private onSessionId: (id: string) => void) {
+  constructor(
+    cfg: SessionConfig,
+    private onSessionId: (id: string) => void,
+  ) {
     const claude = findClaudeExecutable();
     const options: Options = {
       cwd: cfg.cwd,
@@ -162,7 +168,7 @@ export class BotSession implements AgentSession {
                 try {
                   this.active?.hooks.beforeEdit(fp ? path.resolve(cfg.cwd, fp) : undefined);
                 } catch (e) {
-                  console.error('[session] beforeEdit', e);
+                  log.error('beforeEdit', e);
                 }
                 return {};
               },
@@ -209,7 +215,7 @@ export class BotSession implements AgentSession {
         try {
           a.hooks.onMessage(m);
         } catch (e) {
-          console.error('[session] onMessage', e);
+          log.error('onMessage', e);
         }
         if (m.type === 'result') {
           this.active = null;
@@ -281,7 +287,12 @@ export class FakeSession implements AgentSession {
   lastUsed = Date.now();
   private stopped = false;
 
-  constructor(private cfg: SessionConfig, private botName: string, private mentionables: string[], onSessionId: (id: string) => void) {
+  constructor(
+    private cfg: SessionConfig,
+    private botName: string,
+    private mentionables: string[],
+    onSessionId: (id: string) => void,
+  ) {
     setTimeout(() => onSessionId(this.sessionId), 0);
   }
 
@@ -316,7 +327,7 @@ export class FakeSession implements AgentSession {
       emit({ type: 'stream_event', ...this.base(), event: { type: 'content_block_stop', index: 0 } });
       emit({ type: 'assistant', ...this.base(), message: { id: msgId, role: 'assistant', content: [{ type: 'text', text }] } });
     };
-    const useTool = async (name: string, input: Record<string, unknown>, run: () => string | Promise<string>) => {
+    const runTool = async (name: string, input: Record<string, unknown>, run: () => string | Promise<string>) => {
       const msgId = `msg_fake_${++fakeCounter}`;
       const id = `toolu_fake_${fakeCounter}`;
       emit({ type: 'stream_event', ...this.base(), event: { type: 'message_start', message: { id: msgId, content: [] } } });
@@ -345,7 +356,7 @@ export class FakeSession implements AgentSession {
 
     try {
       await streamText(`收到！我是 ${this.botName}（演示模式，没有调用模型）。我先看看项目结构。`);
-      await useTool('Glob', { pattern: '**/*.{html,css,js,ts,tsx}' }, () => {
+      await runTool('Glob', { pattern: '**/*.{html,css,js,ts,tsx}' }, () => {
         try {
           return fs.readdirSync(this.cfg.cwd).join('\n');
         } catch {
@@ -354,8 +365,8 @@ export class FakeSession implements AgentSession {
       });
       if (/改|写|做|创建|add|create|make|build/i.test(prompt) && !this.stopped) {
         const file = path.join(this.cfg.cwd, 'crew-demo.md');
-        await useTool('Bash', { command: 'ls -la', description: '列出项目文件' }, () => 'total 8\n(演示输出)');
-        await useTool('Write', { file_path: file, content: `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n` }, () => {
+        await runTool('Bash', { command: 'ls -la', description: '列出项目文件' }, () => 'total 8\n(演示输出)');
+        await runTool('Write', { file_path: file, content: `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n` }, () => {
           hooks.beforeEdit(file);
           fs.writeFileSync(file, `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n`);
           return `File created successfully at: ${file}`;
@@ -363,11 +374,7 @@ export class FakeSession implements AgentSession {
       }
       const others = this.mentionables.filter((n) => n !== this.botName);
       const shouldHandoff = others.length > 0 && /交给|分派|拆分|handoff/i.test(prompt) && !/【@/.test(prompt);
-      await streamText(
-        shouldHandoff
-          ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。`
-          : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。',
-      );
+      await streamText(shouldHandoff ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。` : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。');
       const result = {
         type: 'result',
         subtype: 'success',

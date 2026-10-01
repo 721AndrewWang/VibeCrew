@@ -1,24 +1,32 @@
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import type { ApprovalPart, Attachment, Bot, BotStatus, Chat, ChatMessage, MessageTrigger, Project } from '../shared/types';
-import { bus, internal, notify } from './bus';
-import { cleanEnv } from './config';
-import { botModel, modelEnv } from './claudeAuth';
-import { PLUGINS } from './data/catalog';
-import { chatProjectId, configOf, devCommand, HttpError, touchProject } from './projects';
-import { bots, chats, messages, projects, settings, uid } from './store';
-import { skills } from './skills';
-import { readUpload, IMAGE_MIMES } from './uploads';
-import { ensureWatch } from './watcher';
-import { devServer } from './devserver';
-import { autoCommit, commitSubject, gitError } from './gitops';
-import { resetActSession } from './browser';
-import { crewServer } from './agents/crewTools';
-import { decide, describeAction, permissionModeFor, rulesTouch, suggestRules } from './agents/permissions';
-import { buildSystemAppend, buildTurnPrompt } from './agents/prompts';
-import { summarize, TurnRecorder } from './agents/recorder';
-import { BotSession, FakeSession, type AgentSession, type SessionConfig } from './agents/session';
-import { TurnStream } from './agents/stream';
+import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project } from '../../shared/types';
+import { crewServer } from '../agents/crewTools';
+import { permissionModeFor } from '../agents/permissions';
+import { buildSystemAppend, buildTurnPrompt } from '../agents/prompts';
+import { summarize, TurnRecorder } from '../agents/recorder';
+import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
+import { TurnStream } from '../agents/stream';
+import { resetActSession } from '../browser';
+import { bus, internal, notify } from '../bus';
+import { botModel } from '../claudeAuth';
+import { autoCommit, commitSubject, gitError } from '../gitops';
+import { logger } from '../log';
+import { chatProjectId, configOf, HttpError, touchProject } from '../projects';
+import { skills } from '../skills';
+import { bots, chats, messages, projects, settings, uid } from '../store';
+import { ensureWatch } from '../watcher';
+import { setStatus } from './botStatus';
+import { ALL_RE, emitChat, parseMentions, preview, setLastMessage, systemMessage } from './chatLog';
+import { deniedReason, denyApprovals, expireApprovals, permissionGate } from './permissionGate';
+import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previewPageOf } from './turnContext';
+
+export { botStatuses } from './botStatus';
+export { parseMentions, systemMessage } from './chatLog';
+export { resolveApproval } from './permissionGate';
+export { effectiveBot, setPreviewPage } from './turnContext';
+
+const log = logger('orchestrator');
 
 const FAKE = process.env.CREW_FAKE_AGENT === '1';
 const IDLE_CLOSE_MS = 15 * 60_000;
@@ -38,27 +46,15 @@ interface Running {
   stream: TurnStream;
 }
 
-interface PendingApproval {
-  chatId: string;
-  botId: string;
-  part: ApprovalPart;
-  stream: TurnStream;
-  resolve: (d: { allow: boolean; always?: boolean; message?: string; expired?: boolean }) => void;
-}
-
 const queues = new Map<string, Job[]>();
 const running = new Map<string, Running>();
 const sessions = new Map<string, AgentSession>();
 /** Sessions to recreate once their current turn ends (bot settings changed). */
 const staleSessions = new Set<string>();
-const statuses = new Map<string, BotStatus>();
-const approvals = new Map<string, PendingApproval>();
 /** Chats whose workspace is being changed by git (merge, sync…): new turns wait until it is done. */
 const locked = new Set<string>();
 /** Chats waiting for their workspace's setup command (see holdTurns). */
 const preparing = new Set<string>();
-/** projectId -> page the user is looking at in the preview. */
-const previewPages = new Map<string, string>();
 /** projectId -> when a bot turn in it last ended. */
 const lastTurnEnd = new Map<string, number>();
 
@@ -66,153 +62,11 @@ const sessionKey = (chatId: string, botId: string) => `${chatId}:${botId}`;
 
 // ---------------------------------------------------------------- status
 
-export function botStatuses(): Record<string, BotStatus> {
-  return Object.fromEntries(statuses);
-}
-
-function setStatus(botId: string, status: Omit<BotStatus, 'since'>) {
-  const prev = statuses.get(botId);
-  if (prev && prev.state === status.state && prev.detail === status.detail && prev.chatId === status.chatId) return;
-  const s = { ...status, since: prev?.state === status.state ? prev.since : Date.now() };
-  statuses.set(botId, s);
-  bus.emit({ t: 'bot_status', botId, status: s });
-}
-
 /** Idle unless the bot still has work queued or running somewhere. */
 function settleStatus(botId: string, error?: string) {
   for (const [chatId, r] of running) if (r.job.botId === botId) return setStatus(botId, { state: 'thinking', chatId });
   for (const [chatId, q] of queues) if (q.some((j) => j.botId === botId)) return setStatus(botId, { state: 'queued', chatId });
   setStatus(botId, error ? { state: 'error', detail: error } : { state: 'idle' });
-}
-
-export function setPreviewPage(projectId: string, page: string) {
-  previewPages.set(projectId, page);
-}
-
-// ---------------------------------------------------------------- helpers
-
-function preview(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, '[代码]')
-    .replace(/[#>*_`~\[\]]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 120);
-}
-
-function setLastMessage(chat: Chat, msg: ChatMessage) {
-  const author = msg.role === 'user' ? '你' : msg.role === 'system' ? '系统' : bots.get(msg.botId)?.name || '机器人';
-  const text = msg.role === 'bot' && !msg.text && msg.error ? `⚠️ ${msg.error}` : preview(msg.text) || (msg.attachments?.length ? '[附件]' : '');
-  chat.lastMessage = { text, ts: msg.ts, author };
-  chat.updatedAt = msg.ts;
-}
-
-function emitChat(chat: Chat) {
-  chats.set(chat);
-  bus.emit({ t: 'chat', chat });
-}
-
-export function systemMessage(chat: Chat, text: string, opts: { uiOnly?: boolean } = {}): ChatMessage {
-  const msg: ChatMessage = { id: uid('m_'), chatId: chat.id, seq: ++chat.seq, ts: Date.now(), role: 'system', text, uiOnly: opts.uiOnly || undefined };
-  messages.put(msg);
-  bus.emit({ t: 'msg', msg });
-  setLastMessage(chat, msg);
-  emitChat(chat);
-  return msg;
-}
-
-function escapeRe(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Bots @mentioned in the text, in order of first appearance. */
-export function parseMentions(text: string, candidates: Bot[]): Bot[] {
-  if (!candidates.length || !text.includes('@')) return [];
-  const sorted = [...candidates].sort((a, b) => b.name.length - a.name.length);
-  const re = new RegExp(`@(${sorted.map((b) => escapeRe(b.name)).join('|')})(?![A-Za-z0-9_-])`, 'gi');
-  const found: Bot[] = [];
-  // Mentions inside code are examples, not handoffs.
-  const clean = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
-  for (const m of clean.matchAll(re)) {
-    const bot = sorted.find((b) => b.name.toLowerCase() === m[1].toLowerCase());
-    if (bot && !found.includes(bot)) found.push(bot);
-  }
-  return found;
-}
-
-const ALL_RE = /@(所有人|全体|all|everyone)(?![A-Za-z0-9_-])/i;
-
-/** The bots' environment: which endpoint, credentials and models their Claude Code uses. */
-function agentEnv(): Record<string, string> {
-  return cleanEnv(modelEnv());
-}
-
-function substitute(value: string, env: Record<string, string>): string {
-  return value.replace(/\$\{(\w+)\}/g, (_, k) => env[k] ?? process.env[k] ?? '');
-}
-
-/** MCP servers for a bot: enabled catalog plugins plus custom entries. */
-function pluginServers(bot: Bot): Record<string, McpServerConfig> {
-  const secrets = settings.get().pluginSecrets || {};
-  const out: Record<string, McpServerConfig> = {};
-  const add = (name: string, e: (typeof PLUGINS)[number]['server']) => {
-    if (e.type === 'http' || e.type === 'sse') {
-      out[name] = {
-        type: e.type,
-        url: substitute(e.url || '', secrets),
-        headers: Object.fromEntries(Object.entries(e.headers || {}).map(([k, v]) => [k, substitute(v, secrets)])),
-      };
-    } else if (e.command) {
-      out[name] = {
-        type: 'stdio',
-        command: e.command,
-        args: (e.args || []).map((a) => substitute(a, secrets)),
-        env: Object.fromEntries(Object.entries(e.env || {}).map(([k, v]) => [k, substitute(v, secrets)])),
-      };
-    }
-  };
-  for (const id of bot.plugins || []) {
-    const p = PLUGINS.find((x) => x.id === id);
-    if (p) add(p.id, p.server);
-  }
-  for (const [name, e] of Object.entries(bot.mcpServers || {})) {
-    if (name !== 'crew') add(name, e);
-  }
-  return out;
-}
-
-function contextLines(project: Project | null): string[] {
-  const now = new Date();
-  const week = '日一二三四五六'[now.getDay()];
-  const lines = [`时间：${now.toLocaleString('zh-CN', { hour12: false })}（周${week}）`];
-  if (!project) return lines;
-  const cmd = devCommand(project);
-  const ds = devServer(project.id).state;
-  if (!cmd) lines.push('预览：静态网页，由 Crew 直接提供，保存文件后自动刷新。');
-  else if (ds.status === 'running') lines.push(`开发服务器：运行中 ${ds.url}（命令 ${ds.command}）`);
-  else if (ds.status === 'installing' || ds.status === 'starting') lines.push(`开发服务器：${ds.status === 'installing' ? '正在安装依赖' : '正在启动'}（${cmd}）`);
-  else lines.push(`开发服务器：未运行（需要 ${cmd}，可以用 dev_server 工具启动）${ds.error ? `，上次错误：${ds.error}` : ''}`);
-  const page = previewPages.get(project.id);
-  if (page) lines.push(`用户正在预览的页面：${page}`);
-  const conf = configOf(project);
-  const denied = settings.get().denyRules || [];
-  if (denied.length) lines.push(`禁止的操作（系统会直接拒绝，不要尝试，也不要换写法绕过）：${denied.join('、')}`);
-  if (conf.commitGuide) lines.push(`这个项目的提交信息要求：${conf.commitGuide}`);
-  if (conf.noAttribution) lines.push('这个项目的提交和 PR 里不要加任何 AI 署名（Co-Authored-By、Generated with 之类）。');
-  return lines;
-}
-
-function imageBlocks(list: ChatMessage[]) {
-  const out: { type: 'image'; source: { type: 'base64'; media_type: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'; data: string } }[] = [];
-  for (const m of list) {
-    for (const a of m.attachments || []) {
-      if (a.kind !== 'image' || !IMAGE_MIMES.has(a.mime)) continue;
-      const img = readUpload(a.url);
-      if (img) out.push({ type: 'image', source: { type: 'base64', media_type: img.mime as 'image/png', data: img.data } });
-      if (out.length >= 8) return out;
-    }
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------- sessions
@@ -247,7 +101,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
         projectId: () => chatProjectId(chats.get(chat.id)),
         currentPage: () => {
           const pid = chatProjectId(chats.get(chat.id));
-          return pid ? previewPages.get(pid) : undefined;
+          return pid ? previewPageOf(pid) : undefined;
         },
       }) as McpServerConfig,
       ...pluginServers(bot),
@@ -282,22 +136,9 @@ function closeSession(key: string) {
 async function recordContext(chatId: string, botId: string, session: AgentSession) {
   const usage = await session.contextUsage?.().catch(() => null);
   const chat = chats.get(chatId);
-  if (!usage || !chat || !chat.botIds.includes(botId)) return;
+  if (!usage || !chat?.botIds.includes(botId)) return;
   chat.context = { ...chat.context, [botId]: { ...usage, at: Date.now() } };
   emitChat(chat);
-}
-
-/**
- * A bot as it works in this chat: the chat's switches (composer) override its own settings. A
- * read-only bot (a reviewer, say) stays read-only; that is its role, changed on the bot itself.
- */
-export function effectiveBot(chat: Chat, bot: Bot): Bot {
-  return {
-    ...bot,
-    permission: bot.permission === 'plan' ? 'plan' : chat.permission || bot.permission,
-    model: chat.model !== undefined ? chat.model : bot.model,
-    effort: chat.effort !== undefined ? chat.effort : bot.effort,
-  };
 }
 
 /**
@@ -325,13 +166,6 @@ export function invalidateChat(chatId: string) {
 
 export function invalidateAllSessions() {
   for (const key of [...sessions.keys()]) closeSession(key);
-}
-
-/** Why the action is refused outright (Settings → 默认值 → 禁止的操作), or null. Read fresh on every call. */
-function deniedReason(toolName: string, input: unknown, cwd: string): string | null {
-  const rules = settings.get().denyRules || [];
-  if (!rules.length || !rulesTouch(rules, toolName, input, cwd)) return null;
-  return `这个操作被禁止了（设置 → 默认值 → 禁止的操作：${rules.join('、')}）。不要换一种写法绕过它；需要的话请用户自己来做。`;
 }
 
 /** A project's settings changed: bots working there (or in its workspaces) restart with them. */
@@ -372,7 +206,7 @@ async function pump(chatId: string) {
   try {
     await runTurn(job);
   } catch (e) {
-    console.error('[orchestrator] turn crashed', e);
+    log.error('turn crashed', e);
   } finally {
     running.delete(chatId);
     settleStatus(job.botId);
@@ -400,7 +234,7 @@ export function holdTurns(chatId: string, work: Promise<unknown>) {
  */
 export async function withChatLocked<T>(chatId: string, what: string, fn: () => Promise<T>): Promise<T> {
   if (preparing.has(chatId)) throw new HttpError(409, `工作区还在准备，等准备好再${what}`);
-  if (running.has(chatId) || !!queues.get(chatId)?.length) throw new HttpError(409, `机器人正在工作，等这一轮结束再${what}`);
+  if (running.has(chatId) || queues.get(chatId)?.length) throw new HttpError(409, `机器人正在工作，等这一轮结束再${what}`);
   if (locked.has(chatId)) throw new HttpError(409, '上一个操作还没完成，请稍等');
   locked.add(chatId);
   try {
@@ -481,64 +315,13 @@ async function runTurn(job: Job) {
   const hooks = {
     onMessage: (m: Parameters<TurnStream['handle']>[0]) => stream.handle(m),
     beforeEdit: (fp: string | undefined) => recorder?.beforeEdit(fp),
-    canUseTool: async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; matchedAskRule?: unknown; decisionReason?: string; title?: string }) => {
-      const current = bots.get(bot.id) || bot;
-      const refused = deniedReason(toolName, input, cwd);
-      if (refused) return { behavior: 'deny' as const, message: refused };
-      // The project's own "must ask" rules apply to every bot working there.
-      const projectRules = project ? configOf(project).askRules || [] : [];
-      // The chat's mode switch is read each time: switching to 自动 applies to the running turn too.
-      const level = effectiveBot(chats.get(chat.id) || chat, current).permission;
-      const d = decide(projectRules.length ? { ...current, askRules: [...current.askRules, ...projectRules] } : current, level, toolName, input, cwd, opts);
-      if (d.behavior === 'allow') return { behavior: 'allow' as const, updatedInput: input };
-      if (d.behavior === 'deny') return { behavior: 'deny' as const, message: d.message };
-      const desc = describeAction(toolName, input, cwd);
-      const part: ApprovalPart = {
-        type: 'approval',
-        id: uid('a_'),
-        toolName,
-        input: slimInput(input),
-        title: desc.title,
-        detail: desc.detail,
-        status: 'pending',
-        rule: undefined,
-        rules: suggestRules(toolName, input, cwd),
-        reason: opts.decisionReason,
-      };
-      part.rule = part.rules?.[0];
-      stream.addPart(part);
-      setStatus(bot.id, { state: 'waiting', detail: desc.title, chatId: chat.id });
-      notify(`${bot.name} 需要你的确认`, desc.title, { chatId: chat.id, level: 'warn' });
-      const decision = await new Promise<{ allow: boolean; always?: boolean; message?: string; expired?: boolean }>((resolve) => {
-        approvals.set(part.id, { chatId: chat.id, botId: bot.id, part, stream, resolve });
-        opts.signal?.addEventListener('abort', () => resolve({ allow: false, expired: true }), { once: true });
-      });
-      approvals.delete(part.id);
-      part.status = decision.allow ? 'allowed' : decision.expired ? 'expired' : 'denied';
-      stream.updatePart(part);
-      setStatus(bot.id, { state: 'tool', detail: toolName, chatId: chat.id });
-      const newRules = (part.rules || []).filter(Boolean);
-      if (decision.allow && decision.always && newRules.length) {
-        const b = bots.get(bot.id);
-        if (b && newRules.some((r) => !b.allowRules.includes(r))) {
-          b.allowRules = [...new Set([...b.allowRules, ...newRules])];
-          b.updatedAt = Date.now();
-          bots.set(b);
-          bus.emit({ t: 'bot', bot: b });
-        }
-      }
-      if (decision.allow) return { behavior: 'allow' as const, updatedInput: input };
-      return {
-        behavior: 'deny' as const,
-        message: decision.message ? `用户拒绝了这个操作，并说：${decision.message}` : '用户拒绝了这个操作。请换一种做法，或者先问问用户。',
-      };
-    },
+    canUseTool: permissionGate({ chat, bot, project, cwd, stream }),
   };
 
   let session = getSession(chat, bot, project);
   running.set(chat.id, { job, msg, session, stream });
   try {
-    let result;
+    let result: Awaited<ReturnType<typeof session.run>>;
     try {
       result = await session.run(content, hooks);
     } catch (e) {
@@ -560,12 +343,7 @@ async function runTurn(job: Job) {
     sessions.delete(sessionKey(chat.id, bot.id));
   } finally {
     internal.off('files', onFiles);
-    for (const [id, a] of approvals) {
-      if (a.stream === stream) {
-        a.resolve({ allow: false, expired: true });
-        approvals.delete(id);
-      }
-    }
+    expireApprovals(stream);
     if (staleSessions.has(sessionKey(chat.id, bot.id))) closeSession(sessionKey(chat.id, bot.id));
   }
 
@@ -584,7 +362,7 @@ async function runTurn(job: Job) {
       unresolved = (await autoCommit(project.workspace.worktree, `${bot.name}：${commitSubject(msg.text, '更新文件')}`)).unresolved;
     } catch (e) {
       commitError = gitError(e);
-      console.warn('[workspace] auto-commit failed:', commitError);
+      log.warn('workspace auto-commit failed:', commitError);
     }
   }
   messages.put(msg);
@@ -615,12 +393,6 @@ async function runTurn(job: Job) {
       }
     }
   }
-}
-
-function slimInput(input: Record<string, unknown>) {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(input)) out[k] = typeof v === 'string' && v.length > 20_000 ? v.slice(0, 20_000) + '…' : v;
-  return out;
 }
 
 // ---------------------------------------------------------------- public API
@@ -657,7 +429,10 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
     if (b) targets = [b];
   } else {
     // Mentioning someone outside the group invites them in.
-    const outsiders = parseMentions(text, allBots.filter((b) => !chat.botIds.includes(b.id)));
+    const outsiders = parseMentions(
+      text,
+      allBots.filter((b) => !chat.botIds.includes(b.id)),
+    );
     if (outsiders.length) {
       chat.botIds.push(...outsiders.map((b) => b.id));
       for (const b of outsiders) chat.cursors[b.id] = msg.seq - 1;
@@ -710,12 +485,7 @@ export async function stopChat(chatId: string) {
   const r = running.get(chatId);
   if (!r) return;
   r.stream.stopped = true;
-  for (const [id, a] of approvals) {
-    if (a.chatId === chatId) {
-      a.resolve({ allow: false, message: '用户停止了任务' });
-      approvals.delete(id);
-    }
-  }
+  denyApprovals(chatId, '用户停止了任务');
   await r.session.interrupt();
   // Kill the process if the turn does not wind down on its own.
   setTimeout(() => {
@@ -725,13 +495,6 @@ export async function stopChat(chatId: string) {
       sessions.delete(sessionKey(chatId, r.job.botId));
     }
   }, 8000);
-}
-
-export function resolveApproval(id: string, decision: { allow: boolean; always?: boolean; message?: string }) {
-  const a = approvals.get(id);
-  if (!a) return false;
-  a.resolve(decision);
-  return true;
 }
 
 /** Starts a new topic: the bots forget this chat's history. */

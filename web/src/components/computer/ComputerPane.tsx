@@ -1,13 +1,13 @@
 import { ChevronLeft, FileCode2, FolderPlus, GitBranch, GitCompareArrows, Globe, Maximize2, Minimize2, Play, RotateCw, Square, SquareTerminal, X } from 'lucide-react';
 import type { Chat } from '../../../../shared/types';
 import { api } from '../../api';
-import { chatProjectId, openModal, setComputer, toast, useStore, type ComputerTab } from '../../store';
+import { type ComputerTab, chatProjectId, openModal, setComputer, toast, useStore } from '../../store';
 import { cx } from '../../utils';
 import { Glyph } from '../ui';
 import { BrowserTab } from './BrowserTab';
+import { ChangesTab } from './ChangesTab';
 import { FilesTab } from './FilesTab';
 import { TerminalTab } from './TerminalTab';
-import { ChangesTab } from './ChangesTab';
 
 const TABS: { id: ComputerTab; label: string; icon: typeof Globe }[] = [
   { id: 'browser', label: '浏览器', icon: Globe },
@@ -19,7 +19,12 @@ const TABS: { id: ComputerTab; label: string; icon: typeof Globe }[] = [
 function DevControls({ projectId }: { projectId: string }) {
   const ds = useStore((s) => s.devServers[projectId]);
   const project = useStore((s) => s.projects[projectId]);
-  if (!project?.devDetected) return <span className="dev-pill static" title="静态网页由 Crew 直接提供，保存即刷新">静态站点</span>;
+  if (!project?.devDetected)
+    return (
+      <span className="dev-pill static" title="静态网页由 Crew 直接提供，保存即刷新">
+        静态站点
+      </span>
+    );
   const status = ds?.status || 'stopped';
   const run = (action: 'start' | 'stop' | 'restart') => api.dev(projectId, action).catch((e) => toast('操作失败', e.message, 'error'));
   const label = { stopped: '未启动', installing: '安装依赖中', starting: '启动中', running: '运行中', error: '出错了' }[status];

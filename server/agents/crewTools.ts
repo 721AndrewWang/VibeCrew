@@ -126,12 +126,7 @@ export function crewServer(ctx: CrewContext) {
               device: args.device,
             });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-            const summary = [
-              ...r.lines,
-              '',
-              `当前页面：${where}（${r.title || '无标题'}）`,
-              r.logs.length ? `期间的控制台日志：\n${fmtLogs(r.logs)}` : '期间没有控制台日志。',
-            ].join('\n');
+            const summary = [...r.lines, '', `当前页面：${where}（${r.title || '无标题'}）`, r.logs.length ? `期间的控制台日志：\n${fmtLogs(r.logs)}` : '期间没有控制台日志。'].join('\n');
             const content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] = [];
             if (r.png) content.push({ type: 'image', data: r.png.toString('base64'), mimeType: 'image/png' });
             content.push({ type: 'text', text: summary });
@@ -161,9 +156,14 @@ export function crewServer(ctx: CrewContext) {
               }
             }
             const s = ds.state;
-            const tail = ds.logs(action === 'logs' ? 6000 : 1500).replace(ANSI, '').replace(/\r/g, '');
+            const tail = ds
+              .logs(action === 'logs' ? 6000 : 1500)
+              .replace(ANSI, '')
+              .replace(/\r/g, '');
             const status = { stopped: '未运行', installing: '安装依赖中', starting: '启动中', running: '运行中', error: '出错' }[s.status];
-            return text(`状态：${status}${s.command ? `\n命令：${s.command}` : ''}${s.url ? `\n地址：${s.url}` : ''}${s.error ? `\n错误：${s.error}` : ''}${tail.trim() ? `\n\n最近日志：\n${tail.trim()}` : ''}`);
+            return text(
+              `状态：${status}${s.command ? `\n命令：${s.command}` : ''}${s.url ? `\n地址：${s.url}` : ''}${s.error ? `\n错误：${s.error}` : ''}${tail.trim() ? `\n\n最近日志：\n${tail.trim()}` : ''}`,
+            );
           } catch (e) {
             return fail((e as Error).message);
           }
@@ -178,15 +178,10 @@ export function crewServer(ctx: CrewContext) {
           return text('已记住。');
         },
       ),
-      tool(
-        'notify_user',
-        '给用户发送一条桌面/手机通知。用于定时任务或长任务中发现需要用户关注的事情。',
-        { title: z.string(), body: z.string() },
-        async ({ title, body }) => {
-          notify(`${ctx.botName}：${title}`, body, { chatId: ctx.chatId, level: 'info' });
-          return text('通知已发送。');
-        },
-      ),
+      tool('notify_user', '给用户发送一条桌面/手机通知。用于定时任务或长任务中发现需要用户关注的事情。', { title: z.string(), body: z.string() }, async ({ title, body }) => {
+        notify(`${ctx.botName}：${title}`, body, { chatId: ctx.chatId, level: 'info' });
+        return text('通知已发送。');
+      }),
     ],
   });
 }

@@ -163,25 +163,26 @@ btn.addEventListener('click', () => {
     needsInstall: true,
     files: (title) => ({
       '.gitignore': GITIGNORE,
-      'package.json': JSON.stringify(
-        {
-          name: slugify(title) || 'app',
-          private: true,
-          version: '0.0.0',
-          type: 'module',
-          scripts: { dev: 'vite', build: 'tsc -b && vite build', preview: 'vite preview' },
-          dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
-          devDependencies: {
-            '@types/react': '^19.0.0',
-            '@types/react-dom': '^19.0.0',
-            '@vitejs/plugin-react': '^6.0.0',
-            typescript: '^5.9.0',
-            vite: '^8.0.0',
+      'package.json':
+        JSON.stringify(
+          {
+            name: slugify(title) || 'app',
+            private: true,
+            version: '0.0.0',
+            type: 'module',
+            scripts: { dev: 'vite', build: 'tsc -b && vite build', preview: 'vite preview' },
+            dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
+            devDependencies: {
+              '@types/react': '^19.0.0',
+              '@types/react-dom': '^19.0.0',
+              '@vitejs/plugin-react': '^6.0.0',
+              typescript: '^5.9.0',
+              vite: '^8.0.0',
+            },
           },
-        },
-        null,
-        2,
-      ) + '\n',
+          null,
+          2,
+        ) + '\n',
       'vite.config.ts': `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -189,24 +190,25 @@ export default defineConfig({
   plugins: [react()],
 });
 `,
-      'tsconfig.json': JSON.stringify(
-        {
-          compilerOptions: {
-            target: 'ES2022',
-            lib: ['ES2022', 'DOM', 'DOM.Iterable'],
-            module: 'ESNext',
-            moduleResolution: 'bundler',
-            jsx: 'react-jsx',
-            strict: true,
-            noEmit: true,
-            skipLibCheck: true,
-            isolatedModules: true,
+      'tsconfig.json':
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: 'ES2022',
+              lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+              module: 'ESNext',
+              moduleResolution: 'bundler',
+              jsx: 'react-jsx',
+              strict: true,
+              noEmit: true,
+              skipLibCheck: true,
+              isolatedModules: true,
+            },
+            include: ['src'],
           },
-          include: ['src'],
-        },
-        null,
-        2,
-      ) + '\n',
+          null,
+          2,
+        ) + '\n',
       'index.html': `<!doctype html>
 <html lang="zh-CN">
   <head>
@@ -319,19 +321,20 @@ h1 {
     needsInstall: true,
     files: (title) => ({
       '.gitignore': GITIGNORE,
-      'package.json': JSON.stringify(
-        {
-          name: slugify(title) || 'app',
-          private: true,
-          version: '0.0.0',
-          type: 'module',
-          scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
-          dependencies: { vue: '^3.5.0' },
-          devDependencies: { '@vitejs/plugin-vue': '^6.0.0', vite: '^8.0.0' },
-        },
-        null,
-        2,
-      ) + '\n',
+      'package.json':
+        JSON.stringify(
+          {
+            name: slugify(title) || 'app',
+            private: true,
+            version: '0.0.0',
+            type: 'module',
+            scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
+            dependencies: { vue: '^3.5.0' },
+            devDependencies: { '@vitejs/plugin-vue': '^6.0.0', vite: '^8.0.0' },
+          },
+          null,
+          2,
+        ) + '\n',
       'vite.config.js': `import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 

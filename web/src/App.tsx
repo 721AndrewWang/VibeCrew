@@ -1,17 +1,18 @@
 import { useEffect } from 'react';
-import { closeModal, useStore } from './store';
-import { cx } from './utils';
+import { ChatView } from './components/ChatView';
+import { SaveRecordingDialog } from './components/computer/SaveRecordingDialog';
 import { Sidebar } from './components/Sidebar';
 import { Logo, Toasts } from './components/ui';
-import { ChatView } from './components/ChatView';
+import { BotEditorDialog } from './components/views/BotEditor';
 import { BotsView } from './components/views/BotsView';
-import { BotEditorDialog, NewBotDialog } from './components/views/BotEditor';
-import { SkillsView } from './components/views/SkillsView';
-import { RoutinesView } from './components/views/RoutinesView';
-import { NewProjectDialog, ProjectsView } from './components/views/ProjectsView';
-import { SettingsView } from './components/views/SettingsView';
+import { NewBotDialog } from './components/views/bot-editor/NewBotDialog';
 import { ChatSettingsDialog, NewGroupDialog } from './components/views/GroupDialogs';
-import { SaveRecordingDialog } from './components/computer/SaveRecordingDialog';
+import { NewProjectDialog, ProjectsView } from './components/views/ProjectsView';
+import { RoutinesView } from './components/views/RoutinesView';
+import { SettingsView } from './components/views/SettingsView';
+import { SkillsView } from './components/views/SkillsView';
+import { closeModal, useStore } from './store';
+import { cx } from './utils';
 
 function Modals() {
   const modal = useStore((s) => s.modal);

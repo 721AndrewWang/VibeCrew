@@ -89,7 +89,9 @@ export function shortPath(p: string | undefined, root?: string) {
 }
 
 function trunc(s: unknown, n = 60) {
-  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  const t = String(s ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
@@ -141,7 +143,11 @@ export function toolInfo(name: string, input: any, root?: string): ToolInfo {
     case 'ExitPlanMode':
       return { icon: '📋', verb: '提交方案', target: '' };
     case 'mcp__crew__preview_screenshot':
-      return { icon: '📸', verb: '截图预览', target: `${input?.path || '当前页面'}${input?.device && input.device !== 'desktop' ? ` · ${input.device === 'mobile' ? '手机' : '平板'}` : ''}${input?.fullPage ? ' · 整页' : ''}` };
+      return {
+        icon: '📸',
+        verb: '截图预览',
+        target: `${input?.path || '当前页面'}${input?.device && input.device !== 'desktop' ? ` · ${input.device === 'mobile' ? '手机' : '平板'}` : ''}${input?.fullPage ? ' · 整页' : ''}`,
+      };
     case 'mcp__crew__preview_console':
       return { icon: '🩺', verb: '检查控制台', target: input?.path || '当前页面' };
     case 'mcp__crew__browser_act':

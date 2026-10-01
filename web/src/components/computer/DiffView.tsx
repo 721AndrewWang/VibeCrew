@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
 import { diffLines } from 'diff';
+import { useMemo, useState } from 'react';
 
 interface Row {
   kind: 'ctx' | 'add' | 'del' | 'gap';
@@ -99,7 +99,12 @@ function buildRowsFull(before: string, after: string): Row[] {
 /** Renders `git diff` output. */
 export function UnifiedDiff({ text }: { text: string }) {
   const lines = text.split('\n').filter((l) => !/^(diff --git|index |new file mode|deleted file mode|similarity|rename )/.test(l));
-  if (!text.trim()) return <div className="muted" style={{ padding: 12 }}>没有差异</div>;
+  if (!text.trim())
+    return (
+      <div className="muted" style={{ padding: 12 }}>
+        没有差异
+      </div>
+    );
   return (
     <div className="diff">
       <div className="diff-body">

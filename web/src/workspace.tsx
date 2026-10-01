@@ -1,4 +1,4 @@
-// Isolated workspaces: a chat's own git branch and worktree (see server/workspaces.ts).
+// Isolated workspaces: a chat's own git branch and worktree (see server/workspaces/).
 
 import type { Chat, WorkspaceStatus } from '../../shared/types';
 import { api } from './api';

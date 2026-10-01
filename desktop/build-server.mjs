@@ -1,7 +1,8 @@
 // Bundles the TypeScript server into one ESM file for the desktop app.
 // Dependencies stay in node_modules (native modules and the Claude Agent SDK load from there).
-import { build } from 'esbuild';
+
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 

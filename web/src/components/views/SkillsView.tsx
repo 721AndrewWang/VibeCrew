@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
 import { ArrowLeft, Info, Play, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Skill } from '../../../../shared/types';
 import { api } from '../../api';
 import { openChat, setDraft, toast, useStore } from '../../store';
@@ -249,13 +249,7 @@ export function SkillsView() {
 
           <div className="split-main">
             {showEditor ? (
-              <SkillEditor
-                key={selected!}
-                skill={current}
-                onSaved={(name) => setSelected(name)}
-                onDeleted={() => setSelected(null)}
-                onBack={() => setSelected(null)}
-              />
+              <SkillEditor key={selected!} skill={current} onSaved={(name) => setSelected(name)} onDeleted={() => setSelected(null)} onBack={() => setSelected(null)} />
             ) : (
               <div className="card empty">
                 <div className="big">

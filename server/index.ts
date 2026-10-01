@@ -1,26 +1,29 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import express from 'express';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { type WebSocket, WebSocketServer } from 'ws';
 import { appIconSvg } from '../shared/logos';
 import type { ClientEvent } from '../shared/types';
-import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
-import { bus } from './bus';
-import { flushAll, settings } from './store';
 import { apiRouter, lanUrl } from './api';
-import { guard, wsAllowed } from './security';
-import { initIfNeeded } from './entities';
-import { startRoutines } from './routines';
-import { reconcileWorkspaces } from './workspaces';
-import { checkAuth } from './claudeAuth';
-import { closeAllSessions } from './orchestrator';
-import { closeAllTerminals, closeTerminal, detachTerminals, openTerminal, terminalInput, terminalResize } from './terminal';
-import { stopAllDevServers } from './devserver';
-import { closeAllPreviews } from './preview';
 import { closeBrowser } from './browser';
+import { bus } from './bus';
+import { checkAuth } from './claudeAuth';
+import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
+import { stopAllDevServers } from './devserver';
+import { initIfNeeded } from './entities';
+import { logger } from './log';
+import { closeAllSessions } from './orchestrator';
+import { closeAllPreviews } from './preview';
+import { startRoutines } from './routines';
+import { guard, wsAllowed } from './security';
+import { flushAll, settings } from './store';
+import { closeAllTerminals, closeTerminal, detachTerminals, openTerminal, terminalInput, terminalResize } from './terminal';
 import { stopAllWatches } from './watcher';
+import { reconcileWorkspaces } from './workspaces';
+
+const log = logger('server');
 
 const app = express();
 app.disable('x-powered-by');
@@ -48,7 +51,9 @@ if (hasWeb) {
   app.get('/', (_req, res) => {
     res
       .type('html')
-      .send('<meta charset="utf-8"><body style="font-family:system-ui;padding:40px"><h2>Crew 服务已启动</h2><p>还没有构建界面：请运行 <code>npm run build</code> 后重启，或用 <code>npm run dev</code> 进入开发模式（界面在 5173 端口）。</p></body>');
+      .send(
+        '<meta charset="utf-8"><body style="font-family:system-ui;padding:40px"><h2>Crew 服务已启动</h2><p>还没有构建界面：请运行 <code>npm run build</code> 后重启，或用 <code>npm run dev</code> 进入开发模式（界面在 5173 端口）。</p></body>',
+      );
   });
 }
 
@@ -114,7 +119,7 @@ wss.on('connection', (ws: WebSocket) => {
 
 async function main() {
   await initIfNeeded();
-  await reconcileWorkspaces().catch((e) => console.warn('[workspace] reconcile:', e));
+  await reconcileWorkspaces().catch((e) => log.warn('reconcile workspaces:', e));
   startRoutines();
   void checkAuth(true).then((a) => {
     if (!a.cliFound) console.warn('⚠️  没有找到 Claude Code 命令行（claude）。请先安装：npm i -g @anthropic-ai/claude-code');
@@ -131,7 +136,7 @@ async function main() {
       // The desktop app reads exit code 3 as "port taken".
       process.exit(3);
     }
-    console.error(e);
+    log.error(e);
     process.exit(1);
   });
   server.listen(port, host, () => {
@@ -149,7 +154,9 @@ async function main() {
     console.log('');
     if (process.argv.includes('--open') && !process.env.CREW_DESKTOP) {
       const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-      spawn(opener, [local], { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+      spawn(opener, [local], { stdio: 'ignore', detached: true })
+        .on('error', () => {})
+        .unref();
     }
   });
 }
@@ -168,7 +175,7 @@ async function shutdown() {
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('uncaughtException', (e) => console.error('[uncaught]', e));
-process.on('unhandledRejection', (e) => console.error('[unhandled]', e));
+process.on('uncaughtException', (e) => log.error('uncaught exception', e));
+process.on('unhandledRejection', (e) => log.error('unhandled rejection', e));
 
 void main();

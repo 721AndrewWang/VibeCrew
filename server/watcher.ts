@@ -2,8 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { bus, internal } from './bus';
-import { projects } from './store';
+import { logger } from './log';
 import { decorate, detectFramework, HEAVY_DIRS } from './projects';
+import { projects } from './store';
+
+const log = logger('watch');
 
 interface Watch {
   watcher: FSWatcher;
@@ -56,7 +59,7 @@ export function ensureWatch(projectId: string) {
     w.pending.add(rel);
     if (!w.timer) w.timer = setTimeout(flush, 120);
   });
-  watcher.on('error', (e) => console.warn(`[watch] ${project.name}:`, (e as Error).message));
+  watcher.on('error', (e) => log.warn(`${project.name}:`, (e as Error).message));
 
   // Commits append a "commit:" line to the reflog.
   try {

@@ -1,6 +1,3 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-import { createRoot } from 'react-dom/client';
 import {
   Accessibility,
   AlarmClock,
@@ -41,6 +38,7 @@ import {
   Lightbulb,
   ListChecks,
   Lock,
+  type LucideIcon,
   Map as MapIcon,
   Megaphone,
   MessageCircle,
@@ -73,9 +71,11 @@ import {
   Wrench,
   X,
   Zap,
-  type LucideIcon,
 } from 'lucide-react';
-import { logoOf, type LogoId } from '../../../shared/logos';
+import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+import { type LogoId, logoOf } from '../../../shared/logos';
 import type { Bot, BotStatus } from '../../../shared/types';
 import { dismissToast, openChat, useStore } from '../store';
 import { cx } from '../utils';
@@ -84,17 +84,97 @@ import { cx } from '../utils';
 
 /** Line icons standing in for emoji: the bots' avatars in the black / white / grey look, and the UI's own icons. */
 const EMOJI_ICONS: Record<string, LucideIcon> = {
-  '🤖': BotIcon, '🧭': Compass, '🎨': Palette, '🖌': Brush, '💅': Brush, '⚙': Settings2, '🧪': FlaskConical, '🔬': Microscope,
-  '🔍': Search, '🔎': Search, '👀': Eye, '✨': Sparkles, '✍': PenLine, '🖊': PenLine, '✏': Pencil, '📝': NotebookPen, '📓': NotebookPen,
-  '🪶': Feather, '🛠': Wrench, '🔧': Wrench, '🔨': Hammer, '🚀': Rocket, '🧠': Brain, '💭': Brain, '📊': ChartColumn, '📈': ChartColumn,
-  '🐛': Bug, '🔒': Lock, '🔐': Lock, '🔑': KeyRound, '🛡': Shield, '⚡': Zap, '🌐': Globe, '🌍': Globe, '📱': Smartphone, '💡': Lightbulb,
-  '🎯': Target, '📦': Package, '💬': MessageCircle, '💻': Laptop, '🧑‍💻': Laptop, '👨‍💻': Laptop, '👩‍💻': Laptop, '📐': Ruler,
-  '🧩': Puzzle, '📚': BookOpen, '📖': BookOpen, '🗺': MapIcon, '☁': Cloud, '🔥': Flame, '⭐': Star, '🌟': Star, '🎮': Gamepad2,
-  '👾': Gamepad2, '🗄': Database, '💾': Database, '🖥': Server, '⌨': Terminal, '▶': SquareTerminal, '📟': ScrollText, '⏹': CircleStop,
-  '📋': ClipboardCheck, '✅': ListChecks, '📣': Megaphone, '📢': Megaphone, '❤': Heart, '☕': Coffee, '🌿': Leaf, '🍃': Leaf,
-  '🎵': Music, '🎶': Music, '🧱': LayoutDashboard, '💠': CodeXml, '🗂': FolderSearch, '📁': FolderOpen, '📂': FolderOpen,
-  '📄': FileText, '🧑‍🚀': Users, '👥': Users, '📸': Camera, '🩺': Stethoscope, '🖱': MousePointerClick, '🔔': Bell, '✋': Hand,
-  '🌙': Moon, '♿': Accessibility, '🖼': ImageIcon, '🎭': Drama, '🐙': GitBranch, '⏰': AlarmClock, '⚠': TriangleAlert,
+  '🤖': BotIcon,
+  '🧭': Compass,
+  '🎨': Palette,
+  '🖌': Brush,
+  '💅': Brush,
+  '⚙': Settings2,
+  '🧪': FlaskConical,
+  '🔬': Microscope,
+  '🔍': Search,
+  '🔎': Search,
+  '👀': Eye,
+  '✨': Sparkles,
+  '✍': PenLine,
+  '🖊': PenLine,
+  '✏': Pencil,
+  '📝': NotebookPen,
+  '📓': NotebookPen,
+  '🪶': Feather,
+  '🛠': Wrench,
+  '🔧': Wrench,
+  '🔨': Hammer,
+  '🚀': Rocket,
+  '🧠': Brain,
+  '💭': Brain,
+  '📊': ChartColumn,
+  '📈': ChartColumn,
+  '🐛': Bug,
+  '🔒': Lock,
+  '🔐': Lock,
+  '🔑': KeyRound,
+  '🛡': Shield,
+  '⚡': Zap,
+  '🌐': Globe,
+  '🌍': Globe,
+  '📱': Smartphone,
+  '💡': Lightbulb,
+  '🎯': Target,
+  '📦': Package,
+  '💬': MessageCircle,
+  '💻': Laptop,
+  '🧑‍💻': Laptop,
+  '👨‍💻': Laptop,
+  '👩‍💻': Laptop,
+  '📐': Ruler,
+  '🧩': Puzzle,
+  '📚': BookOpen,
+  '📖': BookOpen,
+  '🗺': MapIcon,
+  '☁': Cloud,
+  '🔥': Flame,
+  '⭐': Star,
+  '🌟': Star,
+  '🎮': Gamepad2,
+  '👾': Gamepad2,
+  '🗄': Database,
+  '💾': Database,
+  '🖥': Server,
+  '⌨': Terminal,
+  '▶': SquareTerminal,
+  '📟': ScrollText,
+  '⏹': CircleStop,
+  '📋': ClipboardCheck,
+  '✅': ListChecks,
+  '📣': Megaphone,
+  '📢': Megaphone,
+  '❤': Heart,
+  '☕': Coffee,
+  '🌿': Leaf,
+  '🍃': Leaf,
+  '🎵': Music,
+  '🎶': Music,
+  '🧱': LayoutDashboard,
+  '💠': CodeXml,
+  '🗂': FolderSearch,
+  '📁': FolderOpen,
+  '📂': FolderOpen,
+  '📄': FileText,
+  '🧑‍🚀': Users,
+  '👥': Users,
+  '📸': Camera,
+  '🩺': Stethoscope,
+  '🖱': MousePointerClick,
+  '🔔': Bell,
+  '✋': Hand,
+  '🌙': Moon,
+  '♿': Accessibility,
+  '🖼': ImageIcon,
+  '🎭': Drama,
+  '🐙': GitBranch,
+  '⏰': AlarmClock,
+  '⚠': TriangleAlert,
 };
 
 const lineIcon = (emoji?: string): LucideIcon | undefined => EMOJI_ICONS[(emoji || '').replace(/\uFE0F/g, '')];
@@ -114,8 +194,7 @@ function MonoGlyph({ emoji, name, size }: { emoji?: string; name?: string; size:
 }
 
 export function Avatar({ bot, size = 36, status }: { bot?: Pick<Bot, 'emoji' | 'color' | 'name'> | null; size?: number; status?: BotStatus }) {
-  const tone =
-    !status || status.state === 'idle' ? null : status.state === 'waiting' ? 'orange' : status.state === 'error' ? 'red' : status.state === 'queued' ? 'blue' : 'green';
+  const tone = !status || status.state === 'idle' ? null : status.state === 'waiting' ? 'orange' : status.state === 'error' ? 'red' : status.state === 'queued' ? 'blue' : 'green';
   const color = bot?.color || '#8e8e93';
   // Both looks are rendered; styles/base.css shows the emoji on the bot's colour, or (black / white /
   // grey, the default) a line icon on a neutral disc.
@@ -139,6 +218,7 @@ export function Logo({ size = 26, className, id }: { size?: number; className?: 
   return (
     <svg className={cx('logo', className)} width={size} height={size} viewBox="0 0 128 128" aria-hidden>
       <rect width="128" height="128" rx="28" style={{ fill: 'var(--logo-bg)' }} />
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: the glyph is a constant from shared/logos */}
       <g style={{ color: 'var(--logo-fg)' }} dangerouslySetInnerHTML={{ __html: logoOf(id || chosen).glyph }} />
     </svg>
   );
@@ -180,21 +260,7 @@ export function GroupAvatar({ bots, size = 40 }: { bots: Bot[]; size?: number })
 
 // ---------------------------------------------------------------- modal
 
-export function Modal({
-  title,
-  icon,
-  onClose,
-  children,
-  footer,
-  wide,
-}: {
-  title: ReactNode;
-  icon?: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
-  footer?: ReactNode;
-  wide?: boolean;
-}) {
+export function Modal({ title, icon, onClose, children, footer, wide }: { title: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -356,7 +422,11 @@ export function Menu({ anchor, items, onClose, align = 'left' }: { anchor: DOMRe
           >
             {it.icon}
             <span style={{ flex: 1 }}>{it.label}</span>
-            {it.hint && <span className="muted" style={{ fontSize: 12 }}>{it.hint}</span>}
+            {it.hint && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                {it.hint}
+              </span>
+            )}
           </button>
         ),
       )}
@@ -366,7 +436,19 @@ export function Menu({ anchor, items, onClose, align = 'left' }: { anchor: DOMRe
 }
 
 /** A button that opens a menu. */
-export function MenuButton({ items, children, className, title, align }: { items: MenuItem[] | (() => MenuItem[]); children: ReactNode; className?: string; title?: string; align?: 'left' | 'right' }) {
+export function MenuButton({
+  items,
+  children,
+  className,
+  title,
+  align,
+}: {
+  items: MenuItem[] | (() => MenuItem[]);
+  children: ReactNode;
+  className?: string;
+  title?: string;
+  align?: 'left' | 'right';
+}) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   return (
     <>

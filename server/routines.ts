@@ -1,10 +1,10 @@
 import { Cron } from 'croner';
 import type { Chat, Routine, RoutineTrigger } from '../shared/types';
 import { bus, internal } from './bus';
-import { bots, chats, routines, uid } from './store';
 import { isChatBusy, projectBusy, runInChat } from './orchestrator';
-import { ensureWatch } from './watcher';
 import { chatProjectId } from './projects';
+import { bots, chats, routines, uid } from './store';
+import { ensureWatch } from './watcher';
 
 function cronFor(t: RoutineTrigger): string | null {
   if (t.type === 'cron') return t.expr;
@@ -179,7 +179,7 @@ export function startRoutines() {
     if (ev.t !== 'msg' || ev.msg.role !== 'bot' || ev.msg.trigger?.type !== 'routine') return;
     if (ev.msg.status !== 'done' && ev.msg.status !== 'error' && ev.msg.status !== 'stopped') return;
     const r = routines.get(ev.msg.trigger.routineId);
-    if (!r || r.lastStatus !== 'running') return;
+    if (r?.lastStatus !== 'running') return;
     r.lastStatus = ev.msg.status === 'done' ? 'ok' : 'error';
     emit(r);
   });

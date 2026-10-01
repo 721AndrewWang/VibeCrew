@@ -168,7 +168,13 @@ function retireVibeCrew() {
   if (![appImage, desktopFile, autostart, ...icons].some((f) => fs.existsSync(f))) return null;
   let pid = null;
   try {
-    pid = Number(fs.readlinkSync(path.join(home, '.config', 'VibeCrew', 'SingletonLock')).split('-').pop()) || null;
+    pid =
+      Number(
+        fs
+          .readlinkSync(path.join(home, '.config', 'VibeCrew', 'SingletonLock'))
+          .split('-')
+          .pop(),
+      ) || null;
   } catch {
     /* not running */
   }

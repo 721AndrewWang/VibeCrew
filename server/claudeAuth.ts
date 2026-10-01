@@ -5,7 +5,7 @@ import type { AuthStatus } from '../shared/types';
 import { bus } from './bus';
 import { cleanEnv, findClaudeExecutable } from './config';
 import { providerPreset } from './data/providers';
-import { settings, type Settings } from './store';
+import { type Settings, settings } from './store';
 
 const run = promisify(execFile);
 
@@ -186,15 +186,7 @@ async function probe(s: Settings): Promise<ConnectionTest | null> {
     /* not JSON */
   }
   const why =
-    r.status === 401 || r.status === 403
-      ? 'Key 不对或没有权限'
-      : r.status === 404
-        ? '地址或模型名不对'
-        : r.status === 429
-          ? '额度不足或请求太频繁'
-          : r.status >= 500
-            ? '服务商出错了'
-            : '请求被拒绝';
+    r.status === 401 || r.status === 403 ? 'Key 不对或没有权限' : r.status === 404 ? '地址或模型名不对' : r.status === 429 ? '额度不足或请求太频繁' : r.status >= 500 ? '服务商出错了' : '请求被拒绝';
   return { ok: false, text: `${why}（HTTP ${r.status}）：${msg}`, ms };
 }
 

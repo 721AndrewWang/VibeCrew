@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, FileCode2, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Sparkles, Trash2, Undo2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import type { Chat, Project, TurnSummary, WorkspaceStatus } from '../../../../shared/types';
 import { api, type GitStatus, type TurnDiff } from '../../api';
 import { loadTurns, openFileInEditor, toast, useStore } from '../../store';
 import { cx, fmtWhen } from '../../utils';
-import { Avatar, confirmDialog, Glyph } from '../ui';
 import { closeWorkspace } from '../../workspace';
+import { Avatar, confirmDialog, Glyph } from '../ui';
 import { DiffView, UnifiedDiff } from './DiffView';
 
 const STATUS_LABEL = { added: '新增', modified: '修改', deleted: '删除', unknown: '命令改动', renamed: '重命名' } as const;
@@ -20,7 +20,12 @@ function TurnFileDiff({ chatId, turnId, path }: { chatId: string; turnId: string
       .catch((e) => setErr(e.message));
   }, [chatId, turnId, path]);
   if (err) return <div className="muted pad">{err}</div>;
-  if (!d) return <div className="pad"><span className="spinner" /></div>;
+  if (!d)
+    return (
+      <div className="pad">
+        <span className="spinner" />
+      </div>
+    );
   if (d.binary || d.tooLarge) return <div className="muted pad">{d.binary ? '二进制文件，无法显示差异' : '文件太大，没有保存快照'}</div>;
   if (d.before === undefined) return <div className="muted pad">这个文件是被命令（比如 npm install 或脚本）修改的，没有修改前的快照，无法显示差异或自动撤销。</div>;
   return (
@@ -41,11 +46,11 @@ function TurnCard({ turn, chat, project, focus }: { turn: TurnSummary; chat: Cha
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each request carries a new nonce
   useEffect(() => {
     if (!focus) return;
     setOpen(focus.path || turn.files[0]?.path || null);
     setTimeout(() => ref.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.nonce]);
 
   const revert = async () => {
@@ -124,13 +129,14 @@ function GitSection({ project, active }: { project: Project; active: boolean }) 
       .then(setSt)
       .catch(() => setSt({ repo: false }));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh when files change on disk
   useEffect(() => {
     if (!active) return;
     const t = setTimeout(refresh, 400);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, filesVersion, project.id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload the diff when files change on disk
   useEffect(() => {
     if (!open) return;
     api
@@ -244,13 +250,14 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
       })
       .catch((e) => setErr((e as Error).message));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh when files, turns or the workspace change
   useEffect(() => {
     if (!active) return;
     const t = setTimeout(refresh, 300);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, filesVersion, turns, working, chat.id, project.id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload the diff when files or the workspace change
   useEffect(() => {
     if (!open) return;
     api

@@ -119,5 +119,10 @@ export function commitSubject(text: string, fallback: string): string {
 export function gitError(e: unknown): string {
   const err = e as { stderr?: string; message?: string };
   const text = (err.stderr || err.message || String(e)).trim();
-  return text.split('\n').find((l) => /fatal|error|错误|致命/i.test(l))?.replace(/^(fatal|error|致命错误|错误)[:：]\s*/i, '') || text.split('\n')[0];
+  return (
+    text
+      .split('\n')
+      .find((l) => /fatal|error|错误|致命/i.test(l))
+      ?.replace(/^(fatal|error|致命错误|错误)[:：]\s*/i, '') || text.split('\n')[0]
+  );
 }

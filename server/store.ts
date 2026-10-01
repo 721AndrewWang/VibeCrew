@@ -1,6 +1,6 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type { AuthMode, Bot, Chat, ChatMessage, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
@@ -247,7 +247,9 @@ class MessageStore {
   }
 
   compact(chatId: string) {
-    const lines = this.sorted(chatId).map((m) => JSON.stringify(m)).join('\n');
+    const lines = this.sorted(chatId)
+      .map((m) => JSON.stringify(m))
+      .join('\n');
     const tmp = this.file(chatId) + '.tmp';
     fs.writeFileSync(tmp, lines ? lines + '\n' : '');
     fs.renameSync(tmp, this.file(chatId));

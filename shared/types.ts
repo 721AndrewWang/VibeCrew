@@ -517,9 +517,4 @@ export type PreviewToHost =
   | { type: 'pick_end' }
   | { type: 'recorded'; step: RecordedStep };
 
-export type HostToPreview =
-  | { type: 'hello' }
-  | { type: 'pick'; on: boolean }
-  | { type: 'record'; on: boolean }
-  | { type: 'highlight'; selector: string }
-  | { type: 'history'; dir: -1 | 1 };
+export type HostToPreview = { type: 'hello' } | { type: 'pick'; on: boolean } | { type: 'record'; on: boolean } | { type: 'highlight'; selector: string } | { type: 'history'; dir: -1 | 1 };

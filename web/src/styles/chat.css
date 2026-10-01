@@ -30,14 +30,16 @@
 }
 
 .resizer::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   left: 2px;
   width: 1px;
   background: var(--border);
-  transition: background 0.15s, width 0.15s;
+  transition:
+    background 0.15s,
+    width 0.15s;
 }
 
 .resizer:hover::after,
@@ -180,7 +182,7 @@ body.resizing iframe {
 }
 
 .auth-banner::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 0;
@@ -657,55 +659,55 @@ body.resizing iframe {
 }
 
 /* highlight.js dark overrides */
-:root[data-theme='dark'] .hljs,
-:root[data-theme='dark'] .hljs-subst {
+:root[data-theme="dark"] .hljs,
+:root[data-theme="dark"] .hljs-subst {
   color: #d6deeb;
 }
-:root[data-theme='dark'] .hljs-keyword,
-:root[data-theme='dark'] .hljs-selector-tag,
-:root[data-theme='dark'] .hljs-built_in {
+:root[data-theme="dark"] .hljs-keyword,
+:root[data-theme="dark"] .hljs-selector-tag,
+:root[data-theme="dark"] .hljs-built_in {
   color: #c792ea;
 }
-:root[data-theme='dark'] .hljs-string,
-:root[data-theme='dark'] .hljs-attr {
+:root[data-theme="dark"] .hljs-string,
+:root[data-theme="dark"] .hljs-attr {
   color: #ecc48d;
 }
-:root[data-theme='dark'] .hljs-title,
-:root[data-theme='dark'] .hljs-name,
-:root[data-theme='dark'] .hljs-section {
+:root[data-theme="dark"] .hljs-title,
+:root[data-theme="dark"] .hljs-name,
+:root[data-theme="dark"] .hljs-section {
   color: #82aaff;
 }
-:root[data-theme='dark'] .hljs-comment {
+:root[data-theme="dark"] .hljs-comment {
   color: #7f8b99;
 }
-:root[data-theme='dark'] .hljs-number,
-:root[data-theme='dark'] .hljs-literal {
+:root[data-theme="dark"] .hljs-number,
+:root[data-theme="dark"] .hljs-literal {
   color: #f78c6c;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .hljs,
-  :root:not([data-theme='light']) .hljs-subst {
+  :root:not([data-theme="light"]) .hljs,
+  :root:not([data-theme="light"]) .hljs-subst {
     color: #d6deeb;
   }
-  :root:not([data-theme='light']) .hljs-keyword,
-  :root:not([data-theme='light']) .hljs-selector-tag,
-  :root:not([data-theme='light']) .hljs-built_in {
+  :root:not([data-theme="light"]) .hljs-keyword,
+  :root:not([data-theme="light"]) .hljs-selector-tag,
+  :root:not([data-theme="light"]) .hljs-built_in {
     color: #c792ea;
   }
-  :root:not([data-theme='light']) .hljs-string,
-  :root:not([data-theme='light']) .hljs-attr {
+  :root:not([data-theme="light"]) .hljs-string,
+  :root:not([data-theme="light"]) .hljs-attr {
     color: #ecc48d;
   }
-  :root:not([data-theme='light']) .hljs-title,
-  :root:not([data-theme='light']) .hljs-name,
-  :root:not([data-theme='light']) .hljs-section {
+  :root:not([data-theme="light"]) .hljs-title,
+  :root:not([data-theme="light"]) .hljs-name,
+  :root:not([data-theme="light"]) .hljs-section {
     color: #82aaff;
   }
-  :root:not([data-theme='light']) .hljs-comment {
+  :root:not([data-theme="light"]) .hljs-comment {
     color: #7f8b99;
   }
-  :root:not([data-theme='light']) .hljs-number,
-  :root:not([data-theme='light']) .hljs-literal {
+  :root:not([data-theme="light"]) .hljs-number,
+  :root:not([data-theme="light"]) .hljs-literal {
     color: #f78c6c;
   }
 }
@@ -967,7 +969,9 @@ body.resizing iframe {
   border-radius: 14px;
   background: color-mix(in oklab, var(--accent) 4%, var(--bg-elev));
   padding: 10px 12px;
-  box-shadow: 0 0 0 4px var(--accent-soft), 0 8px 24px var(--glow);
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    0 8px 24px var(--glow);
 }
 
 .approval:not(.pending) {
@@ -1196,7 +1200,9 @@ body.resizing iframe {
   background: var(--bg-elev);
   border-radius: 20px;
   box-shadow: var(--shadow-1);
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .composer-box:focus-within {
@@ -1364,7 +1370,10 @@ body.resizing iframe {
   align-items: center;
   justify-content: center;
   flex: none;
-  transition: transform 0.1s, opacity 0.15s, background 0.15s;
+  transition:
+    transform 0.1s,
+    opacity 0.15s,
+    background 0.15s;
 }
 
 .send-btn:disabled {

@@ -84,7 +84,12 @@ logo = chosenLogo();
 /** The pid of a running VibeCrew (the app's old name) from its single-instance lock, if any. */
 function legacyInstance() {
   try {
-    const pid = Number(fs.readlinkSync(path.join(app.getPath('appData'), 'VibeCrew', 'SingletonLock')).split('-').pop());
+    const pid = Number(
+      fs
+        .readlinkSync(path.join(app.getPath('appData'), 'VibeCrew', 'SingletonLock'))
+        .split('-')
+        .pop(),
+    );
     if (!pid) return null;
     process.kill(pid, 0);
     return pid;
@@ -236,7 +241,7 @@ function loginShellEnv(env) {
       done = true;
       clearTimeout(timer);
       try {
-        if (proc && proc.pid) process.kill(-proc.pid, 'SIGKILL');
+        if (proc?.pid) process.kill(-proc.pid, 'SIGKILL');
       } catch {
         /* already gone */
       }
@@ -345,7 +350,7 @@ async function startServer(port) {
     out = fs.openSync(LOG_FILE, 'a');
   } catch (e) {
     // Without a writable log the server can still run.
-    console.error(`[crew] cannot open ${LOG_FILE}: ${e && e.message}`);
+    console.error(`[crew] cannot open ${LOG_FILE}: ${e?.message}`);
   }
   log(`starting server on port ${port}`);
   const proc = spawn(process.execPath, [SERVER_ENTRY], { cwd: os.homedir(), env, stdio: ['ignore', out, out] });
@@ -431,7 +436,7 @@ async function loadUi(source) {
     loadedFrom = source;
   } catch (e) {
     loadedFrom = null;
-    log(`could not load UI: ${e && e.message}`);
+    log(`could not load UI: ${e?.message}`);
   }
 }
 
@@ -504,8 +509,8 @@ async function boot() {
     }
     if (!quitting) showError('Crew 服务没能启动', logTail());
   } catch (e) {
-    log(`boot failed: ${e && e.stack}`);
-    if (!quitting) showError('Crew 服务没能启动', String((e && e.message) || e));
+    log(`boot failed: ${e?.stack}`);
+    if (!quitting) showError('Crew 服务没能启动', String(e?.message || e));
   } finally {
     booting = false;
     if (lostDuringBoot && !quitting && !attached && !childAlive()) {
@@ -562,7 +567,7 @@ function openExternal(url) {
 /** Saved bounds if they still fit a connected display, otherwise a size that fits the screen. */
 function initialBounds() {
   const b = state.bounds;
-  if (b && b.width && b.height) {
+  if (b?.width && b.height) {
     const visible = screen.getAllDisplays().some((d) => {
       const a = d.workArea;
       return b.x < a.x + a.width - 100 && b.x + b.width > a.x + 100 && b.y < a.y + a.height - 100 && b.y + b.height > a.y;
@@ -722,7 +727,7 @@ function setAutostart(on) {
       fs.rmSync(AUTOSTART_FILE, { force: true });
     }
   } catch (e) {
-    dialog.showErrorBox('无法修改开机启动', String(e && e.message));
+    dialog.showErrorBox('无法修改开机启动', String(e?.message));
   }
   updateTray();
   return autostartEnabled();
@@ -766,7 +771,7 @@ function syncDockIcons() {
       fs.renameSync(`${dest}.tmp`, dest);
       changed = true;
     } catch (e) {
-      log(`icon ${s}x${s}: ${e && e.message}`);
+      log(`icon ${s}x${s}: ${e?.message}`);
     }
   }
   if (!changed) return;
@@ -797,7 +802,7 @@ function createMenu() {
       {
         label: 'Crew',
         submenu: [
-          { label: '隐藏窗口', accelerator: 'CmdOrCtrl+W', click: () => win && win.hide() },
+          { label: '隐藏窗口', accelerator: 'CmdOrCtrl+W', click: () => win?.hide() },
           { label: '在浏览器中打开', click: () => serverPort && void shell.openExternal(`${appOrigin()}/`) },
           { type: 'separator' },
           { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => void quitApp() },
@@ -896,7 +901,7 @@ function registerPermissions() {
   ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
     if (permission === 'clipboard-sanitized-write' || permission === 'fullscreen') return true;
     if (permission !== 'notifications') return false;
-    return isOwnFrame((details && details.requestingUrl) || `${origin}/`, details && details.isMainFrame);
+    return isOwnFrame(details?.requestingUrl || `${origin}/`, details?.isMainFrame);
   });
 }
 
@@ -912,7 +917,7 @@ if (wantsQuit) {
   app.exit(0);
 } else {
   app.on('second-instance', (_e, _argv, _cwd, data) => {
-    if (data && data.quit) void quitApp();
+    if (data?.quit) void quitApp();
     else if (quitting) relaunchRequested = true;
     else showWindow();
   });

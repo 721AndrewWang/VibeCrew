@@ -1,0 +1,74 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    // Generated: built bundles, packaged apps, rendered icons, the lockfile.
+    "includes": ["**", "!**/dist", "!**/dist-server", "!**/release", "!web/public/logos", "!desktop/logos", "!desktop/icons", "!package-lock.json"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    // The width that changed the fewest existing lines when the formatter was introduced.
+    "lineWidth": 200
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "jsxQuoteStyle": "double", "trailingCommas": "all", "semicolons": "always", "arrowParentheses": "always", "bracketSpacing": true }
+  },
+  "css": { "formatter": { "enabled": true }, "linter": { "enabled": true } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        // Matters of taste here, not correctness.
+        "useTemplate": "off",
+        "noNonNullAssertion": "off"
+      },
+      "suspicious": {
+        // SDK messages and tool inputs are loosely typed; tracked as debt rather than gated.
+        "noExplicitAny": "off",
+        // Terminal output is matched with ANSI escape sequences on purpose.
+        "noControlCharactersInRegex": "off",
+        // Static lists keyed by position are fine; dynamic lists use ids.
+        "noArrayIndexKey": "off"
+      },
+      "a11y": {
+        // There are no <form>s, so a button without a type never submits anything.
+        "useButtonType": "off",
+        // Accessibility gets its own pass (labels, keyboard handlers, semantics); off until then.
+        "noLabelWithoutControl": "off",
+        "noStaticElementInteractions": "off",
+        "useKeyWithClickEvents": "off",
+        "useSemanticElements": "off",
+        "useFocusableInteractive": "off",
+        "noSvgWithoutTitle": "off",
+        // Dialogs focus their first field on purpose.
+        "noAutofocus": "off"
+      },
+      "complexity": {
+        // Overrides of third-party styles (xterm, CodeMirror) need !important.
+        "noImportantStyles": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Scripts injected into other people's pages (and the inline boot scripts) are written in the
+      // conservative function-and-var style: hoisted vars, arguments forwarding, no optional chaining.
+      "includes": ["server/inject/**", "web/index.html", "desktop/*.html"],
+      "linter": {
+        "rules": {
+          "correctness": { "noInnerDeclarations": "off" },
+          "complexity": { "noArguments": "off", "useOptionalChain": "off", "useArrowFunction": "off" }
+        }
+      }
+    },
+    {
+      // Plain CSS cascades on purpose; specificity order is not a bug.
+      "includes": ["**/*.css"],
+      "linter": { "rules": { "style": { "noDescendingSpecificity": "off" } } }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import type { DevServerState, Project } from '../shared/types';
 import { bus } from './bus';
 import { cleanEnv } from './config';
-import { devCommand, needsInstall, packageManager, getProject } from './projects';
+import { devCommand, getProject, needsInstall, packageManager } from './projects';
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
 const URL_RE = /(https?):\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|[\w.-]+):(\d{2,5})(\/[^\s'"]*)?/i;

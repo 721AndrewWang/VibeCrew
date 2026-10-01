@@ -56,13 +56,13 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 18px;
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
-  --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Consolas, 'Noto Sans Mono CJK SC', monospace;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, "Noto Sans Mono CJK SC", monospace;
   --sidebar-w: 288px;
   color-scheme: light;
 }
 
-:root[data-theme='dark'] {
+:root[data-theme="dark"] {
   --accent: #f2f2f2;
   --accent-2: #c9c9c9;
   --on-accent: #0a0a0a;
@@ -105,7 +105,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme="light"]) {
     --accent: #f2f2f2;
     --accent-2: #c9c9c9;
     --on-accent: #0a0a0a;
@@ -159,26 +159,27 @@
   --logo-bg: var(--accent);
   --logo-fg: #ffffff;
   --purple: #6d5dfc;
-  --ambient: radial-gradient(1100px 560px at 100% -8%, color-mix(in oklab, var(--accent-2) 10%, transparent), transparent 62%),
+  --ambient:
+    radial-gradient(1100px 560px at 100% -8%, color-mix(in oklab, var(--accent-2) 10%, transparent), transparent 62%),
     radial-gradient(900px 520px at -8% 108%, color-mix(in oklab, var(--accent) 8%, transparent), transparent 60%);
 }
 
-:root[data-accent='glacier'] {
+:root[data-accent="glacier"] {
   --accent: #2f6ff0;
   --accent-2: #13aee0;
 }
 
-:root[data-accent='ocean'] {
+:root[data-accent="ocean"] {
   --accent: #2d5be3;
   --accent-2: #5a4ff0;
 }
 
-:root[data-accent='teal'] {
+:root[data-accent="teal"] {
   --accent: #0c93a3;
   --accent-2: #22c3b0;
 }
 
-:root[data-accent='indigo'] {
+:root[data-accent="indigo"] {
   --accent: #5b5ff0;
   --accent-2: #9068f2;
 }
@@ -200,7 +201,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 var(--font);
+  font: 14px / 1.5 var(--font);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -283,7 +284,12 @@ kbd {
   font-size: 13px;
   white-space: nowrap;
   box-shadow: 0 1px 1px rgba(20, 40, 80, 0.04);
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, opacity 0.12s, filter 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s,
+    opacity 0.12s,
+    filter 0.12s;
   user-select: none;
 }
 
@@ -305,14 +311,18 @@ kbd {
   background: var(--accent-grad);
   border-color: transparent;
   color: var(--on-accent);
-  box-shadow: 0 1px 2px var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 1px 2px var(--glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .btn.primary:hover:not(:disabled) {
   background: var(--accent-grad);
   border-color: transparent;
   filter: brightness(1.06) saturate(1.05);
-  box-shadow: var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  box-shadow:
+    var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .btn.primary:active:not(:disabled) {
@@ -370,7 +380,9 @@ kbd {
   background: transparent;
   color: var(--text-2);
   flex: none;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .icon-btn:hover:not(:disabled) {
@@ -409,7 +421,9 @@ kbd {
   border-radius: var(--radius-sm);
   padding: 7px 10px;
   outline: none;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .input:focus,
@@ -585,7 +599,7 @@ kbd {
 }
 
 .toggle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   left: 2px;

@@ -1,27 +1,10 @@
+import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2, FolderOpen, FolderPlus, GitBranch, House, MoreHorizontal, Play, Settings, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ArrowUp,
-  Check,
-  Copy,
-  CornerDownLeft,
-  ExternalLink,
-  Folder,
-  FolderGit2,
-  FolderOpen,
-  FolderPlus,
-  GitBranch,
-  House,
-  MoreHorizontal,
-  Play,
-  Settings,
-  Square,
-  Trash2,
-} from 'lucide-react';
 import type { DevServerState, Project } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
-import { showWorkspaceChanges } from '../../workspace';
 import { copyText, cx, shortPath } from '../../utils';
+import { showWorkspaceChanges } from '../../workspace';
 import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
 
@@ -74,7 +57,10 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const save = async () => {
     setSaving(true);
     try {
-      const rules = askRules.split('\n').map((r) => r.trim()).filter(Boolean);
+      const rules = askRules
+        .split('\n')
+        .map((r) => r.trim())
+        .filter(Boolean);
       await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules });
       toast('项目设置已保存', undefined, 'success');
       onDone();
@@ -108,24 +94,12 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         </div>
         <div className="field span-all">
           <label>提交信息要求</label>
-          <textarea
-            className="input"
-            rows={2}
-            value={commitGuide}
-            placeholder="例如：英文，祈使句，第一行不超过 72 个字符，正文说明为什么改"
-            onChange={(e) => setCommitGuide(e.target.value)}
-          />
+          <textarea className="input" rows={2} value={commitGuide} placeholder="例如：英文，祈使句，第一行不超过 72 个字符，正文说明为什么改" onChange={(e) => setCommitGuide(e.target.value)} />
           <div className="hint">机器人提交时照这个写；合并独立工作区时，合并说明也必须按它写，可以一键生成。</div>
         </div>
         <div className="field span-all">
           <label>必须确认的操作</label>
-          <textarea
-            className="input mono"
-            rows={3}
-            value={askRules}
-            placeholder={'每行一条，例如\nBash(ssh:*)\nBash(docker compose down:*)'}
-            onChange={(e) => setAskRules(e.target.value)}
-          />
+          <textarea className="input mono" rows={3} value={askRules} placeholder={'每行一条，例如\nBash(ssh:*)\nBash(docker compose down:*)'} onChange={(e) => setAskRules(e.target.value)} />
           <div className="hint">在这个项目里工作的所有机器人，碰到这些操作都要先问你。写法和机器人设置里的「必须确认」一样。</div>
         </div>
         <div className="field span-all">
@@ -192,6 +166,7 @@ function ProjectCard({ project, chatCount, workspaces }: { project: Project; cha
   const isStatic = project.devDetected === null && !active;
 
   // A status change from the server means the click took effect.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: clear the pending flag when a new status arrives
   useEffect(() => setPending(false), [status]);
 
   const toggleDev = () => {
@@ -300,7 +275,11 @@ export function ProjectsView() {
   const list = useMemo(() => listProjects(projects), [projects]);
   const workspaces = useMemo(() => {
     const m: Record<string, Project[]> = {};
-    for (const p of Object.values(projects)) if (p.workspace) (m[p.workspace.parentId] ||= []).push(p);
+    for (const p of Object.values(projects))
+      if (p.workspace) {
+        m[p.workspace.parentId] ??= [];
+        m[p.workspace.parentId].push(p);
+      }
     return m;
   }, [projects]);
   const counts = useMemo(() => {

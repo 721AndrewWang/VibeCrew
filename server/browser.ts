@@ -11,8 +11,7 @@ const DEVICES: Record<Device, { width: number; height: number; mobile: boolean }
   mobile: { width: 390, height: 844, mobile: true },
 };
 
-const MOBILE_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
 export const hasBrowser = () => !!findChrome();
 
@@ -198,7 +197,11 @@ function locate(page: Page, s: ActStep, forInput = false): Locator {
   if (s.selector) return page.locator(s.selector).first();
   if (s.text) {
     if (forInput) return page.getByLabel(s.text).or(page.getByPlaceholder(s.text)).first();
-    return page.getByRole('button', { name: s.text }).or(page.getByRole('link', { name: s.text })).or(page.getByText(s.text)).first();
+    return page
+      .getByRole('button', { name: s.text })
+      .or(page.getByRole('link', { name: s.text }))
+      .or(page.getByText(s.text))
+      .first();
   }
   throw new Error('需要 selector 或 text 来定位元素');
 }
@@ -293,23 +296,30 @@ export async function act(opts: { key: string; projectId: string; path?: string;
           await page.waitForTimeout(250);
           break;
         case 'eval': {
-          const r = await page.evaluate((code) => {
-            // eslint-disable-next-line no-new-func
-            const v = new Function(`return (${code})`)();
-            return Promise.resolve(v).then((x) => {
-              try {
-                return JSON.stringify(x);
-              } catch {
-                return String(x);
-              }
-            });
-          }, s.value || s.text || 'undefined');
+          const r = await page.evaluate(
+            (code) => {
+              // Runs page-side code the bot wrote, by design.
+              const v = new Function(`return (${code})`)();
+              return Promise.resolve(v).then((x) => {
+                try {
+                  return JSON.stringify(x);
+                } catch {
+                  return String(x);
+                }
+              });
+            },
+            s.value || s.text || 'undefined',
+          );
           lines.push(`✓ 执行脚本 → ${String(r).slice(0, 1500)}`);
           continue;
         }
         case 'expect_text': {
           const want = s.text || s.value || '';
-          const ok = await page.getByText(want).first().isVisible().catch(() => false);
+          const ok = await page
+            .getByText(want)
+            .first()
+            .isVisible()
+            .catch(() => false);
           if (!ok) throw new Error(`页面上没有看到「${want}」`);
           break;
         }

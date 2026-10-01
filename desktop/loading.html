@@ -154,9 +154,9 @@
         $('actions').hidden = true;
         $('spinner').hidden = false;
         $('title').textContent = '正在重新启动…';
-        bridge && bridge.retry();
+        bridge?.retry();
       };
-      $('logs').onclick = () => bridge && bridge.openLogs();
+      $('logs').onclick = () => bridge?.openLogs();
     </script>
   </body>
 </html>

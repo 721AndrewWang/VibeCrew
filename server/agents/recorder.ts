@@ -30,7 +30,10 @@ export class TurnRecorder {
   readonly record: TurnRecord;
   private files = new Map<string, TurnFile>();
 
-  constructor(opts: { id: string; chatId: string; botId: string; messageId: string; projectId: string }, private root: string) {
+  constructor(
+    opts: { id: string; chatId: string; botId: string; messageId: string; projectId: string },
+    private root: string,
+  ) {
     this.record = { ...opts, startedAt: Date.now(), files: [] };
   }
 

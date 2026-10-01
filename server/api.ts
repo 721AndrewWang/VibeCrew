@@ -5,10 +5,19 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import QRCode from 'qrcode';
 import { isLogoId } from '../shared/logos';
 import type { Attachment, Bootstrap, RecordedStep } from '../shared/types';
-import { APP_VERSION, lanAddress } from './config';
+import { memoryFile, readMemory } from './agents/prompts';
+import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
+import { hasBrowser, screenshot } from './browser';
 import { bus } from './bus';
-import { bots, chats, messages, projects, routines, settings, type Settings } from './store';
-import { MODEL_OPTIONS, PLUGINS, BOT_TEMPLATES } from './data/catalog';
+import { authStatus, checkAuth, testConnection } from './claudeAuth';
+import { APP_VERSION, lanAddress } from './config';
+import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
+import { PROVIDER_PRESETS } from './data/providers';
+import { devServer, devServerStates } from './devserver';
+import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
+import { logger } from './log';
+import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
+import { ensurePreview, previewInfos, restartPreviews } from './preview';
 import {
   allProjects,
   createProject,
@@ -25,20 +34,14 @@ import {
   updateProject,
   writeProjectFile,
 } from './projects';
-import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
-import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
-import { skills, recordingToSkillBody } from './skills';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
-import { devServer, devServerStates } from './devserver';
-import { ensurePreview, previewInfos, restartPreviews } from './preview';
+import { recordingToSkillBody, skills } from './skills';
+import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
-import { hasBrowser, screenshot } from './browser';
-import { saveUpload, uploadFile, IMAGE_MIMES } from './uploads';
-import { authStatus, checkAuth, testConnection } from './claudeAuth';
-import { PROVIDER_PRESETS } from './data/providers';
-import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
-import { readMemory, memoryFile } from './agents/prompts';
+import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
 import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
+
+const log = logger('api');
 
 export function lanUrl(): string | undefined {
   const s = settings.get();
@@ -197,7 +200,7 @@ export function apiRouter() {
   });
   r.post('/chats/:id/read', (req, res) => {
     const c = chats.get(req.params.id);
-    if (c && c.unread) {
+    if (c?.unread) {
       c.unread = 0;
       chats.set(c);
       bus.emit({ t: 'chat', chat: c });
@@ -319,7 +322,14 @@ export function apiRouter() {
     // Untracked file: show it as all-new.
     try {
       const content = fs.readFileSync(resolveInProject(p, file), 'utf8');
-      res.json({ diff: `--- /dev/null\n+++ b/${file}\n` + content.split('\n').map((l) => '+' + l).join('\n') });
+      res.json({
+        diff:
+          `--- /dev/null\n+++ b/${file}\n` +
+          content
+            .split('\n')
+            .map((l) => '+' + l)
+            .join('\n'),
+      });
     } catch {
       res.json({ diff: '' });
     }
@@ -423,7 +433,7 @@ export function apiRouter() {
   r.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const status = err instanceof HttpError ? err.status : (err as { status?: number })?.status || 500;
     const message = (err as Error)?.message || String(err);
-    if (status >= 500) console.error('[api]', err);
+    if (status >= 500) log.error(err);
     res.status(status).json({ error: message });
   });
   return r;

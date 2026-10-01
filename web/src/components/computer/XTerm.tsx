@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
-import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { type ITheme, Terminal } from '@xterm/xterm';
+import { useEffect, useRef } from 'react';
 import { onTerminal, send } from '../../socket';
 import { useDarkMode } from './theme';
 
@@ -50,7 +50,14 @@ function makeTerm(dark: boolean, readOnly: boolean) {
   });
 }
 
-function useFit(host: React.RefObject<HTMLDivElement | null>, term: React.RefObject<Terminal | null>, fit: React.RefObject<FitAddon | null>, active: boolean, onResize?: (cols: number, rows: number) => void) {
+function useFit(
+  host: React.RefObject<HTMLDivElement | null>,
+  term: React.RefObject<Terminal | null>,
+  fit: React.RefObject<FitAddon | null>,
+  active: boolean,
+  onResize?: (cols: number, rows: number) => void,
+) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fit again when the tab becomes visible
   useEffect(() => {
     const el = host.current;
     if (!el) return;
@@ -80,6 +87,7 @@ export function LiveTerminal({ id, projectId, command, active }: { id: string; p
   const fit = useRef<FitAddon | null>(null);
   const dark = useDarkMode();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one terminal per session id; the theme is applied separately
   useEffect(() => {
     const t = makeTerm(dark, false);
     const f = new FitAddon();
@@ -104,7 +112,6 @@ export function LiveTerminal({ id, projectId, command, active }: { id: string; p
       t.dispose();
       term.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
@@ -128,6 +135,7 @@ export function LogTerminal({ content, active }: { content: string; active: bool
   const written = useRef(0);
   const dark = useDarkMode();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: created once; the theme is applied separately
   useEffect(() => {
     const t = makeTerm(dark, true);
     const f = new FitAddon();
@@ -140,7 +148,6 @@ export function LogTerminal({ content, active }: { content: string; active: bool
       t.dispose();
       term.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

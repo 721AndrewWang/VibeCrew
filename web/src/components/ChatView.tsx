@@ -1,15 +1,31 @@
+import {
+  ArrowDown,
+  ChevronLeft,
+  FolderGit2,
+  FolderPlus,
+  GitBranch,
+  GitMerge,
+  LogOut,
+  Monitor,
+  MoreHorizontal,
+  PanelRightClose,
+  PanelRightOpen,
+  RotateCcw,
+  Settings2,
+  Unlink,
+  Users,
+} from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ChevronLeft, FolderGit2, FolderPlus, GitBranch, GitMerge, LogOut, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, RotateCcw, Settings2, Unlink, Users } from 'lucide-react';
 import type { Chat } from '../../../shared/types';
 import { api } from '../api';
 import { chatProjectId, listProjects, loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore } from '../store';
-import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { cx, fmtDay, isSameDay, statusLabel } from '../utils';
-import { Avatar, confirmDialog, GroupAvatar, Glyph, MenuButton, type MenuItem } from './ui';
-import { BotMessage, SystemMessage, UserMessage } from './Message';
+import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { Composer } from './Composer';
-import { chatMenuItems } from './Sidebar';
 import { ComputerPane } from './computer/ComputerPane';
+import { BotMessage, SystemMessage, UserMessage } from './Message';
+import { chatMenuItems } from './Sidebar';
+import { Avatar, confirmDialog, Glyph, GroupAvatar, MenuButton, type MenuItem } from './ui';
 
 /** Switching the project closes the chat's workspace (a branch with unmerged work is kept). */
 async function switchProject(chat: Chat, projectId: string | null) {
@@ -46,10 +62,7 @@ function ProjectPicker({ chat }: { chat: Chat }) {
             { label: '查看改动 / 合并', icon: <GitMerge size={15} />, onClick: showWorkspaceChanges },
             { label: '关闭独立工作区…', icon: <LogOut size={15} />, onClick: () => void closeWorkspace(chat) },
           ]
-        : [
-            { separator: true },
-            { label: '在独立分支中工作…', hint: '新建 Git 分支', icon: <GitBranch size={15} />, onClick: () => void enableWorkspace(chat) },
-          ]
+        : [{ separator: true }, { label: '在独立分支中工作…', hint: '新建 Git 分支', icon: <GitBranch size={15} />, onClick: () => void enableWorkspace(chat) }]
       : []),
     { separator: true },
     { label: '新建 / 打开项目…', icon: <FolderPlus size={15} />, onClick: () => openModal({ kind: 'newProject' }) },
@@ -121,10 +134,7 @@ function ChatHeader({ chat }: { chat: Chat }) {
       </button>
       <MenuButton
         align="right"
-        items={() => [
-          ...(dm ? [{ label: `${dm.name} 的设置`, icon: <Settings2 size={15} />, onClick: () => openModal({ kind: 'botEditor', botId: dm.id }) }] : []),
-          ...chatMenuItems(chat),
-        ]}
+        items={() => [...(dm ? [{ label: `${dm.name} 的设置`, icon: <Settings2 size={15} />, onClick: () => openModal({ kind: 'botEditor', botId: dm.id }) }] : []), ...chatMenuItems(chat)]}
       >
         <MoreHorizontal size={18} />
       </MenuButton>
@@ -221,6 +231,7 @@ function MessageList({ chat }: { chat: Chat }) {
   const names = useMemo(() => Object.values(bots).map((b) => b.name), [bots]);
   const list = st?.list || [];
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stick to the bottom again whenever the chat changes
   useEffect(() => {
     stick.current = true;
   }, [chat.id]);
@@ -262,7 +273,11 @@ function MessageList({ chat }: { chat: Chat }) {
             </button>
           </div>
         )}
-        {!st?.loaded && <div className="empty"><div className="spinner" /></div>}
+        {!st?.loaded && (
+          <div className="empty">
+            <div className="spinner" />
+          </div>
+        )}
         {list.map((m, i) => {
           const prev = list[i - 1];
           const next = list[i + 1];
@@ -274,7 +289,7 @@ function MessageList({ chat }: { chat: Chat }) {
               {m.role === 'system' ? (
                 <SystemMessage msg={m} />
               ) : m.role === 'user' ? (
-                <UserMessage msg={m} chat={chat} names={names} showTime={!next || next.role !== 'user' || next.ts - m.ts > 5 * 60_000} />
+                <UserMessage msg={m} chat={chat} names={names} showTime={next?.role !== 'user' || next.ts - m.ts > 5 * 60_000} />
               ) : (
                 <BotMessage msg={m} chat={chat} bot={bots[m.botId || '']} showHead={!sameBotRun} names={names} root={root} />
               )}

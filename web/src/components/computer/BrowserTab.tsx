@@ -1,8 +1,8 @@
+import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Circle, ExternalLink, Laptop, Maximize, MousePointerClick, RotateCw, Send, Smartphone, Tablet, TerminalSquare, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, Camera, Circle, ExternalLink, Laptop, Maximize, MousePointerClick, RotateCw, Send, Smartphone, Tablet, Trash2, TerminalSquare } from 'lucide-react';
 import type { Chat, ConsoleEntry, PreviewToHost, Project } from '../../../../shared/types';
 import { api } from '../../api';
-import { addAttachment, attachmentId, openModal, previewOf, setComputer, toast, updatePreview, useStore, type Device } from '../../store';
+import { addAttachment, attachmentId, type Device, openModal, previewOf, setComputer, toast, updatePreview, useStore } from '../../store';
 import { cx, fmtClock } from '../../utils';
 import { Glyph } from '../ui';
 
@@ -22,6 +22,7 @@ function ConsoleDrawer({ projectId, chatId, entries, onClose }: { projectId: str
   const [filter, setFilter] = useState<'all' | 'problems'>('problems');
   const shown = filter === 'all' ? entries : entries.filter((e) => e.level === 'error' || e.level === 'warn');
   const list = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll down when lines are added
   useLayoutEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight });
   }, [shown.length]);
@@ -55,7 +56,11 @@ function ConsoleDrawer({ projectId, chatId, entries, onClose }: { projectId: str
         </button>
       </div>
       <div className="console-list" ref={list}>
-        {!shown.length && <div className="muted" style={{ padding: 10 }}>{filter === 'problems' ? '没有错误或警告' : '还没有日志'}</div>}
+        {!shown.length && (
+          <div className="muted" style={{ padding: 10 }}>
+            {filter === 'problems' ? '没有错误或警告' : '还没有日志'}
+          </div>
+        )}
         {shown.map((e, i) => (
           <div key={i} className={cx('console-row', e.level)}>
             <span className="c-time">{fmtClock(e.ts)}</span>
@@ -99,6 +104,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
   const mode = info?.mode;
   const target = info?.target;
   const firstMode = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload when the mode or target changes
   useEffect(() => {
     if (firstMode.current) {
       firstMode.current = false;
@@ -111,6 +117,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
     if (pv.reloadKey) setSrc((s) => ({ path: previewOf(project.id).path || s.path, n: s.n + 1 }));
   }, [pv.reloadKey, project.id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each request carries a new nonce
   useEffect(() => {
     if (pv.navigate) {
       setSrc((s) => ({ path: pv.navigate!.path, n: s.n + 1 }));
@@ -128,7 +135,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
     const onMsg = (e: MessageEvent) => {
       if (!iframe.current || e.source !== iframe.current.contentWindow) return;
       const d = e.data as PreviewToHost & { __crew?: boolean };
-      if (!d || d.__crew !== true) return;
+      if (d?.__crew !== true) return;
       if (d.type === 'ready' || d.type === 'nav') {
         hostOrigin.current = e.origin;
         if (d.type === 'ready') {
@@ -172,23 +179,26 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
     return () => window.removeEventListener('message', onMsg);
   }, [project.id, chat.id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tell the page only when the flag changes
   useEffect(() => post({ type: 'pick', on: pv.picking }), [pv.picking]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tell the page only when the flag changes
   useEffect(() => post({ type: 'record', on: pv.recording }), [pv.recording]);
 
   // Fit fixed-size devices into the available space.
   const dev = DEVICES.find((d) => d.id === pv.device) || DEVICES[0];
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the tab becomes visible
   useLayoutEffect(() => {
     const el = stage.current;
     if (!el || !dev.w) {
       setScale(1);
       return;
     }
-    const fit = () => {
+    const fitFrame = () => {
       const pad = 24;
       setScale(Math.min(1, (el.clientWidth - pad) / dev.w!, (el.clientHeight - pad) / dev.h!));
     };
-    fit();
-    const ro = new ResizeObserver(fit);
+    fitFrame();
+    const ro = new ResizeObserver(fitFrame);
     ro.observe(el);
     return () => ro.disconnect();
   }, [dev.w, dev.h, active]);
@@ -278,7 +288,11 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
         </div>
       </div>
       <div className="browser-tools">
-        <button className={cx('btn sm', pv.picking && 'primary')} onClick={() => updatePreview(project.id, { picking: !pv.picking, recording: false })} title="在页面上点选一个元素，发给机器人（Esc 取消，Shift 连选）">
+        <button
+          className={cx('btn sm', pv.picking && 'primary')}
+          onClick={() => updatePreview(project.id, { picking: !pv.picking, recording: false })}
+          title="在页面上点选一个元素，发给机器人（Esc 取消，Shift 连选）"
+        >
           <MousePointerClick size={13} /> {pv.picking ? '点选页面元素…' : '圈选元素'}
         </button>
         <button className={cx('btn sm', pv.recording && 'danger solid')} onClick={toggleRecord} title="录制你的操作，保存为技能或生成测试（像 Grokbot 的 Teach a task）">
@@ -301,14 +315,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
       <div className={cx('stage', dev.w ? 'framed' : 'fill')} ref={stage}>
         {frameUrl && devReady && (
           <div className="frame-wrap" style={dev.w ? { width: dev.w, height: dev.h, transform: `scale(${scale})` } : undefined}>
-            <iframe
-              key={src.n}
-              ref={iframe}
-              src={frameUrl}
-              title="预览"
-              onLoad={() => setLoading(false)}
-              allow="clipboard-write; fullscreen"
-            />
+            <iframe key={src.n} ref={iframe} src={frameUrl} title="预览" onLoad={() => setLoading(false)} allow="clipboard-write; fullscreen" />
           </div>
         )}
         {needsDev && !devReady && (

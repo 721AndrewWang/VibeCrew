@@ -1,5 +1,8 @@
 import { EventEmitter } from 'node:events';
 import type { ServerEvent } from '../shared/types';
+import { logger } from './log';
+
+const log = logger('bus');
 
 type Listener = (ev: ServerEvent) => void;
 const listeners = new Set<Listener>();
@@ -11,7 +14,7 @@ export const bus = {
       try {
         l(ev);
       } catch (e) {
-        console.error('[bus]', e);
+        log.error(e);
       }
     }
   },

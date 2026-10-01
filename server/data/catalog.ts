@@ -159,6 +159,7 @@ export const PLUGINS: PluginDef[] = [
     category: '协作',
     icon: '🐙',
     description: '读写 Issue、PR、代码评审。需要一个 GitHub 个人访问令牌。',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Claude Code expands ${GITHUB_TOKEN} from the env
     server: { type: 'http', url: 'https://api.githubcopilot.com/mcp/', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } },
     needs: ['GITHUB_TOKEN'],
   },
@@ -191,10 +192,4 @@ export const DEFAULT_ALLOW_RULES = [
   'Bash(find *)',
 ];
 
-export const DEFAULT_ASK_RULES = [
-  'Bash(git push*)',
-  'Bash(sudo *)',
-  'Bash(rm -rf *)',
-  'Bash(npm publish*)',
-  'Bash(*deploy*)',
-];
+export const DEFAULT_ASK_RULES = ['Bash(git push*)', 'Bash(sudo *)', 'Bash(rm -rf *)', 'Bash(npm publish*)', 'Bash(*deploy*)'];

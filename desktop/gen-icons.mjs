@@ -8,10 +8,10 @@
 //
 // Uses CREW_CHROME_PATH / CHROME_PATH if set, like the server does.
 
-import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright-core';
 import { appIconSvg, DEFAULT_LOGO, LOGOS } from '../shared/logos.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));

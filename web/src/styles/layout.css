@@ -51,7 +51,9 @@
   border: 1px solid var(--border);
   background: color-mix(in oklab, var(--bg-elev) 75%, transparent);
   color: var(--text-3);
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .sb-search:focus-within {
@@ -93,11 +95,13 @@
 /* The open chat: a soft tint of the accent with a gradient bar, not a solid block. */
 .chat-item.active {
   background: color-mix(in oklab, var(--accent) 12%, var(--bg-elev));
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent), var(--shadow-1);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent),
+    var(--shadow-1);
 }
 
 .chat-item.active::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 14px;

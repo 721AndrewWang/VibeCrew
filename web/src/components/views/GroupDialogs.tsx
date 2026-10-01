@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
 import { Check, FolderPlus, GitBranch, GitMerge, LogOut, Save, SlidersHorizontal, Trash2, Users } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Bot, Chat } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, openModal, toast, useStore } from '../../store';
-import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../../workspace';
 import { cx } from '../../utils';
+import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../../workspace';
 import { Avatar, confirmDialog, GroupAvatar, Modal, Toggle } from '../ui';
 import { ProjectSelect } from './ProjectsView';
 

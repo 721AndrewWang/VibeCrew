@@ -1,19 +1,38 @@
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Chat, Project } from '../shared/types';
-import { projects, settings, uid } from './store';
 import { bus } from './bus';
 import { PROJECT_TEMPLATES, slugify } from './data/projectTemplates';
+import { projects, settings, uid } from './store';
 
 const run = promisify(execFile);
 
 /** Directories that are listed lazily and never watched. */
-export const HEAVY_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', '.svelte-kit', '.output', '.cache', '.turbo', '.vercel', 'coverage', '.parcel-cache', 'test-results', 'playwright-report']);
+export const HEAVY_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.output',
+  '.cache',
+  '.turbo',
+  '.vercel',
+  'coverage',
+  '.parcel-cache',
+  'test-results',
+  'playwright-report',
+]);
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -68,7 +87,7 @@ export function detectFramework(dir: string): string {
     if (deps.nuxt) return 'Nuxt';
     if (deps['@sveltejs/kit']) return 'SvelteKit';
     if (deps.astro) return 'Astro';
-    if (deps['@remix-run/react'] || deps['react-router'] && deps['@react-router/dev']) return 'React Router';
+    if (deps['@remix-run/react'] || (deps['react-router'] && deps['@react-router/dev'])) return 'React Router';
     if (deps.vite) {
       if (deps.react) return 'Vite + React';
       if (deps.vue) return 'Vite + Vue';

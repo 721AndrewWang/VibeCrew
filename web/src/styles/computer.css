@@ -278,7 +278,9 @@
   transform-origin: center center;
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--border-strong);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.25),
+    0 0 0 1px var(--border-strong);
   background: #fff;
 }
 
@@ -312,7 +314,6 @@
   margin: 0 0 6px;
   max-width: 380px;
 }
-
 
 .rec-bar {
   position: absolute;
@@ -684,12 +685,12 @@ button.term-tab {
   background: var(--code-bg);
 }
 
-:root[data-theme='dark'] .xterm-host {
+:root[data-theme="dark"] .xterm-host {
   background: #0c0c0c;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .xterm-host {
+  :root:not([data-theme="light"]) .xterm-host {
     background: #0c0c0c;
   }
 }

@@ -33,9 +33,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   const { bot, chat, project, team, skills } = opts;
   const lines: string[] = [];
   lines.push(`# 你的身份`);
-  lines.push(
-    `你是「${bot.name}」（${bot.title}），Crew Web 开发小队的一员。Crew 是运行在用户电脑上的 AI 机器人团队应用：用户像发短信一样和你们聊天，旁边有实时的网页预览、文件、终端面板。`,
-  );
+  lines.push(`你是「${bot.name}」（${bot.title}），Crew Web 开发小队的一员。Crew 是运行在用户电脑上的 AI 机器人团队应用：用户像发短信一样和你们聊天，旁边有实时的网页预览、文件、终端面板。`);
   lines.push('', '## 角色说明', bot.description.trim() || '（未填写，按通用 Web 开发助手工作）');
 
   const members = team.filter((b) => chat.botIds.includes(b.id));
@@ -151,15 +149,7 @@ export function renderUserMessage(m: ChatMessage): string {
 }
 
 /** The user-turn prompt: fresh context plus everything the bot has not seen yet. */
-export function buildTurnPrompt(opts: {
-  bot: Bot;
-  chat: Chat;
-  unseen: ChatMessage[];
-  names: Map<string, string>;
-  context: string[];
-  trigger: ChatMessage['trigger'];
-  routineName?: string;
-}): string {
+export function buildTurnPrompt(opts: { bot: Bot; chat: Chat; unseen: ChatMessage[]; names: Map<string, string>; context: string[]; trigger: ChatMessage['trigger']; routineName?: string }): string {
   const { bot, chat, unseen, names, context, trigger } = opts;
   const out: string[] = [];
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);

@@ -1,11 +1,11 @@
-import { memo, useState, type CSSProperties, type ReactNode } from 'react';
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, MousePointerClick, Undo2, X, Zap, Film, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
 import { chatProjectId, focusTurn, openFileInEditor, toast, useStore } from '../store';
 import { cx, fmtClock, fmtDuration, modelLabel, toolDuration, toolInfo } from '../utils';
-import { Avatar, confirmDialog, Glyph } from './ui';
 import { Markdown } from './Markdown';
+import { Avatar, confirmDialog, Glyph } from './ui';
 
 // ---------------------------------------------------------------- attachments
 
@@ -45,7 +45,10 @@ export function AttachmentChips({ items, onRemove, projectId }: { items: Attachm
           case 'console':
             icon = <AlertTriangle size={13} />;
             label = `控制台 ${a.entries.length} 条`;
-            title = a.entries.map((e) => `[${e.level}] ${e.text}`).join('\n').slice(0, 1500);
+            title = a.entries
+              .map((e) => `[${e.level}] ${e.text}`)
+              .join('\n')
+              .slice(0, 1500);
             break;
           case 'file':
             icon = <FileCode2 size={13} />;
@@ -154,7 +157,9 @@ function TodoList({ todos }: { todos: { content: string; status: string; activeF
     <ul className="todo-list">
       {todos.map((t, i) => (
         <li key={i} className={t.status}>
-          <span className="todo-box">{t.status === 'completed' ? <Check size={11} /> : t.status === 'in_progress' ? <span className="spinner" style={{ width: 9, height: 9, borderWidth: 1.5 }} /> : null}</span>
+          <span className="todo-box">
+            {t.status === 'completed' ? <Check size={11} /> : t.status === 'in_progress' ? <span className="spinner" style={{ width: 9, height: 9, borderWidth: 1.5 }} /> : null}
+          </span>
           <span>{t.status === 'in_progress' && t.activeForm ? t.activeForm : t.content}</span>
         </li>
       ))}
@@ -287,7 +292,14 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
       )}
       {pending && denying && (
         <div className="approval-actions">
-          <input className="input" autoFocus placeholder="告诉它为什么 / 应该怎么做（可选）" value={reason} onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && decide('deny')} />
+          <input
+            className="input"
+            autoFocus
+            placeholder="告诉它为什么 / 应该怎么做（可选）"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && decide('deny')}
+          />
           <button className="btn sm danger solid" disabled={busy} onClick={() => decide('deny')}>
             拒绝
           </button>
@@ -321,7 +333,15 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
   const files = msg.changes?.files || [];
   if (!files.length || !msg.turnId) return null;
   const revert = async () => {
-    if (!(await confirmDialog({ title: '撤销这一轮的改动？', body: `会把 ${files.length} 个文件恢复到 ${useStore.getState().bots[msg.botId || '']?.name || '机器人'} 修改之前的样子。`, ok: '撤销', danger: true }))) return;
+    if (
+      !(await confirmDialog({
+        title: '撤销这一轮的改动？',
+        body: `会把 ${files.length} 个文件恢复到 ${useStore.getState().bots[msg.botId || '']?.name || '机器人'} 修改之前的样子。`,
+        ok: '撤销',
+        danger: true,
+      }))
+    )
+      return;
     setBusy(true);
     try {
       let r = await api.revertTurn(chat.id, msg.turnId!);
@@ -352,7 +372,13 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
       <button className="link" onClick={() => focusTurn(chat.id, msg.turnId!)}>
         改动了 {files.length} 个文件
       </button>
-      <span className="files">{files.slice(0, 3).map((f) => f.split('/').pop()).join('、')}{files.length > 3 ? ' 等' : ''}</span>
+      <span className="files">
+        {files
+          .slice(0, 3)
+          .map((f) => f.split('/').pop())
+          .join('、')}
+        {files.length > 3 ? ' 等' : ''}
+      </span>
       <span className="spacer" />
       {msg.changes?.reverted ? (
         <span className="badge">已撤销</span>
@@ -458,7 +484,15 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
 function renderUserText(text: string, names: string[]) {
   if (!names.length) return text;
   const re = new RegExp(`(@(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|所有人|all)(?![A-Za-z0-9_-]))`, 'gi');
-  return text.split(re).map((seg, i) => (i % 2 === 1 ? <span key={i} className="mention">{seg}</span> : seg));
+  return text.split(re).map((seg, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="mention">
+        {seg}
+      </span>
+    ) : (
+      seg
+    ),
+  );
 }
 
 export const UserMessage = memo(function UserMessage({ msg, chat, names, showTime }: { msg: ChatMessage; chat: Chat; names: string[]; showTime: boolean }) {
