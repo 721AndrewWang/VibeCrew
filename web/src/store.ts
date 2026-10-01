@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import type {
   Attachment,
   AuthStatus,
@@ -21,7 +22,6 @@ import type {
   Skill,
   TurnSummary,
 } from '../../shared/types';
-import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import { api } from './api';
 import { desktop } from './desktop';
 
@@ -101,7 +101,14 @@ export interface AppState {
   preview: Record<string, PreviewUi>;
   toasts: Toast[];
   mobilePane: 'list' | 'chat' | 'computer';
-  modal: null | { kind: 'newGroup' } | { kind: 'newBot' } | { kind: 'botEditor'; botId: string } | { kind: 'newProject' } | { kind: 'chatSettings'; chatId: string } | { kind: 'saveRecording'; projectId: string };
+  modal:
+    | null
+    | { kind: 'newGroup' }
+    | { kind: 'newBot' }
+    | { kind: 'botEditor'; botId: string }
+    | { kind: 'newProject' }
+    | { kind: 'chatSettings'; chatId: string }
+    | { kind: 'saveRecording'; projectId: string };
 }
 
 const LS_UI = 'vc-ui';
@@ -227,7 +234,10 @@ export async function boot() {
       msgs: {},
       mobilePane: cur.booted ? cur.mobilePane : active && window.innerWidth > 760 ? 'chat' : 'list',
     });
-    if (active) void loadMessages(active);
+    if (active) {
+      if (location.hash !== `#/chat/${active}`) history.replaceState(null, '', `#/chat/${active}`);
+      void loadMessages(active);
+    }
   } catch (e) {
     set({ bootError: (e as Error).message });
   }
@@ -413,13 +423,24 @@ export function setView(view: View) {
   set({ view, mobilePane: view === 'chat' ? get().mobilePane : 'chat' });
 }
 
-export function openChat(chatId: string) {
+export function openChat(chatId: string, fromAddress = false) {
   const c = get().chats[chatId];
   set({ view: 'chat', activeChatId: chatId, mobilePane: 'chat' });
-  history.replaceState(null, '', `#/chat/${chatId}`);
+  // Each chat gets its own history entry, so back and forward move between chats.
+  const hash = `#/chat/${chatId}`;
+  if (!fromAddress && location.hash !== hash) history.pushState(null, '', hash);
   void loadMessages(chatId);
   if (c?.unread) void api.read(chatId).catch(() => {});
 }
+
+/** Follows the address: back/forward, links to `#/chat/<id>`, or an edited URL. */
+function followAddress() {
+  const id = location.hash.match(/^#\/chat\/(.+)$/)?.[1];
+  if (!id || !get().booted || !get().chats[id]) return;
+  if (id !== get().activeChatId || get().view !== 'chat') openChat(id, true);
+}
+window.addEventListener('hashchange', followAddress);
+window.addEventListener('popstate', followAddress);
 
 export async function loadMessages(chatId: string, older = false) {
   const st = get().msgs[chatId];
