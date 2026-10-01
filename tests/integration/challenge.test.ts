@@ -37,7 +37,9 @@ async function say(text: string) {
 
 describe('the Skeptic template', () => {
   it('is blind, starts fresh, thinks hard and may only write counterexample tests', () => {
-    expect([skeptic.blindReview, skeptic.freshSession, skeptic.effort, skeptic.model, skeptic.editScope]).toEqual([true, true, 'high', '', ['tests/challenge/**']]);
+    expect([skeptic.blindReview, skeptic.freshSession, skeptic.effort, skeptic.model, skeptic.permission, skeptic.editScope]).toEqual([true, true, 'high', '', 'review', ['tests/challenge/**']]);
+    expect(skeptic.allowRules).toContain('Bash(node tests/challenge/*)');
+    expect(skeptic.allowRules).toContain('Bash(npm run *)');
   });
 });
 

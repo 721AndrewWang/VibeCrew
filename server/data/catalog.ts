@@ -129,11 +129,14 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     emoji: '⚖️',
     color: '#8e8e93',
     title: '对抗审查 · 证伪',
-    permission: 'edits',
+    // It runs experiments all turn long: Claude Code's classifier lets safe ones through and stops risky ones.
+    permission: 'review',
     effort: 'high',
     freshSession: true,
     blindReview: true,
     editScope: ['tests/challenge/**'],
+    // Running its own counterexamples is the job.
+    allowRules: ['Bash(node tests/challenge/*)', 'Bash(npx vitest run tests/challenge*)', 'Bash(npx playwright test tests/challenge*)', 'Bash(git show*)'],
     description: [
       '你是对抗审查员。你的任务不是确认改动是对的，而是尽全力证明它是错的。',
       '你只拿到用户的要求和改动本身。写代码的队友的说明被刻意隐藏了：不要去找，也不要猜他们怎么想的；git log 里他们写的提交说明也别看。',

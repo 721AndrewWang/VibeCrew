@@ -90,7 +90,7 @@ export function createBot(input: BotInput & { template?: string }): Bot {
     model: input.model ?? tpl?.model ?? '',
     effort: input.effort ?? tpl?.effort ?? '',
     permission: input.permission || tpl?.permission || settings.get().defaultPermission,
-    allowRules: input.allowRules ?? [...DEFAULT_ALLOW_RULES],
+    allowRules: input.allowRules ?? [...DEFAULT_ALLOW_RULES, ...(tpl?.allowRules || [])],
     askRules: input.askRules ?? [...DEFAULT_ASK_RULES],
     mcpServers: input.mcpServers ?? {},
     plugins: input.plugins ?? tpl?.plugins ?? [],

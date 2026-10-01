@@ -489,6 +489,8 @@ export interface BotTemplate {
   editScope?: string[];
   freshSession?: boolean;
   blindReview?: boolean;
+  /** Added to the default "always allow" rules for this role. */
+  allowRules?: string[];
   plugins?: string[];
 }
 

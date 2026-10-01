@@ -12,6 +12,10 @@ describe('splitCommand', () => {
 });
 
 describe('harmless', () => {
+  it('includes searching and listing, which cannot write', () => {
+    expect(['grep -n x a.css', 'ls -la', 'ls | grep x'].every((c) => splitCommand(c).every(harmless))).toBe(true);
+    expect(harmless('grep x a > out.txt')).toBe(false);
+  });
   it('accepts commands that only read or print', () => {
     for (const c of ['cd /tmp', 'head -20', 'tail -2', "echo 'done'", 'cat README.md', 'wc -l x', 'pwd']) expect(harmless(c), c).toBe(true);
   });
@@ -29,7 +33,7 @@ describe('suggestRules', () => {
   const cmd = `cd /home/u/site; git fetch -q origin 2>&1 | tail -2; git log --oneline main..origin/main | head; find / -path /proc -prune -o -name summary.jsonl -print 2>/dev/null | head; grep -n -E 'matched' docs/x.md | head -20`;
 
   it('gives one rule per real command and none for helpers', () => {
-    expect(suggestRules('Bash', bash(cmd), cwd)).toEqual(['Bash(git fetch*)', 'Bash(git log*)', 'Bash(find*)', 'Bash(grep*)']);
+    expect(suggestRules('Bash', bash(cmd), cwd)).toEqual(['Bash(git fetch*)', 'Bash(git log*)', 'Bash(find*)']);
   });
   it('covers the whole command next time', () => {
     expect(rulesAllow(suggestRules('Bash', bash(cmd), cwd), 'Bash', bash(cmd), cwd)).toBe(true);

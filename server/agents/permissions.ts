@@ -109,7 +109,7 @@ function matchOne(rule: string, toolName: string, input: any, cwd: string, segme
 
 /** True when the rules cover the whole action (every part of a compound shell command). */
 /** Commands that only read or print, and cannot write files themselves. */
-const HELPERS = new Set(['cd', 'pwd', 'true', 'false', 'echo', 'printf', 'head', 'tail', 'wc', 'cut', 'tr', 'nl', 'cat', 'basename', 'dirname', 'date', 'column']);
+const HELPERS = new Set(['cd', 'pwd', 'true', 'false', 'echo', 'printf', 'head', 'tail', 'wc', 'cut', 'tr', 'nl', 'cat', 'basename', 'dirname', 'date', 'column', 'grep', 'ls']);
 
 /**
  * A part of a command that needs no rule: a helper above, without command substitution or output
