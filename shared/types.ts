@@ -201,6 +201,8 @@ export interface ChatMessage {
   parts?: MessagePart[];
   attachments?: Attachment[];
   status?: 'queued' | 'streaming' | 'done' | 'error' | 'stopped';
+  /** The turn was cut short by a restart of Crew; what it had written is kept. */
+  interrupted?: boolean;
   error?: string;
   turnId?: ID;
   trigger?: MessageTrigger;

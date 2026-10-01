@@ -466,7 +466,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         )}
         {msg.status === 'stopped' && (
           <div className="msg-stopped">
-            <CircleSlash size={12} /> 已停止
+            <CircleSlash size={12} /> {msg.interrupted ? 'Crew 重启时中断了这一轮，写到一半的内容已保留' : '已停止'}
           </div>
         )}
         <ChangesBar msg={msg} chat={chat} />

@@ -118,6 +118,10 @@ export async function reconcileWorkspaces() {
       restartBots(chat);
       chats.set(chat);
       systemMessage(chat, `找不到独立工作区的目录（${ws.workspace.worktree}），已切回项目目录。分支 ${ws.workspace.branch} 还在仓库里。`);
+    } else {
+      // A turn cut short by a restart left its changes uncommitted: keep them on the branch.
+      const { commit } = await autoCommit(ws.workspace.worktree, '恢复：上次中断前未提交的改动').catch(() => ({ commit: null }));
+      if (commit) systemMessage(chat, '上次 Crew 退出时这里有未提交的改动，已经提交到分支上了。');
     }
   }
   for (const c of chats.all()) {

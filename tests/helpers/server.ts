@@ -66,6 +66,8 @@ export interface CrewServer {
   /** stdout + stderr so far. */
   log(): string;
   stop(): Promise<void>;
+  /** Ends the process at once, as a crash would, and keeps the folder for a restart. */
+  kill(): Promise<void>;
 }
 
 export interface StartOptions {
@@ -108,6 +110,14 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     return { ...(Array.isArray(json) ? { items: json } : json), status: r.status };
   };
 
+  const kill = async () => {
+    if (proc.exitCode === null && proc.pid) {
+      const exited = new Promise((r) => proc.once('exit', r));
+      process.kill(-proc.pid, 'SIGKILL');
+      await exited;
+    }
+  };
+
   const stop = async () => {
     if (proc.exitCode === null && proc.pid) {
       const exited = new Promise((r) => proc.once('exit', r));
@@ -133,7 +143,7 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return { base, port, dir, home: env.CREW_HOME ?? path.join(env.HOME ?? os.homedir(), '.crew'), env, api, log: () => out, stop };
+  return { base, port, dir, home: env.CREW_HOME ?? path.join(env.HOME ?? os.homedir(), '.crew'), env, api, log: () => out, stop, kill };
 }
 
 /** Polls `fn` until it returns something truthy (or throws after `ms`). */

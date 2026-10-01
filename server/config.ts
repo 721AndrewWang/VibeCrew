@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pkg from '../package.json';
+import { migrate } from './migrations';
 
 export const APP_VERSION: string = pkg.version;
 export const APP_NAME = 'Crew';
@@ -32,6 +33,8 @@ export const DATA = {
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {
   fs.mkdirSync(dir, { recursive: true });
 }
+// Before any store reads its file. A folder written by a newer Crew stops the start here.
+for (const m of migrate(HOME_DIR)) console.warn(`[migrate] ${m.title} (schema ${m.version})`);
 
 export const DEFAULT_PROJECTS_ROOT = path.resolve(process.env.CREW_PROJECTS || path.join(os.homedir(), 'CrewProjects'));
 

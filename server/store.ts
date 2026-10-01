@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type { AuthMode, Bot, Chat, ChatMessage, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
+import { SCHEMA_VERSION } from './migrations';
 
 export function uid(prefix = ''): string {
   return prefix + crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x');
@@ -80,6 +81,8 @@ export class Collection<T extends { id: string }> {
 }
 
 export interface Settings {
+  /** Shape of the data folder; see migrations.ts. */
+  schemaVersion: number;
   defaultModel: string;
   authMode: AuthMode;
   apiKey: string;
@@ -105,6 +108,7 @@ export interface Settings {
 }
 
 const DEFAULT_SETTINGS: Settings = {
+  schemaVersion: SCHEMA_VERSION,
   defaultModel: '',
   authMode: 'claude-code',
   apiKey: '',
@@ -200,17 +204,21 @@ class MessageStore {
     } catch {
       /* new chat */
     }
-    // Turns interrupted by a restart can no longer finish.
+    // Turns interrupted by a restart can no longer finish; what they had written stays.
+    const interrupted: ChatMessage[] = [];
     for (const m of map.values()) {
       if (m.status === 'streaming' || m.status === 'queued') {
         m.status = 'stopped';
+        m.interrupted = true;
         for (const p of m.parts || []) {
           if (p.type === 'tool' && p.status === 'running') p.status = 'error';
           if (p.type === 'approval' && p.status === 'pending') p.status = 'expired';
         }
+        interrupted.push(m);
       }
     }
     this.cache.set(chatId, map);
+    for (const m of interrupted) this.put(m);
     if (lines > 50 && lines > map.size * 2) this.compact(chatId);
     return map;
   }

@@ -28,6 +28,31 @@ export { effectiveBot, setPreviewPage } from './turnContext';
 
 const log = logger('orchestrator');
 
+const PROGRESS_SAVE_MS = 3000;
+
+/** Runs fn at most once per `ms`, on the trailing edge; cancel() drops a pending call. */
+function throttle(ms: number, fn: () => void) {
+  let timer: NodeJS.Timeout | null = null;
+  let last = 0;
+  return {
+    call() {
+      if (timer) return;
+      timer = setTimeout(
+        () => {
+          timer = null;
+          last = Date.now();
+          fn();
+        },
+        Math.max(0, ms - (Date.now() - last)),
+      );
+    },
+    cancel() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
 const FAKE = process.env.CREW_FAKE_AGENT === '1';
 const IDLE_CLOSE_MS = 15 * 60_000;
 
@@ -304,12 +329,18 @@ async function runTurn(job: Job) {
   internal.on('files', onFiles);
 
   let lastActivity = '';
-  const stream = new TurnStream(msg, (state, detail) => {
-    const key = state + (detail || '');
-    if (key === lastActivity) return;
-    lastActivity = key;
-    setStatus(bot.id, { state, detail, chatId: chat.id });
-  });
+  // Progress goes to disk every few seconds, so a crash mid-turn keeps what the bot had written.
+  const progress = throttle(PROGRESS_SAVE_MS, () => messages.put(msg));
+  const stream = new TurnStream(
+    msg,
+    (state, detail) => {
+      const key = state + (detail || '');
+      if (key === lastActivity) return;
+      lastActivity = key;
+      setStatus(bot.id, { state, detail, chatId: chat.id });
+    },
+    progress.call,
+  );
 
   const cwd = project?.path || os.homedir();
   const hooks = {
@@ -335,6 +366,7 @@ async function runTurn(job: Job) {
       running.set(chat.id, { job, msg, session, stream });
       result = await session.run(content, hooks);
     }
+    progress.cancel();
     stream.finish(result);
     void recordContext(chat.id, bot.id, session);
   } catch (e) {

@@ -69,7 +69,9 @@ logs/          桌面版的服务日志（server.log）
 ```
 
 - `store.ts` 的写入都是「先写临时文件再改名」，并且合并在一起延后写；退出时 `flushAll()` 把没写完的写完。
-- `config.ts` 的 `migrateFromVibeCrew` 负责把旧名字的数据（`~/.vibecrew`、`~/VibeCrewProjects`）搬过来。
+- `settings.json` 里的 `schemaVersion` 记录数据的格式版本。改了存储格式就在 `server/migrations.ts` 里加一条迁移，启动时按顺序补跑，跑之前把 JSON 文件备份到 `backups/`。数据比当前 Crew 还新时拒绝启动，而不是悄悄写坏它。
+- `config.ts` 的 `migrateFromVibeCrew` 负责把旧名字的数据（`~/.vibecrew`、`~/VibeCrewProjects`）搬过来；它决定数据目录在哪，所以跑在版本迁移之前。
+- 机器人每一轮的进展每 3 秒落一次盘。Crew 被强杀后重启，那一轮标成「中断」，写到一半的内容保留；独立工作区里没提交的改动会先提交到分支上。
 - 测试必须把 `CREW_HOME` 和 `CREW_PROJECTS` 指到临时目录，绝不能碰真实数据（`tests/helpers/server.ts` 已经这样做了）。
 
 ## 独立工作区

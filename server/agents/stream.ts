@@ -42,6 +42,8 @@ export class TurnStream {
   constructor(
     readonly msg: ChatMessage,
     private onActivity: (state: 'thinking' | 'tool', detail?: string) => void,
+    /** Called after every change to the message, so progress can be saved while the turn runs. */
+    private onProgress: () => void = () => {},
   ) {
     msg.parts = msg.parts || [];
   }
@@ -54,12 +56,14 @@ export class TurnStream {
     this.parts.push(part);
     const index = this.parts.length - 1;
     bus.emit({ t: 'msg_part', chatId: this.msg.chatId, id: this.msg.id, index, part });
+    this.onProgress();
     return index;
   }
 
   updatePart(part: MessagePart) {
     const index = this.parts.indexOf(part);
     if (index >= 0) bus.emit({ t: 'msg_part', chatId: this.msg.chatId, id: this.msg.id, index, part });
+    this.onProgress();
   }
 
   private appendText(index: number, delta: string) {
@@ -67,6 +71,7 @@ export class TurnStream {
     if (!p || (p.type !== 'text' && p.type !== 'thinking')) return;
     p.text += delta;
     bus.emit({ t: 'msg_text', chatId: this.msg.chatId, id: this.msg.id, index, delta });
+    this.onProgress();
   }
 
   private toolPart(id: string): ToolPart | undefined {
