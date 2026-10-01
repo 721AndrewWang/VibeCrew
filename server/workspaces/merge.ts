@@ -3,6 +3,7 @@ import { gitError, isMerging, zList } from '../gitops';
 import { logger } from '../log';
 import { projectRunning, systemMessage } from '../orchestrator';
 import { configOf, gitIn, HttpError } from '../projects';
+import { challengeBlocker } from '../review';
 import { count, emitProject, requireWorkspace, revParse, saveWork } from './common';
 
 const log = logger('workspace');
@@ -61,6 +62,10 @@ export async function doMerge(chatId: string, message?: string): Promise<Workspa
   if (trial.tree === (await revParse(info.repo, `${baseHead}^{tree}`))) throw new HttpError(409, `没有需要合并的改动，${info.baseBranch} 已经包含这些修改`);
 
   const conf = configOf(ws);
+  if (conf.requireChallenge) {
+    const blocked = challengeBlocker(info.challenge, head);
+    if (blocked) throw new HttpError(409, blocked);
+  }
   const typed = message?.trim();
   let body: string;
   if (conf.commitGuide) {

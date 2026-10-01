@@ -12,7 +12,8 @@ import { bus, internal, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { logger } from '../log';
-import { chatProjectId, configOf, HttpError, touchProject } from '../projects';
+import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
+import { parseVerdict, reviewDiff } from '../review';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid } from '../store';
@@ -132,6 +133,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
         botId: bot.id,
         botName: bot.name,
         chatId: chat.id,
+        blind: !!bot.blindReview,
         projectId: () => chatProjectId(chats.get(chat.id)),
         currentPage: () => {
           const pid = chatProjectId(chats.get(chat.id));
@@ -342,9 +344,11 @@ async function runTurn(job: Job) {
   const names = new Map(bots.all().map((b) => [b.id, b.name]));
   const context = contextLines(project);
   const imgs = imageBlocks(unseen.filter((m) => m.role === 'user'));
+  // A blind reviewer gets the change itself instead of what teammates said about it.
+  const review = bot.blindReview && project ? await reviewDiff(project) : undefined;
   /** The prompt for this session: the full context the first time, then only what changed. */
   const contentFor = (s: AgentSession) => {
-    const promptText = buildTurnPrompt({ bot, chat, unseen, names, context: contextDelta(contextSent.get(s), context), trigger: job.trigger, routineName: job.routineName });
+    const promptText = buildTurnPrompt({ bot, chat, unseen, names, context: contextDelta(contextSent.get(s), context), trigger: job.trigger, routineName: job.routineName, review });
     contextSent.set(s, context);
     return imgs.length ? [{ type: 'text' as const, text: promptText }, ...imgs] : promptText;
   };
@@ -426,6 +430,7 @@ async function runTurn(job: Job) {
       log.warn('workspace auto-commit failed:', commitError);
     }
   }
+  if (bot.blindReview && msg.status === 'done') await recordVerdict(msg, project);
   messages.put(msg);
   bus.emit({ t: 'msg', msg });
   bus.emit({ t: 'usage', usage: usageOf() });
@@ -455,6 +460,25 @@ async function runTurn(job: Job) {
       }
     }
   }
+}
+
+/**
+ * Keeps an adversarial reviewer's verdict: on the message, and on the workspace against the commit
+ * it saw, which is what a "challenge before merge" project checks.
+ */
+async function recordVerdict(msg: ChatMessage, project: Project | null) {
+  const v = parseVerdict(msg.text);
+  if (!v) return;
+  msg.meta = { ...msg.meta, verdict: v };
+  const ws = project?.workspace;
+  if (!project || !ws) return;
+  const head = (await gitIn(ws.worktree, ['rev-parse', 'HEAD']).catch(() => '')).trim();
+  if (!head) return;
+  const p = projects.get(project.id);
+  if (!p?.workspace) return;
+  p.workspace.challenge = { head, refuted: v.refuted, at: Date.now(), messageId: msg.id };
+  projects.set(p);
+  bus.emit({ t: 'project', project: decorate(p) });
 }
 
 // ---------------------------------------------------------------- public API
@@ -490,9 +514,11 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
     const b = bots.get(chat.botIds[0]);
     if (b) targets = [b];
   } else {
+    // A skill may name who should do it (/challenge → @Skeptic): its expansion routes too.
+    const routing = msg.prompt ? `${text}\n${msg.prompt}` : text;
     // Mentioning someone outside the group invites them in.
     const outsiders = parseMentions(
-      text,
+      routing,
       allBots.filter((b) => !chat.botIds.includes(b.id)),
     );
     if (outsiders.length) {
@@ -503,7 +529,7 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
       systemMessage(chat, `${outsiders.map((b) => b.name).join('、')} 加入了群聊`);
     }
     const members = allBots.filter((b) => chat.botIds.includes(b.id));
-    targets = ALL_RE.test(text) ? members : parseMentions(text, members);
+    targets = ALL_RE.test(text) ? members : parseMentions(routing, members);
     if (!targets.length) {
       const lead = bots.get(chat.leadBotId) && chat.botIds.includes(chat.leadBotId!) ? bots.get(chat.leadBotId)! : members[0];
       if (lead) targets = [lead];

@@ -94,4 +94,22 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
     await crew.api('PATCH', `/bots/${chief.id}`, { freshSession: false });
     expect((await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBeUndefined();
   });
+
+  it("gives a blind reviewer the user's words and the change, and hides the bots' replies, even in chat_history", async () => {
+    const b = await crew.api('GET', '/bootstrap');
+    const chief = b.bots.find((x: any) => x.name === 'Chief');
+    await crew.api('PATCH', `/bots/${chief.id}`, { blindReview: true });
+    wantHistory = true;
+    mock.toolResults.length = 0;
+    const sent = await turn('审一下第一条');
+    expect(sent).toContain('用户的要求');
+    expect(sent).toContain('要审查的改动');
+    expect(sent).toContain('结论：未推翻');
+    expect(sent).not.toContain('收到。'); // the bot's own earlier replies are not replayed
+    const history = mock.toolResults.find((t) => t.includes('#1'))!;
+    expect(history).toContain('【用户 · #1】');
+    expect(history).not.toContain('【@Chief');
+    await crew.api('PATCH', `/bots/${chief.id}`, { blindReview: false });
+    wantHistory = false;
+  });
 });

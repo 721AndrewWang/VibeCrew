@@ -155,6 +155,14 @@ export const BUILTIN_SKILLS: BuiltinSkill[] = [
 - 运行测试直到通过；如果发现的是产品 bug，说明问题并 @相关队友，而不是改测试去迁就 bug。`,
   },
   {
+    name: 'challenge',
+    title: '对抗审查',
+    icon: '⚖️',
+    argsHint: '重点（可选）',
+    description: '让 Skeptic 只看需求和改动，尽力证伪；可以作为合并前的门槛',
+    body: `@Skeptic 对当前的改动做一次对抗审查：尽力证明它是错的，只认能复现的反例。重点：{{args}}（没写就按你的流程全面试）。`,
+  },
+  {
     name: 'review',
     title: '审查改动',
     icon: '🔍',

@@ -53,6 +53,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [noAttribution, setNoAttribution] = useState(!!project.noAttribution);
   const [askRules, setAskRules] = useState((project.askRules || []).join('\n'));
   const [allowedDomains, setAllowedDomains] = useState((project.allowedDomains || []).join('\n'));
+  const [requireChallenge, setRequireChallenge] = useState(!!project.requireChallenge);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -66,7 +67,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         .split('\n')
         .map((d) => d.trim())
         .filter(Boolean);
-      await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules, allowedDomains: domains });
+      await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules, allowedDomains: domains, requireChallenge });
       toast('项目设置已保存', undefined, 'success');
       onDone();
     } catch (e) {
@@ -119,6 +120,13 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
               <div className="hint">机器人的提交和 PR 不带 Co-Authored-By 之类的署名，合并提交里也不写 Crew。</div>
             </div>
             <Toggle on={noAttribution} onChange={setNoAttribution} />
+          </div>
+          <div className="setting-row">
+            <div>
+              <div className="sr-title">合并前必须通过对抗审查</div>
+              <div className="hint">独立工作区合并前，Skeptic 要针对最新的提交审一次，而且一条都没推翻才能合并（/challenge）。每次大约花 $0.3～0.6。</div>
+            </div>
+            <Toggle on={requireChallenge} onChange={setRequireChallenge} />
           </div>
         </div>
       </div>

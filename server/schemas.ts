@@ -40,6 +40,7 @@ const botFields = {
   editScope: z.array(text(300)).max(50),
   monthlyBudgetUsd: z.number().min(0).max(1_000_000).nullable(),
   freshSession: z.boolean(),
+  blindReview: z.boolean(),
 };
 
 export const BotCreate = z.object({ ...botFields, template: text(64) }).partial();
@@ -87,6 +88,7 @@ export const ProjectPatch = z
     noAttribution: z.boolean(),
     askRules: z.array(text(300)).max(50),
     allowedDomains: z.array(text(300)).max(100),
+    requireChallenge: z.boolean(),
   })
   .partial();
 

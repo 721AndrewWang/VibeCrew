@@ -358,26 +358,41 @@ export class FakeSession implements AgentSession {
     };
 
     try {
-      await streamText(`收到！我是 ${this.botName}（演示模式，没有调用模型）。我先看看项目结构。`);
-      await runTool('Glob', { pattern: '**/*.{html,css,js,ts,tsx}' }, () => {
-        try {
-          return fs.readdirSync(this.cfg.cwd).join('\n');
-        } catch {
-          return '(空)';
-        }
-      });
-      if (/改|写|做|创建|add|create|make|build/i.test(prompt) && !this.stopped) {
-        const file = path.join(this.cfg.cwd, 'crew-demo.md');
-        await runTool('Bash', { command: 'ls -la', description: '列出项目文件' }, () => 'total 8\n(演示输出)');
-        await runTool('Write', { file_path: file, content: `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n` }, () => {
-          hooks.beforeEdit(file);
-          fs.writeFileSync(file, `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n`);
-          return `File created successfully at: ${file}`;
+      if (prompt.includes('按你的流程证伪')) {
+        // A blind review: a table and the verdict line. REFUTE_ME in the change makes it refute one claim.
+        const refute = prompt.includes('REFUTE_ME');
+        await streamText(
+          [
+            '## 证伪结果',
+            '| # | 说法 | 怎么试图推翻 | 结果 |',
+            '| --- | --- | --- | --- |',
+            `| 1 | 改动做到了用户要的事 | 读改动（演示模式） | ${refute ? '推翻（改动里留着 REFUTE_ME）' : '未推翻'} |`,
+            '',
+            refute ? '结论：推翻 1 条' : '结论：未推翻',
+          ].join('\n'),
+        );
+      } else {
+        await streamText(`收到！我是 ${this.botName}（演示模式，没有调用模型）。我先看看项目结构。`);
+        await runTool('Glob', { pattern: '**/*.{html,css,js,ts,tsx}' }, () => {
+          try {
+            return fs.readdirSync(this.cfg.cwd).join('\n');
+          } catch {
+            return '(空)';
+          }
         });
+        if (/改|写|做|创建|add|create|make|build/i.test(prompt) && !this.stopped) {
+          const file = path.join(this.cfg.cwd, 'crew-demo.md');
+          await runTool('Bash', { command: 'ls -la', description: '列出项目文件' }, () => 'total 8\n(演示输出)');
+          await runTool('Write', { file_path: file, content: `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n` }, () => {
+            hooks.beforeEdit(file);
+            fs.writeFileSync(file, `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n`);
+            return `File created successfully at: ${file}`;
+          });
+        }
+        const others = this.mentionables.filter((n) => n !== this.botName);
+        const shouldHandoff = others.length > 0 && /交给|分派|拆分|handoff/i.test(prompt) && !/【@/.test(prompt);
+        await streamText(shouldHandoff ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。` : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。');
       }
-      const others = this.mentionables.filter((n) => n !== this.botName);
-      const shouldHandoff = others.length > 0 && /交给|分派|拆分|handoff/i.test(prompt) && !/【@/.test(prompt);
-      await streamText(shouldHandoff ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。` : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。');
       const result = {
         type: 'result',
         subtype: 'success',

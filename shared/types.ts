@@ -54,6 +54,8 @@ export interface Bot {
   monthlyBudgetUsd?: number;
   /** Start every turn in a new Claude Code session instead of resuming: for roles that check or review, whose earlier turns are not worth re-reading. */
   freshSession?: boolean;
+  /** Adversarial reviewer: sees the user's request and the change, never teammates' explanations, and tries to refute it. */
+  blindReview?: boolean;
   /** Project used by this bot's direct chat. */
   projectId: ID | null;
   template?: string;
@@ -213,7 +215,7 @@ export interface ChatMessage {
   turnId?: ID;
   trigger?: MessageTrigger;
   /** model: the one that did most of the turn (Claude Code may use a small model on the side). */
-  meta?: { costUsd?: number; durationMs?: number; numTurns?: number; model?: string; trace?: TraceRef };
+  meta?: { costUsd?: number; durationMs?: number; numTurns?: number; model?: string; trace?: TraceRef; verdict?: { refuted: number } };
   /** Files changed by this bot turn. */
   changes?: { files: string[]; reverted?: boolean };
   /** A note for the human only; never included in bot prompts. */
@@ -240,6 +242,8 @@ export interface Project {
   askRules?: string[];
   /** Hosts the sandboxed commands of this project may reach, on top of the global list. */
   allowedDomains?: string[];
+  /** A workspace merges only after an adversarial review that refuted nothing at its current commit. */
+  requireChallenge?: boolean;
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -265,6 +269,17 @@ export interface WorkspaceInfo {
   worktree: string;
   createdAt: number;
   mergedAt?: number;
+  /** The last adversarial review of this branch. */
+  challenge?: ChallengeVerdict;
+}
+
+export interface ChallengeVerdict {
+  /** The commit the reviewer saw (after its own counterexample tests were committed). */
+  head: string;
+  /** How many claims it refuted with a reproducible counterexample; 0 = not refuted. */
+  refuted: number;
+  at: number;
+  messageId: ID;
 }
 
 export interface WorkspaceStatus {
@@ -284,6 +299,9 @@ export interface WorkspaceStatus {
   /** An unfinished `git merge` inside the workspace (conflicts being resolved). */
   merging: boolean;
   mergedAt?: number;
+  challenge?: ChallengeVerdict;
+  /** The project requires a passing adversarial review before merging. */
+  requireChallenge?: boolean;
 }
 
 /** Merging into the base branch (or syncing from it) either succeeds or stops at conflicts; other failures are errors. */
@@ -470,6 +488,7 @@ export interface BotTemplate {
   effort?: Effort;
   editScope?: string[];
   freshSession?: boolean;
+  blindReview?: boolean;
   plugins?: string[];
 }
 

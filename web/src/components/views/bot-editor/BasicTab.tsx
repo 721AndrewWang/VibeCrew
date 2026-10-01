@@ -57,6 +57,13 @@ export function BasicTab({ draft, patch, nameOk }: { draft: Bot; patch: (p: Part
         </div>
         <Toggle on={!!draft.freshSession} onChange={(freshSession) => patch({ freshSession })} />
       </div>
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">只看结果，不看队友的说明（对抗审查）</div>
+          <div className="hint">每轮只拿到用户的要求和改动本身，队友写的说明对它隐藏，免得被作者的思路带着走。它的结论会记在独立工作区上，可以作为合并门槛。</div>
+        </div>
+        <Toggle on={!!draft.blindReview} onChange={(blindReview) => patch({ blindReview })} />
+      </div>
       <div className="field">
         <label>默认项目</label>
         <ProjectSelect value={draft.projectId} onChange={(projectId) => patch({ projectId })} noneLabel="不绑定" />

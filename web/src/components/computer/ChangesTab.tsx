@@ -1,8 +1,8 @@
-import { ChevronRight, FileCode2, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Sparkles, Trash2, Undo2 } from 'lucide-react';
+import { ChevronRight, FileCode2, GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Scale, Sparkles, Trash2, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Chat, Project, TurnSummary, WorkspaceStatus } from '../../../../shared/types';
 import { api, type GitStatus, type TurnDiff } from '../../api';
-import { loadTurns, openFileInEditor, toast, useStore } from '../../store';
+import { loadTurns, openFileInEditor, sendMessage, toast, useStore } from '../../store';
 import { cx, fmtWhen } from '../../utils';
 import { closeWorkspace } from '../../workspace';
 import { Avatar, confirmDialog, Glyph } from '../ui';
@@ -326,6 +326,7 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
             {st.behind > 0 && ` · ${base} 有 ${st.behind} 个新提交`}
             {st.mergedAt ? ` · 上次合并于 ${fmtWhen(st.mergedAt)}` : ''}
           </div>
+          {(st.requireChallenge || st.challenge) && <ChallengeLine st={st} chatId={chat.id} blocked={blocked} />}
           {(st.merging || (conflicts && conflicts.length > 0)) && (
             <div className="ws-alert">
               {st.merging
@@ -444,6 +445,27 @@ export function ChangesTab({ chat, project, active }: { chat: Chat; project: Pro
         turns.map((t) => <TurnCard key={t.id} turn={t} chat={chat} project={project} focus={focus && focus.turnId === t.id && focus.chatId === chat.id ? focus : undefined} />)
       )}
       <GitSection project={project} active={active} />
+    </div>
+  );
+}
+
+/** Where the branch stands with adversarial review: needed, passed at this commit, or refuted. */
+function ChallengeLine({ st, chatId, blocked }: { st: WorkspaceStatus; chatId: string; blocked: boolean }) {
+  const c = st.challenge;
+  // The status lists files, not the head; the verdict is current when nothing changed after it.
+  const stale = !!c && !!st.dirty;
+  const text = !c ? '还没做过对抗审查' : c.refuted > 0 ? `对抗审查推翻了 ${c.refuted} 条（${fmtWhen(c.at)}）` : `对抗审查未推翻（${fmtWhen(c.at)}）${stale ? '，之后又有改动' : ''}`;
+  return (
+    <div className={cx('ws-challenge', c && c.refuted > 0 && 'refuted')}>
+      <Scale size={13} />
+      <span>
+        {text}
+        {st.requireChallenge && (!c || c.refuted > 0) ? ' · 这个项目要求通过后才能合并' : ''}
+      </span>
+      <span className="spacer" />
+      <button className="btn sm" disabled={blocked} onClick={() => void sendMessage(chatId, '/challenge')} title="让 Skeptic 只看需求和改动，尽力证伪">
+        {c ? '再审一次' : '对抗审查'}
+      </button>
     </div>
   );
 }

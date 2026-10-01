@@ -212,7 +212,7 @@ export async function createProject(input: { name: string; template: string; par
   return openExistingProject(dir, title);
 }
 
-type ProjectPatch = Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains'>>;
+type ProjectPatch = Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains' | 'requireChallenge'>>;
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) || undefined : undefined);
 
@@ -225,6 +225,7 @@ export function updateProject(id: string, patch: ProjectPatch): Project {
   if (patch.setupCommand !== undefined) p.setupCommand = text(patch.setupCommand, 2000);
   if (patch.commitGuide !== undefined) p.commitGuide = text(patch.commitGuide, 2000);
   if (patch.noAttribution !== undefined) p.noAttribution = patch.noAttribution === true || undefined;
+  if (patch.requireChallenge !== undefined) p.requireChallenge = patch.requireChallenge === true || undefined;
   if (patch.askRules !== undefined) {
     const rules = Array.isArray(patch.askRules) ? patch.askRules.map((r) => text(r, 300)).filter((r): r is string => !!r) : [];
     p.askRules = rules.length ? [...new Set(rules)].slice(0, 50) : undefined;

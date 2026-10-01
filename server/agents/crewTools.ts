@@ -14,6 +14,8 @@ export interface CrewContext {
   projectId: () => string | null;
   /** The page the user is looking at in the preview. */
   currentPage: () => string | undefined;
+  /** A blind reviewer: chat_history shows it the user's messages only. */
+  blind?: boolean;
 }
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
@@ -56,7 +58,7 @@ export function crewServer(ctx: CrewContext) {
           last: z.number().int().min(1).max(20).optional().describe('看最近的几条消息'),
         },
         async ({ seqs, last }) => {
-          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming');
+          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user'));
           const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
           if (!picked.length) return fail('没有找到这些消息。');
           const who = (m: (typeof all)[number]) => (m.role === 'user' ? '用户' : m.role === 'system' ? '系统' : `@${bots.get(m.botId || '')?.name || '队友'}`);

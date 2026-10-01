@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { WorkspaceInfo, WorkspaceStatus } from '../../shared/types';
 import { isMerging, statusLines, zList } from '../gitops';
-import { gitIn, HttpError } from '../projects';
+import { configOf, gitIn, HttpError } from '../projects';
 import { requireWorkspace } from './common';
 
 async function mergeBase(info: WorkspaceInfo): Promise<string> {
@@ -52,6 +52,8 @@ export async function workspaceStatus(chatId: string): Promise<WorkspaceStatus> 
     files,
     merging,
     mergedAt: info.mergedAt,
+    challenge: info.challenge,
+    requireChallenge: !!configOf(ws).requireChallenge,
   };
 }
 

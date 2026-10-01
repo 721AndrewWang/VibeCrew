@@ -187,6 +187,23 @@ export function contextDelta(prev: string[] | undefined, next: string[]): string
 /** Teammates' messages longer than this are shown as one line unless they concern this turn. */
 const DIGEST_OVER = 240;
 
+/**
+ * A blind reviewer's prompt: the user's words and the diff. Teammates' messages are left out on
+ * purpose (only counted), so their reasoning cannot anchor the review.
+ */
+function blindPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
+  const { unseen, context, review } = opts;
+  const out: string[] = [];
+  if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
+  const users = unseen.filter((m) => m.role === 'user');
+  const hidden = unseen.filter((m) => m.role === 'bot').length;
+  out.push(`用户的要求：\n\n${users.map(renderUserMessage).join('\n\n---\n\n') || '（这一轮没有新的用户消息；按之前的要求审查当前改动）'}`);
+  if (hidden) out.push(`（队友这期间发了 ${hidden} 条消息，按规则对你隐藏。）`);
+  if (review) out.push(`## 要审查的改动：${review.title}\n\n\`\`\`diff\n${review.diff.trim() || '（没有改动）'}\n\`\`\``);
+  out.push('按你的流程证伪，最后一行写「结论：未推翻」或「结论：推翻 N 条」。');
+  return out.join('\n\n');
+}
+
 /** One line for a long teammate message the bot can fetch in full with chat_history. */
 function digest(m: ChatMessage, who: string): string {
   const text = m.text.trim();
@@ -196,8 +213,19 @@ function digest(m: ChatMessage, who: string): string {
 }
 
 /** The user-turn prompt: fresh context plus everything the bot has not seen yet. */
-export function buildTurnPrompt(opts: { bot: Bot; chat: Chat; unseen: ChatMessage[]; names: Map<string, string>; context: string[]; trigger: ChatMessage['trigger']; routineName?: string }): string {
+export function buildTurnPrompt(opts: {
+  bot: Bot;
+  chat: Chat;
+  unseen: ChatMessage[];
+  names: Map<string, string>;
+  context: string[];
+  trigger: ChatMessage['trigger'];
+  routineName?: string;
+  /** For a blind reviewer: the change itself, in place of what teammates said about it. */
+  review?: { title: string; diff: string; how: string };
+}): string {
   const { bot, chat, unseen, names, context, trigger } = opts;
+  if (bot.blindReview) return blindPrompt(opts);
   const out: string[] = [];
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
   if (bot.freshSession) out.push('（你每一轮都从新会话开始，之前几轮的对话和工具结果不在你的上下文里。需要更早的消息就用 chat_history 查，文件和页面直接看当前的状态。）');
