@@ -91,6 +91,8 @@ export function sandboxOptions(enabled: boolean, allowedDomains: string[], proje
     allowUnsandboxedCommands: false,
     network: {
       allowedDomains: [...new Set([...ALWAYS_ALLOWED, ...cleanDomains(allowedDomains), ...cleanDomains(projectDomains)])],
+      // Unlisted hosts are refused outright, never turned into a prompt the gate might wave through.
+      strictAllowlist: true,
       allowLocalBinding: true,
     },
   };

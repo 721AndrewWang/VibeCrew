@@ -1,6 +1,10 @@
 // The sandbox is the boundary the deny list cannot be: a command inside it reaches only the
 // allowed hosts, whatever it is called, and the bot cannot step outside it. Needs the real
 // Claude Code CLI plus bubblewrap and socat; skipped where they are missing.
+//
+// Inside, everything goes through Claude Code's proxy, which holds the allow list, except that
+// the sandbox's own no_proxy sends loopback and private addresses direct, where nothing answers.
+// So this machine and the LAN are reached with `env -u no_proxy -u NO_PROXY`, as the bots are told.
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
@@ -9,6 +13,8 @@ import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, waitTurn } from '../helpers/server';
 
 const TOKEN = 'mock-secret-token';
+/** What a bot prefixes to reach this machine or the LAN from inside the sandbox. */
+const LOCAL = 'env -u no_proxy -u NO_PROXY';
 
 /** This machine's first non-loopback IPv4: a host the sandbox treats as "elsewhere". */
 function lanIp(): string | null {
@@ -39,8 +45,10 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
     mock = await startMockProvider({
       token: TOKEN,
       // The model runs the scripted tool calls one by one, then stops.
+      // Earlier turns' tool results come back with every request (the session resumes), so only
+      // the current script's markers count.
       reply: (r) => {
-        const next = script[mock.toolResults.filter((t) => t.includes('sb-')).length];
+        const next = script[done().length];
         return r.tools.includes('Bash') && next ? { tool: next } : { text: '好的，就这样。' };
       },
     });
@@ -63,14 +71,17 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
     target?.close();
   });
 
+  /** Results of the current script's steps, in order (each step echoes its own marker first). */
+  // Tool results may come back as text or as content blocks; the marker is inside either way.
+  const done = () => script.map((st) => mock.toolResults.find((t) => t.includes(String(st.input.command).match(/echo (sb-\d+)/)![1]))).filter((t): t is string => !!t);
+
   const run = async (steps: typeof script, text: string) => {
     script = steps;
-    mock.toolResults.length = 0;
     hits.length = 0;
     const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text });
     const reply = await waitTurn(crew.api, chatId, sent.seq, 180_000);
     expect(reply.status).toBe('done');
-    return mock.toolResults.filter((t) => t.includes('sb-'));
+    return done();
   };
 
   it('reports whether it can run here', async () => {
@@ -83,8 +94,8 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
     if (!(await crew.api('GET', '/sandbox')).available) skip();
     const results = await run(
       [
-        { id: 'toolu_sb1', name: 'Bash', input: { command: `echo sb-1; curl -sS -m 5 ${targetUrl}/one || echo blocked`, description: 'Reach the server' } },
-        { id: 'toolu_sb2', name: 'Bash', input: { command: `echo sb-2; curl -sS -m 5 ${targetUrl}/two || echo blocked`, description: 'Try again outside', dangerouslyDisableSandbox: true } },
+        { id: 'toolu_sb1', name: 'Bash', input: { command: `echo sb-1; ${LOCAL} curl -sS -m 8 ${targetUrl}/one || echo blocked`, description: 'Reach the server' } },
+        { id: 'toolu_sb2', name: 'Bash', input: { command: `echo sb-2; ${LOCAL} curl -sS -m 8 ${targetUrl}/two || echo blocked`, description: 'Try again outside', dangerouslyDisableSandbox: true } },
       ],
       '去看看那台服务器',
     );
@@ -93,20 +104,21 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
     for (const r of results) {
       expect(r).not.toContain('pong');
       expect(r).toContain('blocked');
+      expect(r).toMatch(/deny network-outbound .*host is not on the allow list/);
     }
   });
 
   it('reaches a host once the project allows it', async ({ skip }) => {
     if (!(await crew.api('GET', '/sandbox')).available) skip();
     expect((await crew.api('PATCH', `/projects/${projectId}`, { allowedDomains: [`${ip}`, 'nonsense host'] })).allowedDomains).toEqual([ip]);
-    const results = await run([{ id: 'toolu_sb3', name: 'Bash', input: { command: `echo sb-3; curl -sS -m 5 ${targetUrl}/three`, description: 'Reach the server' } }], '再看看');
+    const results = await run([{ id: 'toolu_sb3', name: 'Bash', input: { command: `echo sb-3; ${LOCAL} curl -sS -m 8 ${targetUrl}/three`, description: 'Reach the server' } }], '再看看');
     expect(results[0]).toContain('pong');
     expect(hits).toEqual(['/three']);
   });
 
   it('still lets the bot talk to this machine', async ({ skip }) => {
     if (!(await crew.api('GET', '/sandbox').then((s) => s.available))) skip();
-    const results = await run([{ id: 'toolu_sb4', name: 'Bash', input: { command: `echo sb-4; curl -sS -m 5 ${crew.base}/api/health`, description: 'Ask Crew' } }], '本机呢');
+    const results = await run([{ id: 'toolu_sb4', name: 'Bash', input: { command: `echo sb-4; ${LOCAL} curl -sS -m 8 ${crew.base}/api/health`, description: 'Ask Crew' } }], '本机呢');
     expect(results[0]).toContain('"ok":true');
   });
 });

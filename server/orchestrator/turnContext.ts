@@ -94,7 +94,9 @@ export function contextLines(project: Project | null): string[] {
   const sb = settings.get().sandbox;
   if (sb.enabled && sandboxStatus().available) {
     const domains = [...ALWAYS_ALLOWED, ...sb.allowedDomains, ...(conf.allowedDomains || [])];
-    lines.push(`你运行的命令在沙盒里：只能访问本机和这些域名：${domains.join('、')}。连不上别的主机是设计如此，不要找办法绕过；需要别的域名就直接告诉用户，让用户在设置里添加。`);
+    lines.push(
+      `你运行的命令在沙盒里：只能访问本机和这些域名：${domains.join('、')}。连不上别的主机是设计如此，不要找办法绕过；需要别的域名就直接告诉用户，让用户在设置里添加。要在命令里访问本机已经在跑的服务（预览、开发服务器、localhost 上的接口），命令前面加 env -u no_proxy -u NO_PROXY，否则会连不上；看页面优先用 Crew 的浏览器工具。`,
+    );
   }
   if (conf.commitGuide) lines.push(`这个项目的提交信息要求：${conf.commitGuide}`);
   if (conf.noAttribution) lines.push('这个项目的提交和 PR 里不要加任何 AI 署名（Co-Authored-By、Generated with 之类）。');
