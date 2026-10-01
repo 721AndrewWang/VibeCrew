@@ -68,6 +68,8 @@ export interface SessionConfig {
   deniedReason?(toolName: string, input: unknown): string | null;
   /** Hide Claude Code's attribution (Co-Authored-By trailers, PR footers) in commits and PRs. */
   attributionOff?: boolean;
+  /** Claude Code's command sandbox (see server/sandbox.ts); undefined runs commands unconfined. */
+  sandbox?: Options['sandbox'];
   mcpServers: Record<string, McpServerConfig>;
   settingSources: NonNullable<Options['settingSources']>;
   env: Record<string, string>;
@@ -183,6 +185,7 @@ export class BotSession implements AgentSession {
         // The object form: older Claude Code versions reject `attribution: false`.
         ...(cfg.attributionOff ? { attribution: { commit: '', pr: '', sessionUrl: false }, includeCoAuthoredBy: false } : {}),
       },
+      sandbox: cfg.sandbox,
       disallowedTools: ['AskUserQuestion'],
       pathToClaudeCodeExecutable: claude ?? undefined,
       env: { ...cfg.env, CLAUDE_AGENT_SDK_CLIENT_APP: `crew/${APP_VERSION}` },

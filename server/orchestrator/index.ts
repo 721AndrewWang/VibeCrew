@@ -13,6 +13,7 @@ import { botModel } from '../claudeAuth';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { logger } from '../log';
 import { chatProjectId, configOf, HttpError, touchProject } from '../projects';
+import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid } from '../store';
 import { ensureWatch } from '../watcher';
@@ -118,6 +119,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
     denyRules: settings.get().denyRules || [],
     deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir()),
     attributionOff: !!conf?.noAttribution,
+    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
     mcpServers: {
       crew: crewServer({
         botId: bot.id,

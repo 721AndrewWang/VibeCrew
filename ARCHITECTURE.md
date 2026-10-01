@@ -48,7 +48,9 @@ shared/  前后端共用的类型（types.ts）和 logo 定义（logos.ts）
 | AI 审查员 `review` | auto | 由 Claude Code 的分类器把关 |
 | 全自动 `auto` | default | `canUseTool` 一律放行 |
 
-不管哪个级别，下面两层都会生效：
+不管哪个级别，下面三层都会生效：
+
+- **沙盒**（`server/sandbox.ts`）：开着的时候，每个会话都带上 Claude Code 的 `sandbox` 选项，命令在 bubblewrap 里跑，网络只到本机加允许的域名（全局列表 + 项目列表）。`allowUnsandboxedCommands: false`，机器人不能用 `dangerouslyDisableSandbox` 跳出去；`autoAllowBashIfSandboxed: false`，Crew 自己的审批逻辑照常生效。这是唯一按「能不能连上」而不是「命令长什么样」来判断的一层，所以也是唯一算得上安全边界的一层。机器不满足依赖时（Linux 要 bubblewrap 和 socat）设置页会提示，机器人在没有沙盒的情况下运行。
 
 - **禁止的操作**（设置里的 `denyRules`）：既写进 SDK 的 `permissions.deny`，又由一个不带 matcher 的 PreToolUse hook 再拦一次，所以全自动下也跑不了。
 - **必须确认的操作**（每个机器人的规则，加上项目的 `askRules`）：一定弹审批卡片。复合命令（`a && b`）要每一段都匹配「自动允许」才放行。

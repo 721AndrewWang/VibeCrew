@@ -27,6 +27,8 @@ jobs:
       # The real Claude Code CLI, for the tests that drive it against a local mock model endpoint
       # (no account or API key involved). Without it those tests are skipped.
       - run: npm install -g @anthropic-ai/claude-code
+      # The command sandbox's dependencies, for the tests that run commands inside it.
+      - run: sudo apt-get install -y bubblewrap socat
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       - run: npm run typecheck
       - run: npx biome ci .
@@ -70,5 +72,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code@latest && claude --version
+      - run: sudo apt-get install -y bubblewrap socat
       - run: git config --global user.name ci && git config --global user.email ci@example.com
-      - run: npx vitest run tests/integration/claude-cli.test.ts
+      - run: npx vitest run tests/integration/claude-cli.test.ts tests/integration/sandbox.test.ts

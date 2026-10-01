@@ -2,9 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
-import type { AuthMode, Bot, Chat, ChatMessage, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine } from '../shared/types';
+import type { AuthMode, Bot, Chat, ChatMessage, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine, SandboxSettings } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { SCHEMA_VERSION } from './migrations';
+import { DEFAULT_ALLOWED } from './sandbox';
 
 export function uid(prefix = ''): string {
   return prefix + crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x');
@@ -100,6 +101,7 @@ export interface Settings {
   logo: LogoId;
   /** Refused for every bot, whatever its permission mode (PublicSettings.denyRules). */
   denyRules: string[];
+  sandbox: SandboxSettings;
   /** Secret for LAN access and API calls. */
   token: string;
   /** Values for ${VAR} placeholders in plugin configs (e.g. GITHUB_TOKEN). */
@@ -122,6 +124,7 @@ const DEFAULT_SETTINGS: Settings = {
   maxHops: 8,
   logo: DEFAULT_LOGO,
   denyRules: [],
+  sandbox: { enabled: true, allowedDomains: [...DEFAULT_ALLOWED] },
   token: '',
   pluginSecrets: {},
   initialized: false,
@@ -133,6 +136,7 @@ class SettingsStore {
   constructor() {
     this.data = { ...DEFAULT_SETTINGS, ...readJson<Partial<Settings>>(DATA.settings, {}) };
     if (!isLogoId(this.data.logo)) this.data.logo = DEFAULT_LOGO;
+    if (!this.data.sandbox) this.data.sandbox = { ...DEFAULT_SETTINGS.sandbox, allowedDomains: [...DEFAULT_ALLOWED] };
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -165,6 +169,7 @@ class SettingsStore {
       maxHops: s.maxHops,
       logo: s.logo,
       denyRules: s.denyRules,
+      sandbox: s.sandbox || { enabled: false, allowedDomains: [] },
     };
   }
 

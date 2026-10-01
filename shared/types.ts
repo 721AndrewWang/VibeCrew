@@ -232,6 +232,8 @@ export interface Project {
   noAttribution?: boolean;
   /** Extra rules that always need the user's OK for every bot working here, e.g. "Bash(ssh:*)". */
   askRules?: string[];
+  /** Hosts the sandboxed commands of this project may reach, on top of the global list. */
+  allowedDomains?: string[];
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -413,6 +415,22 @@ export interface PublicSettings {
   logo: LogoId;
   /** Actions no bot may take, in any project or mode, e.g. "Bash(*prod-server*)". */
   denyRules: string[];
+  sandbox: SandboxSettings;
+}
+
+/** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */
+export interface SandboxSettings {
+  enabled: boolean;
+  /** Hosts commands may connect to, e.g. "registry.npmjs.org", "*.githubusercontent.com", "10.0.0.5:8080". */
+  allowedDomains: string[];
+}
+
+export interface SandboxStatus {
+  available: boolean;
+  /** Programs it needs that are not installed (Linux: bubblewrap, socat). */
+  missing: string[];
+  /** What to do about it. */
+  hint?: string;
 }
 
 export interface BotStatus {
@@ -459,7 +477,7 @@ export interface Bootstrap {
   previews: PreviewInfo[];
   models: { id: string; label: string }[];
   providers: ProviderPreset[];
-  features: { pty: boolean; browser: boolean };
+  features: { pty: boolean; browser: boolean; sandbox: SandboxStatus };
   auth: AuthStatus;
   lanUrl?: string;
 }

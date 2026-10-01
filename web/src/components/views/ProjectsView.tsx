@@ -52,6 +52,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [commitGuide, setCommitGuide] = useState(project.commitGuide || '');
   const [noAttribution, setNoAttribution] = useState(!!project.noAttribution);
   const [askRules, setAskRules] = useState((project.askRules || []).join('\n'));
+  const [allowedDomains, setAllowedDomains] = useState((project.allowedDomains || []).join('\n'));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -61,7 +62,11 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         .split('\n')
         .map((r) => r.trim())
         .filter(Boolean);
-      await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules });
+      const domains = allowedDomains
+        .split('\n')
+        .map((d) => d.trim())
+        .filter(Boolean);
+      await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules, allowedDomains: domains });
       toast('项目设置已保存', undefined, 'success');
       onDone();
     } catch (e) {
@@ -101,6 +106,11 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <label>必须确认的操作</label>
           <textarea className="input mono" rows={3} value={askRules} placeholder={'每行一条，例如\nBash(ssh:*)\nBash(docker compose down:*)'} onChange={(e) => setAskRules(e.target.value)} />
           <div className="hint">在这个项目里工作的所有机器人，碰到这些操作都要先问你。写法和机器人设置里的「必须确认」一样。</div>
+        </div>
+        <div className="field span-all">
+          <label>沙盒里允许访问的域名</label>
+          <textarea className="input mono" rows={2} value={allowedDomains} placeholder={'每行一个，例如\napi.example.com\n10.0.0.5:8080'} onChange={(e) => setAllowedDomains(e.target.value)} />
+          <div className="hint">在「设置 → 沙盒」的全局列表之外，这个项目的命令还能连这些主机。</div>
         </div>
         <div className="field span-all">
           <div className="setting-row">

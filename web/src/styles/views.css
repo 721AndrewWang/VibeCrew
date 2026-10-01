@@ -1522,6 +1522,22 @@
   box-shadow: 0 3px 10px var(--glow);
 }
 
+.notice {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-sunken);
+}
+.notice.warn {
+  border-color: var(--text-3);
+}
+.notice .code-line {
+  margin-top: 8px;
+}
+
 .sc-body {
   padding: 16px 18px;
 }

@@ -18,6 +18,7 @@ import type {
   PublicSettings,
   RecordedStep,
   Routine,
+  SandboxStatus,
   ServerEvent,
   Skill,
   TurnSummary,
@@ -69,7 +70,7 @@ export interface AppState {
   version: string;
   settings: PublicSettings;
   auth: AuthStatus;
-  features: { pty: boolean; browser: boolean };
+  features: { pty: boolean; browser: boolean; sandbox: SandboxStatus };
   models: { id: string; label: string }[];
   providers: ProviderPreset[];
   templates: BotTemplate[];
@@ -150,9 +151,10 @@ export const useStore = create<AppState>(() => ({
     maxHops: 8,
     logo: cachedLogo(),
     denyRules: [],
+    sandbox: { enabled: false, allowedDomains: [] },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
-  features: { pty: false, browser: false },
+  features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },
   models: [],
   providers: [],
   templates: [],

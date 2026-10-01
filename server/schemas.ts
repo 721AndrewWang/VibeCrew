@@ -83,6 +83,7 @@ export const ProjectPatch = z
     commitGuide: text(2000),
     noAttribution: z.boolean(),
     askRules: z.array(text(300)).max(50),
+    allowedDomains: z.array(text(300)).max(100),
   })
   .partial();
 
@@ -141,6 +142,7 @@ export const SettingsPatch = z
     maxHops: z.number().min(0).max(30),
     logo: text(32),
     denyRules: z.array(z.unknown()).max(200),
+    sandbox: z.object({ enabled: z.boolean().optional(), allowedDomains: z.array(text(300)).max(200).optional() }),
     pluginSecrets: z.record(z.string(), z.unknown()),
     authMode: z.enum(['claude-code', 'api-key', 'provider']),
     apiKey: text(500),

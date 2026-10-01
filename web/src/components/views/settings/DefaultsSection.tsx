@@ -81,7 +81,9 @@ export function DefaultsSection() {
         <div className="field span-all">
           <label>禁止的操作</label>
           <textarea className="input mono" rows={3} value={denyRules} placeholder={'每行一条，例如\nBash(*prod-server*)\nBash(rm -rf /*)'} onChange={(e) => setDenyRules(e.target.value)} />
-          <div className="hint">所有机器人、所有项目、任何权限模式下都直接拒绝，连「全自动」也不行。写法和「必须确认」一样，* 匹配任意内容。</div>
+          <div className="hint">
+            所有机器人、所有项目、任何权限模式下都直接拒绝，连「全自动」也不行。写法和「必须确认」一样，* 匹配任意内容。这是按命令文字匹配的，只能防误操作；真正挡住网络访问的是下面的沙盒。
+          </div>
         </div>
       </div>
       <div className="row">

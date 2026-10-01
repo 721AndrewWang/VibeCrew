@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import type { Chat, Project } from '../shared/types';
 import { bus } from './bus';
 import { PROJECT_TEMPLATES, slugify } from './data/projectTemplates';
+import { cleanDomains } from './sandbox';
 import { projects, settings, uid } from './store';
 
 const run = promisify(execFile);
@@ -211,7 +212,7 @@ export async function createProject(input: { name: string; template: string; par
   return openExistingProject(dir, title);
 }
 
-type ProjectPatch = Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules'>>;
+type ProjectPatch = Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains'>>;
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) || undefined : undefined);
 
@@ -227,6 +228,10 @@ export function updateProject(id: string, patch: ProjectPatch): Project {
   if (patch.askRules !== undefined) {
     const rules = Array.isArray(patch.askRules) ? patch.askRules.map((r) => text(r, 300)).filter((r): r is string => !!r) : [];
     p.askRules = rules.length ? [...new Set(rules)].slice(0, 50) : undefined;
+  }
+  if (patch.allowedDomains !== undefined) {
+    const domains = cleanDomains(patch.allowedDomains);
+    p.allowedDomains = domains.length ? domains : undefined;
   }
   p.framework = detectFramework(p.path);
   p.updatedAt = Date.now();

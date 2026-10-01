@@ -35,6 +35,7 @@ import {
   writeProjectFile,
 } from './projects';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
+import { cleanDomains, sandboxStatus } from './sandbox';
 import { Approval, BotCreate, BotPatch, body, ChatPatch, GroupCreate, MessageSend, ProjectOpen, ProjectPatch, RoutineSave, SettingsPatch, SkillSave, Upload } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
@@ -67,7 +68,7 @@ function bootstrap(): Bootstrap {
     previews: previewInfos(),
     models: MODEL_OPTIONS,
     providers: PROVIDER_PRESETS,
-    features: { pty: hasPty, browser: hasBrowser() },
+    features: { pty: hasPty, browser: hasBrowser(), sandbox: sandboxStatus() },
     auth: authStatus(),
     lanUrl: lanUrl(),
   };
@@ -127,6 +128,9 @@ export function apiRouter() {
       const rules = b.denyRules.map((r: unknown) => (typeof r === 'string' ? r.trim().slice(0, 300) : '')).filter(Boolean);
       patch.denyRules = [...new Set<string>(rules)].slice(0, 100);
     }
+    if (b.sandbox) {
+      patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
+    }
     if (b.pluginSecrets && typeof b.pluginSecrets === 'object') {
       const next = { ...cur.pluginSecrets };
       for (const [k, v] of Object.entries(b.pluginSecrets)) {
@@ -139,7 +143,7 @@ export function apiRouter() {
     settings.update(patch);
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
-    if (patch.denyRules) invalidateAllSessions();
+    if (patch.denyRules || patch.sandbox) invalidateAllSessions();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -153,6 +157,8 @@ export function apiRouter() {
     const cur = settings.get();
     res.json(await testConnection({ ...cur, ...connectionPatch(body(SettingsPatch, req.body), cur) }));
   });
+
+  r.get('/sandbox', (req, res) => res.json(sandboxStatus(req.query.refresh === '1')));
 
   r.get('/lan', async (_req, res) => {
     const url = lanUrl();

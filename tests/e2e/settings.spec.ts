@@ -27,3 +27,20 @@ test('the deny list is saved from the defaults section', async ({ page, crew }) 
   await page.locator('.card', { hasText: '默认值' }).locator('.btn.primary', { hasText: '保存' }).click();
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).settings.denyRules).toEqual(['Bash(*prod-server*)', 'Bash(rm -rf /*)']);
 });
+
+test('the sandbox section saves the switch and the domain list, and says when it cannot run here', async ({ page, crew }) => {
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="设置"]').click();
+  const card = page.locator('.settings-card', { has: page.locator('h2', { hasText: '沙盒' }) });
+  await expect(card.locator('.sr-title')).toContainText('关进沙盒');
+  const status = await crew.api('GET', '/sandbox');
+  await expect(card.locator('[data-testid="sandbox-unavailable"]')).toHaveCount(status.available ? 0 : 1);
+  await card.locator('textarea').fill('registry.npmjs.org\nhttps://api.example.com/v1\nnonsense host\n10.0.0.5:8080');
+  await card.locator('.btn.primary', { hasText: '保存' }).click();
+  await expect.poll(async () => (await crew.api('GET', '/bootstrap')).settings.sandbox.allowedDomains).toEqual(['registry.npmjs.org', 'api.example.com', '10.0.0.5:8080']);
+  await expect(card.locator('textarea')).toHaveValue('registry.npmjs.org\napi.example.com\n10.0.0.5:8080');
+  await card.locator('.toggle').click();
+  await card.locator('.btn.primary', { hasText: '保存' }).click();
+  await expect.poll(async () => (await crew.api('GET', '/bootstrap')).settings.sandbox.enabled).toBe(false);
+  await expect(card.locator('[data-testid="sandbox-unavailable"]')).toHaveCount(0);
+});

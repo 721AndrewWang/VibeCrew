@@ -8,6 +8,7 @@ import { cleanEnv } from '../config';
 import { PLUGINS } from '../data/catalog';
 import { devServer } from '../devserver';
 import { configOf, devCommand } from '../projects';
+import { ALWAYS_ALLOWED, sandboxStatus } from '../sandbox';
 import { settings } from '../store';
 import { IMAGE_MIMES, readUpload } from '../uploads';
 
@@ -90,6 +91,11 @@ export function contextLines(project: Project | null): string[] {
   const conf = configOf(project);
   const denied = settings.get().denyRules || [];
   if (denied.length) lines.push(`禁止的操作（系统会直接拒绝，不要尝试，也不要换写法绕过）：${denied.join('、')}`);
+  const sb = settings.get().sandbox;
+  if (sb.enabled && sandboxStatus().available) {
+    const domains = [...ALWAYS_ALLOWED, ...sb.allowedDomains, ...(conf.allowedDomains || [])];
+    lines.push(`你运行的命令在沙盒里：只能访问本机和这些域名：${domains.join('、')}。连不上别的主机是设计如此，不要找办法绕过；需要别的域名就直接告诉用户，让用户在设置里添加。`);
+  }
   if (conf.commitGuide) lines.push(`这个项目的提交信息要求：${conf.commitGuide}`);
   if (conf.noAttribution) lines.push('这个项目的提交和 PR 里不要加任何 AI 署名（Co-Authored-By、Generated with 之类）。');
   return lines;
