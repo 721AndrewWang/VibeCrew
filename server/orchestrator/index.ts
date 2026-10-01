@@ -3,7 +3,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project } from '../../shared/types';
 import { crewServer } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
-import { buildSystemAppend, buildTurnPrompt } from '../agents/prompts';
+import { buildSystemAppend, buildTurnPrompt, contextDelta } from '../agents/prompts';
 import { summarize, TurnRecorder } from '../agents/recorder';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import { TurnStream } from '../agents/stream';
@@ -81,6 +81,8 @@ const running = new Map<string, Running>();
 const sessions = new Map<string, AgentSession>();
 /** Sessions to recreate once their current turn ends (bot settings changed). */
 const staleSessions = new Set<string>();
+/** The context lines a session was last sent; later turns send only what changed. */
+const contextSent = new WeakMap<AgentSession, string[]>();
 /** Chats whose workspace is being changed by git (merge, sync…): new turns wait until it is done. */
 const locked = new Set<string>();
 /** Chats waiting for their workspace's setup command (see holdTurns). */
@@ -337,9 +339,14 @@ async function runTurn(job: Job) {
   setStatus(bot.id, { state: 'thinking', chatId: chat.id });
 
   const names = new Map(bots.all().map((b) => [b.id, b.name]));
-  const promptText = buildTurnPrompt({ bot, chat, unseen, names, context: contextLines(project), trigger: job.trigger, routineName: job.routineName });
+  const context = contextLines(project);
   const imgs = imageBlocks(unseen.filter((m) => m.role === 'user'));
-  const content = imgs.length ? [{ type: 'text' as const, text: promptText }, ...imgs] : promptText;
+  /** The prompt for this session: the full context the first time, then only what changed. */
+  const contentFor = (s: AgentSession) => {
+    const promptText = buildTurnPrompt({ bot, chat, unseen, names, context: contextDelta(contextSent.get(s), context), trigger: job.trigger, routineName: job.routineName });
+    contextSent.set(s, context);
+    return imgs.length ? [{ type: 'text' as const, text: promptText }, ...imgs] : promptText;
+  };
 
   const recorder = project ? new TurnRecorder({ id: msg.turnId!, chatId: chat.id, botId: bot.id, messageId: msg.id, projectId: project.id }, project.path) : null;
   const onFiles = (pid: string, paths: string[]) => {
@@ -373,7 +380,7 @@ async function runTurn(job: Job) {
   try {
     let result: Awaited<ReturnType<typeof session.run>>;
     try {
-      result = await session.run(content, hooks);
+      result = await session.run(contentFor(session), hooks);
     } catch (e) {
       // A stale resume id fails before anything streams: start a fresh session once.
       const resumeFailed = !!chat.sessions[bot.id] && !stream.parts.length && !stream.stopped && /conversation|session|resume/i.test(String((e as Error)?.message));
@@ -383,7 +390,7 @@ async function runTurn(job: Job) {
       sessions.delete(sessionKey(chat.id, bot.id));
       session = getSession(chat, bot, project);
       running.set(chat.id, { job, msg, session, stream });
-      result = await session.run(content, hooks);
+      result = await session.run(contentFor(session), hooks);
     }
     progress.cancel();
     stream.finish(result);

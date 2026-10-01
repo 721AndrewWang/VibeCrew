@@ -92,6 +92,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
     '  - dev_server：启动 / 停止 / 重启开发服务器、查看日志。预览依赖它。',
     '  - remember：把值得长期记住的事（用户偏好、项目约定、踩过的坑）写进你的长期记忆。',
     '  - notify_user：给用户发一条通知（例如定时任务里发现了问题）。',
+    '  - chat_history：读这个对话里消息的全文。群聊里和你这一轮关系不大的较早消息只给了一行摘要（带 #编号），需要细节时再查，不需要就别查。',
     '- 不要用 Bash 直接运行 `npm run dev`、`vite`、`next dev` 这类常驻命令，用 dev_server 管理，它会自动接入预览。',
     `- 权限：${PERMISSION_NOTE[bot.permission]}`,
   );
@@ -163,6 +164,37 @@ export function renderUserMessage(m: ChatMessage): string {
   return parts.filter(Boolean).join('\n\n');
 }
 
+/**
+ * The context lines worth sending this turn. Sessions resume, so whatever was sent before is
+ * still in the conversation: the first turn of a session gets everything, later ones the time
+ * (first line) and what changed.
+ */
+export function contextDelta(prev: string[] | undefined, next: string[]): string[] {
+  if (!prev?.length) return next;
+  // Lines are "label：value"; a line whose label is still there was updated, not dropped.
+  const label = (l: string) => l.split('：')[0];
+  const [time, ...rest] = next;
+  const before = new Set(prev.slice(1));
+  const changed = rest.filter((l) => !before.has(l));
+  const labels = new Set(rest.map(label));
+  const gone = prev.slice(1).filter((l) => !labels.has(label(l)));
+  const out = [time, ...changed];
+  if (gone.length) out.push(`不再适用：${gone.join('；')}`);
+  if (rest.length > changed.length) out.push('（其余环境信息和之前一样）');
+  return out;
+}
+
+/** Teammates' messages longer than this are shown as one line unless they concern this turn. */
+const DIGEST_OVER = 240;
+
+/** One line for a long teammate message the bot can fetch in full with chat_history. */
+function digest(m: ChatMessage, who: string): string {
+  const text = m.text.trim();
+  const first = (text.split('\n').find((l) => l.trim()) || '').replace(/^[#>*\-\s]+/, '').trim();
+  const head = first.length > 90 ? `${first.slice(0, 90)}…` : first;
+  return `【${who} · #${m.seq}】${head}（全文 ${text.length} 字，需要时用 chat_history 查看）`;
+}
+
 /** The user-turn prompt: fresh context plus everything the bot has not seen yet. */
 export function buildTurnPrompt(opts: { bot: Bot; chat: Chat; unseen: ChatMessage[]; names: Map<string, string>; context: string[]; trigger: ChatMessage['trigger']; routineName?: string }): string {
   const { bot, chat, unseen, names, context, trigger } = opts;
@@ -172,10 +204,17 @@ export function buildTurnPrompt(opts: { bot: Bot; chat: Chat; unseen: ChatMessag
   if (chat.kind === 'dm' || unseen.every((m) => m.role !== 'bot')) {
     out.push(unseen.map(renderUserMessage).join('\n\n---\n\n') || '（继续）');
   } else {
+    // In full: what the user said, the message that handed this turn over, and the latest one.
+    // Older teammates' long messages become one line each; the bot can read them with chat_history.
+    const handoff = trigger?.type === 'mention' && trigger.by ? unseen.filter((m) => m.role === 'bot' && m.botId === trigger.by).at(-1) : undefined;
+    const latest = unseen.at(-1);
     const lines = unseen.map((m) => {
       if (m.role === 'user') return `【用户】\n${renderUserMessage(m)}`;
       if (m.role === 'system') return `【系统】${m.text}`;
-      return `【@${names.get(m.botId || '') || '队友'}】\n${m.text.trim() || '（没有文字回复）'}`;
+      const who = `@${names.get(m.botId || '') || '队友'}`;
+      const text = m.text.trim();
+      if (m !== handoff && m !== latest && text.length > DIGEST_OVER) return digest(m, who);
+      return `【${who}】\n${text || '（没有文字回复）'}`;
     });
     out.push(`群聊「${chat.title}」中你上次发言之后的新消息：\n\n${lines.join('\n\n')}`);
     const by = trigger?.type === 'mention' && trigger.by ? names.get(trigger.by) : null;

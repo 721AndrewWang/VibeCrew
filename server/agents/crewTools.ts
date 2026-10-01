@@ -4,6 +4,7 @@ import type { ConsoleEntry } from '../../shared/types';
 import { act, consoleCheck, screenshot } from '../browser';
 import { notify } from '../bus';
 import { devServer } from '../devserver';
+import { bots, messages } from '../store';
 import { appendMemory } from './prompts';
 
 export interface CrewContext {
@@ -47,6 +48,22 @@ export function crewServer(ctx: CrewContext) {
     name: 'crew',
     version: '1.0.0',
     tools: [
+      tool(
+        'chat_history',
+        '读这个对话里消息的全文。群聊里较早的、和这一轮关系不大的队友消息只给了一行摘要（带 #编号），需要细节时用它查；也可以看最近几条。',
+        {
+          seqs: z.array(z.number().int()).max(20).optional().describe('要看的消息编号（摘要里的 #后面的数字）'),
+          last: z.number().int().min(1).max(20).optional().describe('看最近的几条消息'),
+        },
+        async ({ seqs, last }) => {
+          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming');
+          const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
+          if (!picked.length) return fail('没有找到这些消息。');
+          const who = (m: (typeof all)[number]) => (m.role === 'user' ? '用户' : m.role === 'system' ? '系统' : `@${bots.get(m.botId || '')?.name || '队友'}`);
+          return text(picked.map((m) => `【${who(m)} · #${m.seq}】\n${(m.prompt || m.text).trim() || '（没有文字）'}`).join('\n\n'));
+        },
+        { annotations: { readOnlyHint: true } },
+      ),
       tool(
         'preview_screenshot',
         '用真实的浏览器打开项目预览并截图，返回图片和控制台错误摘要。修改界面后用它确认实际效果；可以指定页面、设备尺寸、整页截图或只截某个元素。',
