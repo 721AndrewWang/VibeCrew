@@ -1,4 +1,4 @@
-// Workspaces for a project like BioBuddy: files git ignores are carried over, a setup command runs
+// Workspaces for a real-world project: files git ignores are carried over, a setup command runs
 // before the bots, and the project's commit rules shape merges.
 import fs from 'node:fs';
 import path from 'node:path';

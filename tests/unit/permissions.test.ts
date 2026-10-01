@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, splitCommand, suggestRules } from '../../server/agents/permissions';
 
-const cwd = '/home/u/BioBuddy';
+const cwd = '/home/u/site';
 const bot = (over: Record<string, unknown> = {}) => ({ askRules: ['Bash(git push:*)'], allowRules: [], ...over }) as any;
 const bash = (command: string) => ({ command });
 
@@ -26,7 +26,7 @@ describe('harmless', () => {
 
 describe('suggestRules', () => {
   // The compound command from a real approval card.
-  const cmd = `cd /home/u/BioBuddy; git fetch -q origin 2>&1 | tail -2; git log --oneline main..origin/main | head; find / -path /proc -prune -o -name summary.jsonl -print 2>/dev/null | head; grep -n -E 'matched' docs/x.md | head -20`;
+  const cmd = `cd /home/u/site; git fetch -q origin 2>&1 | tail -2; git log --oneline main..origin/main | head; find / -path /proc -prune -o -name summary.jsonl -print 2>/dev/null | head; grep -n -E 'matched' docs/x.md | head -20`;
 
   it('gives one rule per real command and none for helpers', () => {
     expect(suggestRules('Bash', bash(cmd), cwd)).toEqual(['Bash(git fetch*)', 'Bash(git log*)', 'Bash(find*)', 'Bash(grep*)']);
@@ -88,19 +88,19 @@ describe('decide', () => {
 
 describe('matchingRule', () => {
   it('names the first rule that touches any part of the command', () => {
-    expect(matchingRule(['Bash(*zero1*)', 'Bash(*zero3*)'], 'Bash', bash('cd x && ssh zero3 ls'), cwd)).toBe('Bash(*zero3*)');
-    expect(matchingRule(['Bash(*zero3*)'], 'Bash', bash('ls'), cwd)).toBeNull();
+    expect(matchingRule(['Bash(*host-a*)', 'Bash(*host-b*)'], 'Bash', bash('cd x && ssh host-b ls'), cwd)).toBe('Bash(*host-b*)');
+    expect(matchingRule(['Bash(*host-b*)'], 'Bash', bash('ls'), cwd)).toBeNull();
   });
 });
 
 describe('deny-list matching (rulesTouch)', () => {
-  const rules = ['Bash(*zero1*)', 'Bash(*10.0.0.5*)'];
+  const rules = ['Bash(*host-a*)', 'Bash(*10.0.0.5*)'];
   it('catches the host or the address in any part of a compound command', () => {
-    expect(rulesTouch(rules, 'Bash', bash('cd x && ssh zero1 uptime'), cwd)).toBe(true);
+    expect(rulesTouch(rules, 'Bash', bash('cd x && ssh host-a uptime'), cwd)).toBe(true);
     expect(rulesTouch(rules, 'Bash', bash('rsync -a out/ admin@10.0.0.5:/srv/'), cwd)).toBe(true);
   });
   it('leaves other commands alone', () => {
-    expect(rulesTouch(rules, 'Bash', bash('ssh zero3 uptime'), cwd)).toBe(false);
+    expect(rulesTouch(rules, 'Bash', bash('ssh host-b uptime'), cwd)).toBe(false);
   });
 });
 
