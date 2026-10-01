@@ -200,6 +200,7 @@ export function buildTurnPrompt(opts: { bot: Bot; chat: Chat; unseen: ChatMessag
   const { bot, chat, unseen, names, context, trigger } = opts;
   const out: string[] = [];
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
+  if (bot.freshSession) out.push('（你每一轮都从新会话开始，之前几轮的对话和工具结果不在你的上下文里。需要更早的消息就用 chat_history 查，文件和页面直接看当前的状态。）');
   if (trigger?.type === 'routine') out.push(`【定时任务「${opts.routineName || ''}」自动触发，用户可能不在电脑前。完成后简要汇报；只有发现需要用户处理的问题时才用 notify_user。】`);
   if (chat.kind === 'dm' || unseen.every((m) => m.role !== 'bot')) {
     out.push(unseen.map(renderUserMessage).join('\n\n---\n\n') || '（继续）');

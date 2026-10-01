@@ -39,6 +39,7 @@ const botFields = {
   projectId: id.nullable(),
   editScope: z.array(text(300)).max(50),
   monthlyBudgetUsd: z.number().min(0).max(1_000_000).nullable(),
+  freshSession: z.boolean(),
 };
 
 export const BotCreate = z.object({ ...botFields, template: text(64) }).partial();

@@ -52,6 +52,8 @@ export interface Bot {
   editScope?: string[];
   /** Spend cap per calendar month in USD; the bot stops taking turns once reached. */
   monthlyBudgetUsd?: number;
+  /** Start every turn in a new Claude Code session instead of resuming: for roles that check or review, whose earlier turns are not worth re-reading. */
+  freshSession?: boolean;
   /** Project used by this bot's direct chat. */
   projectId: ID | null;
   template?: string;
@@ -467,6 +469,7 @@ export interface BotTemplate {
   model?: string;
   effort?: Effort;
   editScope?: string[];
+  freshSession?: boolean;
   plugins?: string[];
 }
 

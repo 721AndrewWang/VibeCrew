@@ -76,4 +76,22 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
     expect(r).toContain('第一条：一个很长很长的需求说明');
     expect(r).toContain('【用户 · #1】');
   });
+
+  it('starts a fresh-session role in a new conversation every turn', async () => {
+    const b = await crew.api('GET', '/bootstrap');
+    const chief = b.bots.find((x: any) => x.name === 'Chief');
+    await crew.api('PATCH', `/bots/${chief.id}`, { freshSession: true });
+    wantHistory = false;
+    await turn('第四条');
+    const sent = await turn('第五条');
+    // A new conversation: the earlier turns are not in it, the environment comes in full, and the bot is told.
+    const main = mock.requests.filter((r) => r.tools.length && lastUserText(r.body).includes('第五条'));
+    const users = main[0].body.messages.filter((m: any) => m.role === 'user');
+    expect(users).toHaveLength(1);
+    expect(JSON.stringify(main[0].body.messages)).not.toContain('第四条');
+    expect(sent).toContain('禁止的操作');
+    expect(sent).toContain('从新会话开始');
+    await crew.api('PATCH', `/bots/${chief.id}`, { freshSession: false });
+    expect((await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBeUndefined();
+  });
 });

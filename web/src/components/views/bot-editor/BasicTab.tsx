@@ -1,5 +1,6 @@
 import type { Bot, Effort } from '../../../../../shared/types';
 import { cx, EFFORT_OPTIONS } from '../../../utils';
+import { Toggle } from '../../ui';
 import { ProjectSelect } from '../ProjectsView';
 import { ColorPicker, MonoAvatarHint } from './identity';
 import { ModelPicker } from './ModelPicker';
@@ -48,6 +49,13 @@ export function BasicTab({ draft, patch, nameOk }: { draft: Bot; patch: (p: Part
             ))}
           </select>
         </div>
+      </div>
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">每轮从新会话开始</div>
+          <div className="hint">不续上之前的对话，每轮只读新消息，费用不会越滚越大。适合验收、审查这类每次看当前状态就够的角色；需要记得前情的角色别开。</div>
+        </div>
+        <Toggle on={!!draft.freshSession} onChange={(freshSession) => patch({ freshSession })} />
       </div>
       <div className="field">
         <label>默认项目</label>

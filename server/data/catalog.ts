@@ -64,6 +64,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     permission: 'edits',
     model: 'claude-sonnet-5',
     effort: 'low',
+    freshSession: true,
     editScope: ['tests/**', 'test/**', 'e2e/**', '**/*.test.*', '**/*.spec.*', 'playwright.config.*', 'vitest.config.*'],
     description: [
       '你是 QA 测试工程师。你用浏览器工具像真实用户一样测试页面：',
@@ -84,6 +85,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     permission: 'plan',
     model: 'claude-sonnet-5',
     effort: 'low',
+    freshSession: true,
     description: [
       '你是严格但友善的代码审查员。你审查最近的改动（用 git diff / git log，或用户指定的文件），关注：',
       '正确性和边界情况、安全隐患（XSS、注入、密钥泄露）、性能、可访问性、可维护性与一致性。',

@@ -97,6 +97,7 @@ export function createBot(input: BotInput & { template?: string }): Bot {
     loadUserSettings: input.loadUserSettings ?? true,
     editScope: cleanScope(input.editScope) ?? (tpl?.editScope ? [...tpl.editScope] : undefined),
     monthlyBudgetUsd: input.monthlyBudgetUsd || undefined,
+    freshSession: input.freshSession ?? tpl?.freshSession ?? undefined,
     projectId: input.projectId !== undefined ? input.projectId : (listProjects()[0]?.id ?? null),
     template: tpl?.id,
     createdAt: now,
@@ -131,6 +132,7 @@ export function updateBot(id: string, patch: BotInput): Bot {
     'projectId',
     'editScope',
     'monthlyBudgetUsd',
+    'freshSession',
   ];
   for (const k of allowed) {
     if (patch[k] !== undefined) (bot as any)[k] = typeof patch[k] === 'string' ? (patch[k] as string).trim() : patch[k];
@@ -140,6 +142,7 @@ export function updateBot(id: string, patch: BotInput): Bot {
   if (scope) bot.editScope = scope;
   else delete bot.editScope;
   if (!bot.monthlyBudgetUsd) delete bot.monthlyBudgetUsd;
+  if (!bot.freshSession) delete bot.freshSession;
   bot.updatedAt = Date.now();
   bots.set(bot);
   bus.emit({ t: 'bot', bot });

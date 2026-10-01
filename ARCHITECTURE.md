@@ -31,7 +31,7 @@ shared/  前后端共用的类型（types.ts）和 logo 定义（logos.ts）
 
 1. 界面 `POST /api/chats/:id/messages`，`orchestrator.sendUserMessage` 存下消息，决定由谁回复：被 @ 的机器人；群聊里没人被 @ 时由负责人回复。
 2. 每个对话一个队列，同一时间只跑一轮（`withChatLocked`）。新工作区的准备命令跑完之前，消息会先排着（`holdTurns`）。
-3. `agents/session.ts` 的 `BotSession` 为每个「对话 × 机器人」保持一个 Claude Agent SDK 会话，可以续上之前的上下文。它调用的是本机安装的 `claude` 命令行（`vendor/sdk-binary-stub` 替掉了 SDK 自带的 240MB 二进制）。
+3. `agents/session.ts` 的 `BotSession` 为每个「对话 × 机器人」保持一个 Claude Agent SDK 会话，可以续上之前的上下文。开了 `freshSession` 的机器人（验收、审查类角色）每轮新开会话：续上的会话每次调用都要重读全部历史，对只看当前状态的角色这部分钱白花。它调用的是本机安装的 `claude` 命令行（`vendor/sdk-binary-stub` 替掉了 SDK 自带的 240MB 二进制）。
 4. SDK 的流式事件交给 `agents/stream.ts` 整理成聊天消息的各个部分（文字、思考、工具调用、审批卡片），通过 `bus` 广播；`index.ts` 把它们推给每个 WebSocket 连接。
 5. 一轮结束时记下改了哪些文件（可以撤销）、用了哪个模型、上下文用量（输入框旁的小圆环），以及这一轮在 Claude Code 会话记录里的位置（`meta.trace`：会话 id + 时间窗）。在独立工作区里，这一轮的改动会自动提交到分支。
 6. 「轨迹」（`server/trace.ts`）按需读 `~/.claude/projects/<cwd>/<session>.jsonl`，把时间窗内的行整理成时间线：同一次 API 调用的几行（思考、文字、工具调用）合成一步，附上 token 用量；工具结果和发出的提示各一步。Crew 不复制这份记录，所以它被清理了轨迹就没了，界面会直说。

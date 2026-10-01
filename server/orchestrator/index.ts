@@ -106,7 +106,8 @@ function settleStatus(botId: string, error?: string) {
 function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession {
   const key = sessionKey(chat.id, bot.id);
   const existing = sessions.get(key);
-  if (existing && !existing.closed && !staleSessions.has(key)) return existing;
+  // A fresh-session role gets a new conversation every turn: its earlier turns are not re-read.
+  if (existing && !existing.closed && !staleSessions.has(key) && !bot.freshSession) return existing;
   if (existing) existing.close();
   staleSessions.delete(key);
 
@@ -118,7 +119,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
     model: botModel(eff.model),
     effort: eff.effort || undefined,
     systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list() }),
-    resume: chat.sessions[bot.id],
+    resume: bot.freshSession ? undefined : chat.sessions[bot.id],
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],

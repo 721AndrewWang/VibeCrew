@@ -27,6 +27,7 @@ describe('templates', () => {
     expect([by('Lens').model, by('Lens').effort, by('Lens').permission]).toEqual(['claude-sonnet-5', 'low', 'plan']);
     expect(by('Probe').editScope).toContain('tests/**');
     expect(by('Chief').editScope).toBeUndefined();
+    expect([by('Probe').freshSession, by('Lens').freshSession, by('Chief').freshSession, by('Pixel').freshSession]).toEqual([true, true, undefined, undefined]);
     expect(b.models.find((m: any) => m.id === 'claude-haiku-4-5').tier).toBe('low');
     const quill = await crew.api('POST', '/bots', { template: 'quill' });
     expect([quill.model, quill.effort]).toEqual(['claude-haiku-4-5', 'low']);
