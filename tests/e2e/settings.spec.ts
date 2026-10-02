@@ -49,8 +49,11 @@ test('improvement proposals can be made, accepted and reverted from the bots pag
   const b = await crew.api('GET', '/bootstrap');
   const chief = b.bots.find((x: any) => x.name === 'Chief');
   const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
-  const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '你好' });
-  await expect.poll(async () => (await crew.api('GET', `/chats/${dm.id}/messages?limit=5`)).messages.some((m: any) => m.seq > sent.seq && m.status === 'done'), { timeout: 20_000 }).toBe(true);
+  // A proposal needs evidence from two separate requests.
+  for (const text of ['你好', '再说一句']) {
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text });
+    await expect.poll(async () => (await crew.api('GET', `/chats/${dm.id}/messages?limit=8`)).messages.some((m: any) => m.seq > sent.seq && m.status === 'done'), { timeout: 20_000 }).toBe(true);
+  }
 
   await page.goto(crew.base);
   await page.locator('.sb-nav-item[title="机器人"]').click();

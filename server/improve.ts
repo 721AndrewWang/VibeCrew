@@ -26,6 +26,8 @@ const MAX_DESCRIPTION_LINES = 8;
 const RECENT_TURNS = 60;
 /** Turns compared on each side of an accepted change. */
 const EFFECT_WINDOW = 20;
+/** Evidence must come from at least this many separate user requests: one incident is not a pattern. */
+export const MIN_REQUESTS = 2;
 
 const FIELDS: ImprovableField[] = ['description', 'model', 'effort', 'permission', 'allowRules', 'askRules', 'editScope', 'freshSession', 'monthlyBudgetUsd'];
 const FIELD_LABEL: Record<ImprovableField, string> = {
@@ -125,7 +127,7 @@ function prompt(pack: string): string {
     '- 每条只改一个机器人的一个字段：' + FIELDS.map((f) => `${f}（${FIELD_LABEL[f]}）`).join('、') + '。',
     `- 改动要小，能看出是哪一处起作用：description 最多改 ${MAX_DESCRIPTION_LINES} 行，其余保持原样；列表字段给出完整的新列表。`,
     '- 每条都要引用至少一轮真实发生的事作为证据（[chatId/messageId]），说明哪里出了问题、改了之后应该变好什么。',
-    '- 只为反复出现、或者代价明显的问题提建议。单次偶然的事不算。没有值得改的就返回空数组，这比硬凑好。',
+    `- 只为反复出现的问题提建议：证据必须来自至少 ${MIN_REQUESTS} 个不同的用户请求，同一件事拆成几条证据不算。一个问题只提一条建议，不要把一次事故扩散成好几条。没有值得改的就返回空数组，这比硬凑好。`,
     '- 不要重复用户拒绝过的建议。不要为了省钱牺牲正确性（比如把审查的角色换成太弱的模型）。',
     '',
     '只回复 JSON 数组，不要别的文字。格式：',
@@ -145,6 +147,22 @@ function changedLines(a: string, b: string): number {
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * How many separate user requests the evidence comes from: each cited message counts as the
+ * user message it answers (the last one before it in its chat), or itself if it is one.
+ */
+export function requestsBehind(evidence: { chatId: string; messageId: string }[]): number {
+  const requests = new Set<string>();
+  for (const e of evidence) {
+    const list = messages.sorted(e.chatId);
+    const m = list.find((x) => x.id === e.messageId);
+    if (!m) continue;
+    const asked = m.role === 'user' ? m : list.filter((x) => x.role === 'user' && x.seq < m.seq).at(-1);
+    requests.add(`${e.chatId}/${asked?.id ?? m.id}`);
+  }
+  return requests.size;
+}
 
 /** Checks one proposal from the model; returns the stored improvement or why it was dropped. */
 export function vetProposal(raw: unknown): Improvement | string {
@@ -166,6 +184,7 @@ export function vetProposal(raw: unknown): Improvement | string {
     })
     .filter((e): e is NonNullable<typeof e> => !!e);
   if (!evidence.length) return '引用的证据不存在';
+  if (requestsBehind(evidence) < MIN_REQUESTS) return `证据只来自同一个请求（至少要 ${MIN_REQUESTS} 个不同的请求），一次的事不算规律`;
   const dup = improvements.all().find((i) => i.botId === bot.id && i.field === field && same(i.after, after) && (i.status === 'pending' || i.status === 'rejected'));
   if (dup) return dup.status === 'pending' ? '已经有一样的建议' : '用户拒绝过一样的建议';
   return { id: uid('i_'), createdAt: Date.now(), botId: bot.id, botName: bot.name, field, before: before ?? null, after, rationale, expected, evidence, status: 'pending' };
@@ -184,17 +203,19 @@ function parseProposals(text: string): unknown[] {
 /** The demo agent's stand-in: the costliest resumed bot is proposed to start fresh each turn. */
 function fakeProposals(): unknown[] {
   const turns = recentTurns();
-  const cost = new Map<string, { sum: number; n: number; ref: string }>();
+  const cost = new Map<string, { sum: number; n: number; refs: string[] }>();
   for (const t of turns) {
-    const c = cost.get(t.msg.botId!) || { sum: 0, n: 0, ref: '' };
+    const c = cost.get(t.msg.botId!) || { sum: 0, n: 0, refs: [] };
     c.sum += t.msg.meta?.costUsd || 0;
     c.n += 1;
-    c.ref = `${t.chatId}/${t.msg.id}`;
+    c.refs = [...c.refs, `${t.chatId}/${t.msg.id}`].slice(-2);
     cost.set(t.msg.botId!, c);
   }
   const top = [...cost.entries()].filter(([id]) => bots.get(id) && !bots.get(id)!.freshSession).sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n)[0];
   if (!top) return [];
-  return [{ bot: top[0], field: 'freshSession', after: true, rationale: '演示：这个机器人平均每轮最贵。', expected: '每轮费用下降', evidence: [{ ref: top[1].ref, note: '最近的一轮' }] }];
+  return [
+    { bot: top[0], field: 'freshSession', after: true, rationale: '演示：这个机器人平均每轮最贵。', expected: '每轮费用下降', evidence: top[1].refs.map((ref) => ({ ref, note: '最近的一轮' })) },
+  ];
 }
 
 /** Runs the proposer once and stores what survives vetting. */

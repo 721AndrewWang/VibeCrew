@@ -25,13 +25,20 @@ describe('in demo mode', () => {
     expect(r.status).toBe(409);
   });
 
-  it('proposes a change tied to a real turn, and accepting it changes the bot', async () => {
-    const reply = await turn('你好');
+  it('wants more than one request behind a proposal', async () => {
+    await turn('你好');
+    const r = await crew.api('POST', '/improvements/run');
+    expect(r.added).toHaveLength(0);
+    expect(r.dropped[0]).toContain('同一个请求');
+  });
+
+  it('proposes a change tied to real turns, and accepting it changes the bot', async () => {
+    const reply = await turn('再说一句');
     const r = await crew.api('POST', '/improvements/run');
     expect(r.added).toHaveLength(1);
     const p = r.added[0];
     expect([p.botName, p.field, p.before, p.after, p.status]).toEqual(['Chief', 'freshSession', null, true, 'pending']);
-    expect(p.evidence[0]).toMatchObject({ chatId: dmId, messageId: reply.id });
+    expect(p.evidence.map((e: any) => e.messageId)).toContain(reply.id);
     // The same proposal is not made twice while pending.
     expect((await crew.api('POST', '/improvements/run')).added).toHaveLength(0);
 
@@ -45,7 +52,7 @@ describe('in demo mode', () => {
     await turn('再来一次');
     const { items, effects } = await crew.api('GET', '/improvements');
     const e = effects[items[0].id];
-    expect(e.before.turns).toBe(1);
+    expect(e.before.turns).toBe(2);
     expect(e.after.turns).toBe(1);
     expect(e.after.avgCostUsd).toBeCloseTo(0.01, 5);
   });
@@ -71,8 +78,10 @@ describe('in demo mode', () => {
     await crew.api('PATCH', `/bots/${chief.id}`, { freshSession: true });
     const pixel = (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.name === 'Pixel');
     const pdm = (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === pixel.id).id;
-    const sent = await crew.api('POST', `/chats/${pdm}/messages`, { text: '你好' });
-    await waitTurn(crew.api, pdm, sent.seq);
+    for (const text of ['你好', '再说一句']) {
+      const sent = await crew.api('POST', `/chats/${pdm}/messages`, { text });
+      await waitTurn(crew.api, pdm, sent.seq);
+    }
     const p = (await crew.api('POST', '/improvements/run')).added.find((x: any) => x.botName === 'Pixel');
     await crew.api('PATCH', `/bots/${pixel.id}`, { freshSession: true });
     const r = await crew.api('POST', `/improvements/${p.id}/accept`);
@@ -87,6 +96,7 @@ describe.skipIf(!claudeCli())('with a model', () => {
   let mock: MockProvider;
   let crew: CrewServer;
   let ref = '';
+  let ref2 = '';
   let answer = '[]';
 
   beforeAll(async () => {
@@ -98,9 +108,12 @@ describe.skipIf(!claudeCli())('with a model', () => {
     const chief = b.bots.find((x: any) => x.name === 'Chief');
     const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id).id;
     await crew.api('PATCH', `/chats/${dm}`, { permission: 'auto' });
-    const sent = await crew.api('POST', `/chats/${dm}/messages`, { text: '你好' });
-    const reply = await waitTurn(crew.api, dm, sent.seq, 120_000);
-    ref = `${dm}/${reply.id}`;
+    for (const text of ['你好', '再说一句']) {
+      const sent = await crew.api('POST', `/chats/${dm}/messages`, { text });
+      const reply = await waitTurn(crew.api, dm, sent.seq, 120_000);
+      if (ref) ref2 = `${dm}/${reply.id}`;
+      else ref = `${dm}/${reply.id}`;
+    }
   });
   afterAll(async () => {
     await crew?.stop();
@@ -108,7 +121,17 @@ describe.skipIf(!claudeCli())('with a model', () => {
   });
 
   it('sends the evidence and keeps only proposals that pass the checks', async () => {
-    const good = { bot: 'Pixel', field: 'effort', after: 'low', rationale: '简单的改动用不着 medium', expected: '更便宜', evidence: [{ ref, note: '一次小改动' }] };
+    const good = {
+      bot: 'Pixel',
+      field: 'effort',
+      after: 'low',
+      rationale: '简单的改动用不着 medium',
+      expected: '更便宜',
+      evidence: [
+        { ref, note: '一次小改动' },
+        { ref: ref2, note: '又一次' },
+      ],
+    };
     answer = JSON.stringify([
       good,
       { ...good, bot: 'Nobody' },
@@ -121,8 +144,21 @@ describe.skipIf(!claudeCli())('with a model', () => {
     expect(r.added.map((p: any) => `${p.botName}.${p.field}=${JSON.stringify(p.after)}`)).toEqual(['Pixel.effort="low"']);
     expect(r.dropped).toEqual(['没有叫 Nobody 的机器人', '引用的证据不存在', '超出每次 3 条的上限，多出的 1 条没看']);
 
-    answer = JSON.stringify([{ ...good, after: 'ultra' }, good]);
-    expect((await crew.api('POST', '/improvements/run')).dropped).toEqual(['effort 的新值不合法', '已经有一样的建议']);
+    answer = JSON.stringify([
+      { ...good, after: 'ultra' },
+      good,
+      {
+        ...good,
+        bot: 'Probe',
+        field: 'effort',
+        after: 'medium',
+        evidence: [
+          { ref, note: '一次' },
+          { ref, note: '同一次' },
+        ],
+      },
+    ]);
+    expect((await crew.api('POST', '/improvements/run')).dropped).toEqual(['effort 的新值不合法', '已经有一样的建议', expect.stringContaining('同一个请求')]);
     // The prompt carried the team, the turn it cited, and the rules.
     const sent = mock.requests.find((q) => JSON.stringify(q.body).includes('只回复 JSON 数组'))!;
     const text = JSON.stringify(sent.body);
