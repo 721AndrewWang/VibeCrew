@@ -14,6 +14,7 @@ import { FAKE_AGENT } from '../config';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
+import { quietly } from '../quietWrites';
 import { parseVerdict, reviewDiff } from '../review';
 import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
@@ -292,7 +293,9 @@ export function holdTurns(chatId: string, work: Promise<unknown>) {
     preparing.delete(chatId);
     void pump(chatId);
   };
-  work.then(done, done);
+  // A setup command's writes are Crew's, not edits made outside the chat.
+  const chat = chats.get(chatId);
+  void quietly([chatProjectId(chat), chat?.projectId], () => work).then(done, done);
 }
 
 /**
@@ -305,7 +308,9 @@ export async function withChatLocked<T>(chatId: string, what: string, fn: () => 
   if (locked.has(chatId)) throw new HttpError(409, '上一个操作还没完成，请稍等');
   locked.add(chatId);
   try {
-    return await fn();
+    // Git operations on the workspace (and a merge into its parent's checkout) are Crew's writes.
+    const chat = chats.get(chatId);
+    return await quietly([chatProjectId(chat), chat?.projectId], fn);
   } finally {
     locked.delete(chatId);
     void pump(chatId);

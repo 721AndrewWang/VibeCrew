@@ -18,6 +18,7 @@ import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, upd
 import { acceptImprovement, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
+import { noteEditorWrite } from './outsideEdits';
 import { ensurePreview, previewInfos, restartPreviews } from './preview';
 import {
   allProjects,
@@ -35,6 +36,7 @@ import {
   updateProject,
   writeProjectFile,
 } from './projects';
+import { quietly } from './quietWrites';
 import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
 import { cleanDomains, sandboxStatus } from './sandbox';
@@ -260,11 +262,12 @@ export function apiRouter() {
     }
     res.json({ ...d, current });
   });
-  r.post('/chats/:id/turns/:turnId/revert', (req, res) => {
+  r.post('/chats/:id/turns/:turnId/revert', async (req, res) => {
     const chat = chats.get(req.params.id);
     const project = turnProject(req.params.id, req.params.turnId);
     if (!chat || !project) throw new HttpError(400, '这一轮改动所在的项目或工作区已经不在了');
-    const result = revertTurn(chat.id, req.params.turnId, project.path, !!req.body?.force);
+    // Undoing a turn rewrites files on Crew's behalf, not the user's.
+    const result = await quietly([project.id], () => revertTurn(chat.id, req.params.turnId, project.path, !!req.body?.force));
     if (!result.conflicts.length) {
       const msg = messages.get(chat.id, result.turn.messageId);
       if (msg?.changes) {
@@ -326,7 +329,9 @@ export function apiRouter() {
   r.get('/projects/:id/tree', (req, res) => res.json(listDir(getProject(req.params.id), str(req.query.path))));
   r.get('/projects/:id/file', (req, res) => res.json(readProjectFile(getProject(req.params.id), str(req.query.path))));
   r.put('/projects/:id/file', (req, res) => {
-    writeProjectFile(getProject(req.params.id), str(req.body?.path), str(req.body?.content));
+    const project = getProject(req.params.id);
+    noteEditorWrite(project.id, str(req.body?.path));
+    writeProjectFile(project, str(req.body?.path), str(req.body?.content));
     res.json({ ok: true });
   });
   r.get('/projects/:id/raw', (req, res) => {

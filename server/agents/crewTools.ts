@@ -62,7 +62,7 @@ export function crewServer(ctx: CrewContext) {
           last: z.number().int().min(1).max(20).optional().describe('看最近的几条消息'),
         },
         async ({ seqs, last }) => {
-          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user'));
+          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user' || m.notice === 'outside-edit'));
           const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
           if (!picked.length) return fail('没有找到这些消息。');
           const who = (m: (typeof all)[number]) => (m.role === 'user' ? '用户' : m.role === 'system' ? '系统' : `@${bots.get(m.botId || '')?.name || '队友'}`);

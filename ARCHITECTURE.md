@@ -59,6 +59,10 @@ shared/  前后端共用的类型（types.ts）和 logo 定义（logos.ts）
 - **禁止的操作**（设置里的 `denyRules`）：既写进 SDK 的 `permissions.deny`，又由一个不带 matcher 的 PreToolUse hook 再拦一次，所以全自动下也跑不了。
 - **必须确认的操作**（每个机器人的规则，加上项目的 `askRules`）：一定弹审批卡片。复合命令（`a && b`）要每一段都匹配「自动允许」才放行。
 
+## 聊天之外的改动
+
+机器人只知道聊天里说过的话。`server/outsideEdits.ts` 监听项目文件：变化发生时如果没有机器人在这个项目里干活（`projectBusy`）、Crew 自己也没在写（`quietWrites.ts`：工作区的 git 操作、准备命令、撤销一轮会把项目标成「安静」，结束后再多 4 秒）、也不是在装依赖，就等 3 秒把这一批改动合成一条系统消息（`notice: 'outside-edit'`），发到所有在这个项目上的对话。文本文件会给出改了哪几行：和 Crew 上次看到的内容比，没看到过就和 git 里最后一次提交比。盲审的机器人也能看到这类消息。
+
 ## 对抗审查
 
 建造（Pixel 等）、验收（Probe）、审查（Lens）都在找支持证据，而且后一个会看到前一个的结论，容易互相背书。Skeptic 是专门找反面证据的一环，设计上有四点（`server/review.ts`、`blindPrompt`）：

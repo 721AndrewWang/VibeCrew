@@ -209,6 +209,8 @@ export interface ChatMessage {
   parts?: MessagePart[];
   attachments?: Attachment[];
   status?: 'queued' | 'streaming' | 'done' | 'error' | 'stopped';
+  /** A system note about the work itself (files changed outside the chat): blind reviewers see these too. */
+  notice?: 'outside-edit';
   /** The turn was cut short by a restart of Crew; what it had written is kept. */
   interrupted?: boolean;
   error?: string;

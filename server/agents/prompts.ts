@@ -198,6 +198,9 @@ function blindPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
   const users = unseen.filter((m) => m.role === 'user');
   const hidden = unseen.filter((m) => m.role === 'bot').length;
   out.push(`用户的要求：\n\n${users.map(renderUserMessage).join('\n\n---\n\n') || '（这一轮没有新的用户消息；按之前的要求审查当前改动）'}`);
+  // Files changed outside the chat are facts about the work: a blind reviewer needs them too.
+  const outside = unseen.filter((m) => m.notice === 'outside-edit');
+  if (outside.length) out.push(`聊天之外的文件改动（以现在的文件为准，不要按更早的要求把它改回去）：\n\n${outside.map((m) => m.text).join('\n\n')}`);
   if (hidden) out.push(`（队友这期间发了 ${hidden} 条消息，按规则对你隐藏。）`);
   if (review) out.push(`## 要审查的改动：${review.title}\n\n\`\`\`diff\n${review.diff.trim() || '（没有改动）'}\n\`\`\``);
   out.push('按你的角色说明审查：只根据用户的要求和改动本身下结论，自己去看、去量，不要假设。');

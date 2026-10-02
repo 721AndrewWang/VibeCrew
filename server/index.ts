@@ -15,6 +15,7 @@ import { stopAllDevServers } from './devserver';
 import { initIfNeeded } from './entities';
 import { logger } from './log';
 import { closeAllSessions } from './orchestrator';
+import { startOutsideEditNotes } from './outsideEdits';
 import { closeAllPreviews } from './preview';
 import { startRoutines } from './routines';
 import { guard, wsAllowed } from './security';
@@ -121,6 +122,7 @@ async function main() {
   await initIfNeeded();
   await reconcileWorkspaces().catch((e) => log.warn('reconcile workspaces:', e));
   startRoutines();
+  startOutsideEditNotes();
   void checkAuth(true).then((a) => {
     if (!a.cliFound) console.warn('⚠️  没有找到 Claude Code 命令行（claude）。请先安装：npm i -g @anthropic-ai/claude-code');
     else if (!a.ready && a.method === 'provider') console.warn('⚠️  模型服务商还没配置好：请在 Crew「设置 → 模型连接」里填写地址、Key 和模型。');
