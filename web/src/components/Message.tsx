@@ -1,11 +1,11 @@
-import { memo, useState, type ReactNode } from 'react';
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, MousePointerClick, Undo2, X, Zap, Film, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
-import { focusTurn, openFileInEditor, toast, useStore } from '../store';
-import { cx, fmtClock, fmtDuration, toolDuration, toolInfo } from '../utils';
-import { Avatar, confirmDialog } from './ui';
+import { chatProjectId, focusTurn, openFileInEditor, openModal, toast, useStore } from '../store';
+import { cx, fmtClock, fmtDuration, modelLabel, toolDuration, toolInfo } from '../utils';
 import { Markdown } from './Markdown';
+import { Avatar, confirmDialog, Glyph } from './ui';
 
 // ---------------------------------------------------------------- attachments
 
@@ -45,7 +45,10 @@ export function AttachmentChips({ items, onRemove, projectId }: { items: Attachm
           case 'console':
             icon = <AlertTriangle size={13} />;
             label = `控制台 ${a.entries.length} 条`;
-            title = a.entries.map((e) => `[${e.level}] ${e.text}`).join('\n').slice(0, 1500);
+            title = a.entries
+              .map((e) => `[${e.level}] ${e.text}`)
+              .join('\n')
+              .slice(0, 1500);
             break;
           case 'file':
             icon = <FileCode2 size={13} />;
@@ -121,7 +124,7 @@ function ToolDetail({ part, root }: { part: ToolPart; root?: string }) {
     body = <pre className="tool-code">{JSON.stringify(input, null, 2).slice(0, 3000)}</pre>;
   }
   const fp = input.file_path as string | undefined;
-  const projectId = useStore((s) => (s.activeChatId ? s.chats[s.activeChatId]?.projectId : null));
+  const projectId = useStore((s) => (s.activeChatId ? chatProjectId(s.chats[s.activeChatId], s.projects) : null));
   return (
     <div className="tool-detail">
       {fp && projectId && root && fp.startsWith(root) && (
@@ -154,7 +157,9 @@ function TodoList({ todos }: { todos: { content: string; status: string; activeF
     <ul className="todo-list">
       {todos.map((t, i) => (
         <li key={i} className={t.status}>
-          <span className="todo-box">{t.status === 'completed' ? <Check size={11} /> : t.status === 'in_progress' ? <span className="spinner" style={{ width: 9, height: 9, borderWidth: 1.5 }} /> : null}</span>
+          <span className="todo-box">
+            {t.status === 'completed' ? <Check size={11} /> : t.status === 'in_progress' ? <span className="spinner" style={{ width: 9, height: 9, borderWidth: 1.5 }} /> : null}
+          </span>
           <span>{t.status === 'in_progress' && t.activeForm ? t.activeForm : t.content}</span>
         </li>
       ))}
@@ -169,7 +174,9 @@ function ToolRow({ part, root }: { part: ToolPart; root?: string }) {
     return (
       <div className="tool-todo">
         <div className="tool-row static">
-          <span className="tool-icon">✅</span>
+          <span className="tool-icon">
+            <Glyph emoji="✅" size={13} />
+          </span>
           <span className="tool-verb">任务清单</span>
         </div>
         <TodoList todos={part.input.todos} />
@@ -180,7 +187,9 @@ function ToolRow({ part, root }: { part: ToolPart; root?: string }) {
     <div className={cx('tool', open && 'open', part.parent && 'nested')}>
       <button className="tool-row" onClick={() => setOpen(!open)}>
         <ChevronRight size={13} className="chev" />
-        <span className="tool-icon">{info.icon}</span>
+        <span className="tool-icon">
+          <Glyph emoji={info.icon} size={13} />
+        </span>
         <span className="tool-verb">{info.verb}</span>
         <span className="tool-target">{info.target}</span>
         <span className="tool-state">
@@ -232,6 +241,12 @@ function ToolGroup({ parts, live, root }: { parts: ToolPart[]; live: boolean; ro
 
 // ---------------------------------------------------------------- approvals
 
+/** "Bash(git log*)" → "git log"; several joined for the "always allow" button. */
+function ruleNames(rules: string[]): string {
+  const names = rules.map((r) => r.replace(/^Bash\((.*?)(:?\*)?\)$/, '$1'));
+  return names.length > 4 ? `${names.slice(0, 4).join('、')} 等 ${names.length} 个` : names.join('、');
+}
+
 function ApprovalCard({ part }: { part: ApprovalPart }) {
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
@@ -259,15 +274,16 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
         )}
       </div>
       {part.detail && <pre className="approval-detail">{part.detail}</pre>}
+      {part.because && <div className="approval-reason">为什么要问：{part.because}</div>}
       {part.reason && pending && <div className="approval-reason">{part.reason}</div>}
       {pending && !denying && (
         <div className="approval-actions">
           <button className="btn primary sm" disabled={busy} onClick={() => decide('allow')}>
             允许
           </button>
-          {part.rule && (
-            <button className="btn sm" disabled={busy} onClick={() => decide('always')} title={`以后自动允许：${part.rule}`}>
-              总是允许 <code>{part.rule}</code>
+          {(part.rules?.length || part.rule) && (
+            <button className="btn sm" disabled={busy} onClick={() => decide('always')} title={`以后自动允许：${(part.rules || [part.rule]).join('、')}`}>
+              总是允许 <code>{ruleNames(part.rules || [part.rule!])}</code>
             </button>
           )}
           <button className="btn sm danger" disabled={busy} onClick={() => setDenying(true)}>
@@ -277,7 +293,14 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
       )}
       {pending && denying && (
         <div className="approval-actions">
-          <input className="input" autoFocus placeholder="告诉它为什么 / 应该怎么做（可选）" value={reason} onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && decide('deny')} />
+          <input
+            className="input"
+            autoFocus
+            placeholder="告诉它为什么 / 应该怎么做（可选）"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && decide('deny')}
+          />
           <button className="btn sm danger solid" disabled={busy} onClick={() => decide('deny')}>
             拒绝
           </button>
@@ -311,7 +334,15 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
   const files = msg.changes?.files || [];
   if (!files.length || !msg.turnId) return null;
   const revert = async () => {
-    if (!(await confirmDialog({ title: '撤销这一轮的改动？', body: `会把 ${files.length} 个文件恢复到 ${useStore.getState().bots[msg.botId || '']?.name || '机器人'} 修改之前的样子。`, ok: '撤销', danger: true }))) return;
+    if (
+      !(await confirmDialog({
+        title: '撤销这一轮的改动？',
+        body: `会把 ${files.length} 个文件恢复到 ${useStore.getState().bots[msg.botId || '']?.name || '机器人'} 修改之前的样子。`,
+        ok: '撤销',
+        danger: true,
+      }))
+    )
+      return;
     setBusy(true);
     try {
       let r = await api.revertTurn(chat.id, msg.turnId!);
@@ -342,7 +373,13 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
       <button className="link" onClick={() => focusTurn(chat.id, msg.turnId!)}>
         改动了 {files.length} 个文件
       </button>
-      <span className="files">{files.slice(0, 3).map((f) => f.split('/').pop()).join('、')}{files.length > 3 ? ' 等' : ''}</span>
+      <span className="files">
+        {files
+          .slice(0, 3)
+          .map((f) => f.split('/').pop())
+          .join('、')}
+        {files.length > 3 ? ' 等' : ''}
+      </span>
       <span className="spacer" />
       {msg.changes?.reverted ? (
         <span className="badge">已撤销</span>
@@ -357,6 +394,7 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
 
 export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, names, root }: { msg: ChatMessage; chat: Chat; bot?: Bot; showHead: boolean; names: string[]; root?: string }) {
   const live = msg.status === 'streaming';
+  const workProjectId = useStore((s) => chatProjectId(chat, s.projects));
   const blocks = groupParts(msg.parts || []);
   const hasText = (msg.parts || []).some((p) => p.type === 'text' && p.text.trim());
   const by = msg.trigger?.type === 'mention' && msg.trigger.by ? useStore.getState().bots[msg.trigger.by]?.name : null;
@@ -366,7 +404,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
       <div className="msg-body">
         {showHead && (
           <div className="msg-head">
-            <span className="msg-name" style={{ color: bot?.color }}>
+            <span className="msg-name" style={{ '--bot-color': bot?.color } as CSSProperties}>
               {bot?.name || '已删除的机器人'}
             </span>
             {by && <span className="msg-meta">回应 @{by}</span>}
@@ -384,13 +422,15 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
           ) : b.part.type === 'text' ? (
             b.part.text.trim() ? (
               <div key={b.index} className="bubble bot-bubble">
-                <Markdown text={b.part.text} names={names} projectId={chat.projectId} />
+                <Markdown text={b.part.text} names={names} projectId={workProjectId} />
               </div>
             ) : null
           ) : b.part.type === 'thinking' ? (
             b.part.text.trim() ? (
               <details key={b.index} className="thinking">
-                <summary>💭 思考过程</summary>
+                <summary>
+                  <Glyph emoji="💭" size={13} /> 思考过程
+                </summary>
                 <div className="thinking-text">{b.part.text}</div>
               </details>
             ) : null
@@ -426,14 +466,20 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         )}
         {msg.status === 'stopped' && (
           <div className="msg-stopped">
-            <CircleSlash size={12} /> 已停止
+            <CircleSlash size={12} /> {msg.interrupted ? 'Crew 重启时中断了这一轮，写到一半的内容已保留' : '已停止'}
           </div>
         )}
         <ChangesBar msg={msg} chat={chat} />
         {!live && msg.meta?.durationMs !== undefined && msg.status === 'done' && (
           <div className="msg-foot">
             用时 {fmtDuration(msg.meta.durationMs)}
+            {msg.meta.model ? ` · ${modelLabel(msg.meta.model)}` : ''}
             {msg.meta.costUsd ? ` · $${msg.meta.costUsd.toFixed(3)}` : ''}
+            {msg.meta.trace && (
+              <button className="link-btn" onClick={() => openModal({ kind: 'trace', chatId: msg.chatId, msgId: msg.id })} title="每次模型调用的 token 和内容">
+                <Route size={11} /> 轨迹
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -444,11 +490,20 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
 function renderUserText(text: string, names: string[]) {
   if (!names.length) return text;
   const re = new RegExp(`(@(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|所有人|all)(?![A-Za-z0-9_-]))`, 'gi');
-  return text.split(re).map((seg, i) => (i % 2 === 1 ? <span key={i} className="mention">{seg}</span> : seg));
+  return text.split(re).map((seg, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="mention">
+        {seg}
+      </span>
+    ) : (
+      seg
+    ),
+  );
 }
 
 export const UserMessage = memo(function UserMessage({ msg, chat, names, showTime }: { msg: ChatMessage; chat: Chat; names: string[]; showTime: boolean }) {
   const skill = msg.skill ? useStore.getState().skills.find((s) => s.name === msg.skill) : null;
+  const workProjectId = useStore((s) => chatProjectId(chat, s.projects));
   return (
     <div className="msg me">
       <div className="msg-body">
@@ -461,13 +516,13 @@ export const UserMessage = memo(function UserMessage({ msg, chat, names, showTim
             )}
             {skill && (
               <span className="badge accent" title={skill.description}>
-                {skill.icon} {skill.title}
+                <Glyph emoji={skill.icon} size={11} /> {skill.title}
               </span>
             )}
           </div>
         )}
         {msg.text && <div className="bubble me-bubble">{renderUserText(msg.text, names)}</div>}
-        {!!msg.attachments?.length && <AttachmentChips items={msg.attachments} projectId={chat.projectId} />}
+        {!!msg.attachments?.length && <AttachmentChips items={msg.attachments} projectId={workProjectId} />}
         {showTime && <div className="msg-time right">{fmtClock(msg.ts)}</div>}
       </div>
     </div>

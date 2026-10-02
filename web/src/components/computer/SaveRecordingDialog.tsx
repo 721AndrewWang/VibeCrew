@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { Film, Send, Trash2, Zap } from 'lucide-react';
+import { useState } from 'react';
 import type { RecordedStep } from '../../../../shared/types';
 import { api } from '../../api';
 import { addAttachment, attachmentId, previewOf, setDraft, toast, updatePreview, useStore } from '../../store';
@@ -11,17 +11,37 @@ function describe(s: RecordedStep) {
     case 'click':
       return <>点击 {s.text ? <b>「{s.text}」</b> : <code>{s.selector}</code>}</>;
     case 'fill':
-      return <>在 {s.text ? <b>「{s.text}」</b> : <code>{s.selector}</code>} 输入 <b>「{s.value}」</b></>;
+      return (
+        <>
+          在 {s.text ? <b>「{s.text}」</b> : <code>{s.selector}</code>} 输入 <b>「{s.value}」</b>
+        </>
+      );
     case 'select':
-      return <>选择 <b>「{s.value}」</b></>;
+      return (
+        <>
+          选择 <b>「{s.value}」</b>
+        </>
+      );
     case 'check':
-      return <>{s.value === 'true' ? '勾选' : '取消勾选'} {s.text ? <b>「{s.text}」</b> : <code>{s.selector}</code>}</>;
+      return (
+        <>
+          {s.value === 'true' ? '勾选' : '取消勾选'} {s.text ? <b>「{s.text}」</b> : <code>{s.selector}</code>}
+        </>
+      );
     case 'press':
-      return <>按下 <kbd>{s.key}</kbd></>;
+      return (
+        <>
+          按下 <kbd>{s.key}</kbd>
+        </>
+      );
     case 'submit':
       return <>提交表单</>;
     case 'navigate':
-      return <>跳转到 <code>{s.url}</code></>;
+      return (
+        <>
+          跳转到 <code>{s.url}</code>
+        </>
+      );
     default:
       return <>{s.type}</>;
   }

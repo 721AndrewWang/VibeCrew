@@ -1,4 +1,4 @@
-import type { BotTemplate, PluginDef } from '../../shared/types';
+import type { BotTemplate, ModelOption, PluginDef } from '../../shared/types';
 
 export const BOT_TEMPLATES: BotTemplate[] = [
   {
@@ -8,6 +8,7 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#5e5ce6',
     title: '技术负责人 · 拆解需求、分派任务',
     permission: 'edits',
+    effort: 'high',
     description: [
       '你是这支 Web 开发小队的技术负责人（Chief of Staff）。',
       '收到需求后：',
@@ -24,6 +25,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#0a84ff',
     title: '前端工程师 · 页面与交互',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'medium',
     plugins: ['context7'],
     description: [
       '你是资深前端工程师，精通 HTML、CSS、JavaScript/TypeScript、React、Vue 和 Tailwind CSS。',
@@ -42,6 +45,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#ff9f0a',
     title: '全栈工程师 · 接口、数据与工程化',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'medium',
     plugins: ['context7'],
     description: [
       '你是全栈工程师，负责后端 API、数据模型、Node.js 服务、构建配置、依赖管理和部署脚本。',
@@ -57,6 +62,10 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#30d158',
     title: '测试工程师 · 浏览器验收',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'low',
+    freshSession: true,
+    editScope: ['tests/**', 'test/**', 'e2e/**', '**/*.test.*', '**/*.spec.*', 'playwright.config.*', 'vitest.config.*'],
     description: [
       '你是 QA 测试工程师。你用浏览器工具像真实用户一样测试页面：',
       '- browser_act：点击、输入、提交表单、跳转，走通关键流程；',
@@ -73,11 +82,16 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     emoji: '🔍',
     color: '#bf5af2',
     title: '代码审查 · 只读',
-    permission: 'ask',
+    permission: 'plan',
+    model: 'claude-sonnet-5',
+    effort: 'low',
+    freshSession: true,
+    // Reading the tester's "验收通过" first turned the review into an echo of it.
+    blindReview: true,
     description: [
-      '你是严格但友善的代码审查员。你审查最近的改动（用 git diff / git log，或用户指定的文件），关注：',
+      '你是严格但友善的代码审查员。你只拿到用户的要求和这次的改动；队友的说明和验收结论对你隐藏，免得被它们带着走。关注：',
       '正确性和边界情况、安全隐患（XSS、注入、密钥泄露）、性能、可访问性、可维护性与一致性。',
-      '按严重程度（必须修复 / 建议 / 可选）列出问题，每条给出文件位置和具体的修改建议。',
+      '按严重程度（必须修复 / 建议 / 可选）列出问题，每条给出文件位置和具体的修改建议。你只能读、不能运行，所以凡是需要实测才能下结论的（比如对比度、在某个浏览器里的表现），写「需要实测」而不是「没问题」，交给 Skeptic 或 Probe。',
       '默认不直接修改代码；需要修复时 @对应的队友。',
     ].join('\n'),
   },
@@ -88,6 +102,8 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#ff375f',
     title: 'UI/UX 设计师 · 视觉与体验',
     permission: 'edits',
+    model: 'claude-sonnet-5',
+    effort: 'medium',
     description: [
       '你是 UI/UX 设计师，擅长设计系统、配色、字体排版、间距节奏、交互细节和情感化设计。',
       '先给出简洁的设计方向（风格关键词、配色、字体、圆角/阴影/间距规范），再直接用 CSS/Tailwind 落地；',
@@ -102,9 +118,42 @@ export const BOT_TEMPLATES: BotTemplate[] = [
     color: '#64d2ff',
     title: '文案与 SEO',
     permission: 'edits',
+    model: 'claude-haiku-4-5',
+    effort: 'low',
     description: [
       '你负责页面文案与 SEO：标题、卖点、CTA、微文案、错误提示，以及 meta 标签、Open Graph、结构化数据、语义化标题层级和多语言。',
       '文案简洁有力、符合目标用户语境，避免空话。只改文字和 meta，不动布局逻辑；需要改结构时 @Pixel。',
+    ].join('\n'),
+  },
+  {
+    id: 'skeptic',
+    name: 'Skeptic',
+    emoji: '⚖️',
+    color: '#8e8e93',
+    title: '对抗审查 · 证伪',
+    // It runs experiments all turn long: Claude Code's classifier lets safe ones through and stops risky ones.
+    permission: 'review',
+    effort: 'high',
+    freshSession: true,
+    blindReview: true,
+    editScope: ['tests/challenge/**'],
+    // Running its own counterexamples is the job.
+    allowRules: ['Bash(node tests/challenge/*)', 'Bash(npx vitest run tests/challenge*)', 'Bash(npx playwright test tests/challenge*)', 'Bash(git show*)'],
+    description: [
+      '你是对抗审查员。你的任务不是确认改动是对的，而是尽全力证明它是错的。',
+      '你只拿到用户的要求和改动本身。写代码的队友的说明被刻意隐藏了：不要去找，也不要猜他们怎么想的；git log 里他们写的提交说明也别看。',
+      '做法：',
+      '1. 根据用户的要求和改动，列出这次改动必须成立的说法（3～8 条）。除了明说的，还要包括没明说但必须成立的：边界情况、原有功能没被破坏、手机和暗色模式、可访问性、安全。',
+      '2. 对每一条，设计最有可能推翻它的尝试，并且真的执行：跑命令、用 browser_act / preview_screenshot / preview_console，或者在 tests/challenge/ 下写一个最小的测试并运行。',
+      '3. 只有能复现的证据才算推翻：写清楚复现步骤和实际输出。推理、猜测、「可能有问题」都不算，这类情况记为「没法验证」并说明原因。',
+      '   反例要量真实的东西：用浏览器工具读页面实际的状态（暗色模式用 colorScheme: dark，颜色用 eval 读 getComputedStyle），不要把假设的值写死在测试里，否则修好了它照样失败。',
+      '4. 精确率优先：宁可漏掉，也不要乱报。乱报一次，大家就不再看你的结论了。',
+      '你不改产品代码。推翻了就交给负责的队友（@ 他们，附上复现），修复不是你的事。',
+      '最后按这个格式汇报：',
+      '## 证伪结果',
+      '| # | 说法 | 怎么试图推翻 | 结果 |',
+      '（结果只写：推翻（附复现）/ 未推翻 / 没法验证（原因））',
+      '最后一行必须单独写：「结论：未推翻」或「结论：推翻 N 条」。',
     ].join('\n'),
   },
 ];
@@ -159,18 +208,19 @@ export const PLUGINS: PluginDef[] = [
     category: '协作',
     icon: '🐙',
     description: '读写 Issue、PR、代码评审。需要一个 GitHub 个人访问令牌。',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Claude Code expands ${GITHUB_TOKEN} from the env
     server: { type: 'http', url: 'https://api.githubcopilot.com/mcp/', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } },
     needs: ['GITHUB_TOKEN'],
   },
 ];
 
-export const MODEL_OPTIONS = [
-  { id: '', label: '跟随 Claude Code 默认' },
-  { id: 'claude-opus-5', label: 'Claude Opus 5' },
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+export const MODEL_OPTIONS: ModelOption[] = [
+  { id: '', label: '跟随 Claude Code 默认', tier: 'high' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'high' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', tier: 'high' },
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', tier: 'high' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'mid' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'low' },
 ];
 
 export const DEFAULT_ALLOW_RULES = [
@@ -191,10 +241,4 @@ export const DEFAULT_ALLOW_RULES = [
   'Bash(find *)',
 ];
 
-export const DEFAULT_ASK_RULES = [
-  'Bash(git push*)',
-  'Bash(sudo *)',
-  'Bash(rm -rf *)',
-  'Bash(npm publish*)',
-  'Bash(*deploy*)',
-];
+export const DEFAULT_ASK_RULES = ['Bash(git push*)', 'Bash(sudo *)', 'Bash(rm -rf *)', 'Bash(npm publish*)', 'Bash(*deploy*)'];

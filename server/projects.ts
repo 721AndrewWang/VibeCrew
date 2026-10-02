@@ -1,19 +1,39 @@
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { Project } from '../shared/types';
-import { projects, settings, uid } from './store';
+import type { Chat, Project } from '../shared/types';
 import { bus } from './bus';
 import { PROJECT_TEMPLATES, slugify } from './data/projectTemplates';
+import { cleanDomains } from './sandbox';
+import { projects, settings, uid } from './store';
 
 const run = promisify(execFile);
 
 /** Directories that are listed lazily and never watched. */
-export const HEAVY_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.nuxt', '.svelte-kit', '.output', '.cache', '.turbo', '.vercel', 'coverage', '.parcel-cache', 'test-results', 'playwright-report']);
+export const HEAVY_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.output',
+  '.cache',
+  '.turbo',
+  '.vercel',
+  'coverage',
+  '.parcel-cache',
+  'test-results',
+  'playwright-report',
+]);
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -22,6 +42,19 @@ export function getProject(id: string | null | undefined): Project {
   const p = projects.get(id);
   if (!p) throw new HttpError(404, '项目不存在');
   return p;
+}
+
+/** The project a chat's bots work in: its isolated workspace when it has one, otherwise its project. */
+export function chatProjectId(chat: Chat | null | undefined): string | null {
+  if (!chat) return null;
+  if (chat.workspaceId && projects.has(chat.workspaceId)) return chat.workspaceId;
+  return chat.projectId;
+}
+
+/** Where a project's dev command and static root are configured: a workspace follows its parent. */
+/** Where a project's settings live: a workspace uses its parent's. */
+export function configOf(project: Project): Project {
+  return (project.workspace && projects.get(project.workspace.parentId)) || project;
 }
 
 /** Resolves a project-relative path, refusing anything outside the project. */
@@ -55,7 +88,7 @@ export function detectFramework(dir: string): string {
     if (deps.nuxt) return 'Nuxt';
     if (deps['@sveltejs/kit']) return 'SvelteKit';
     if (deps.astro) return 'Astro';
-    if (deps['@remix-run/react'] || deps['react-router'] && deps['@react-router/dev']) return 'React Router';
+    if (deps['@remix-run/react'] || (deps['react-router'] && deps['@react-router/dev'])) return 'React Router';
     if (deps.vite) {
       if (deps.react) return 'Vite + React';
       if (deps.vue) return 'Vite + Vue';
@@ -80,8 +113,9 @@ export function packageManager(dir: string): 'npm' | 'pnpm' | 'yarn' | 'bun' {
 
 /** The command that starts the project's dev server, or null for static projects. */
 export function devCommand(project: Project): string | null {
-  if (project.devCommand === 'static') return null;
-  if (project.devCommand) return project.devCommand;
+  const configured = configOf(project).devCommand;
+  if (configured === 'static') return null;
+  if (configured) return configured;
   const pkg = readPackageJson(project.path);
   const scripts = pkg?.scripts || {};
   const pm = packageManager(project.path);
@@ -97,7 +131,8 @@ export function needsInstall(project: Project): boolean {
 }
 
 export function staticRoot(project: Project): string {
-  if (project.staticRoot) return resolveInProject(project, project.staticRoot);
+  const configured = configOf(project).staticRoot;
+  if (configured) return resolveInProject(project, configured);
   if (!fs.existsSync(path.join(project.path, 'index.html')) && fs.existsSync(path.join(project.path, 'public', 'index.html'))) {
     return path.join(project.path, 'public');
   }
@@ -115,7 +150,16 @@ export function decorate(p: Project): Project {
   return { ...p, devDetected: dev };
 }
 
+/** The user's projects, without the chats' isolated workspaces. */
 export function listProjects(): Project[] {
+  return projects
+    .all()
+    .filter((p) => !p.workspace)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Everything the browser needs to know about, workspaces included. */
+export function allProjects(): Project[] {
   return projects.all().sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -129,7 +173,7 @@ export function touchProject(id: string) {
 export function openExistingProject(dir: string, name?: string): Project {
   const abs = path.resolve(dir.replace(/^~(?=$|\/)/, process.env.HOME || '~'));
   if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) throw new HttpError(400, `文件夹不存在：${abs}`);
-  const existing = projects.all().find((p) => path.resolve(p.path) === abs);
+  const existing = listProjects().find((p) => path.resolve(p.path) === abs);
   if (existing) return existing;
   const now = Date.now();
   const project: Project = {
@@ -161,22 +205,47 @@ export async function createProject(input: { name: string; template: string; par
   try {
     await run('git', ['init', '-q'], { cwd: dir });
     await run('git', ['add', '-A'], { cwd: dir });
-    await run('git', ['commit', '-q', '-m', '初始化项目（VibeCrew）'], { cwd: dir });
+    await run('git', ['commit', '-q', '-m', '初始化项目（Crew）'], { cwd: dir });
   } catch {
     /* git missing or no identity configured; the project still works */
   }
   return openExistingProject(dir, title);
 }
 
-export function updateProject(id: string, patch: Partial<Pick<Project, 'name' | 'devCommand' | 'staticRoot'>>): Project {
+type ProjectPatch = Partial<
+  Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains' | 'requireChallenge' | 'autoChallenge'>
+>;
+
+const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) || undefined : undefined);
+
+export function updateProject(id: string, patch: ProjectPatch): Project {
   const p = getProject(id);
+  if (p.workspace) throw new HttpError(400, '工作区沿用原项目的设置，请在原项目里修改');
   if (patch.name !== undefined) p.name = patch.name.trim() || p.name;
   if (patch.devCommand !== undefined) p.devCommand = patch.devCommand.trim() || undefined;
   if (patch.staticRoot !== undefined) p.staticRoot = patch.staticRoot.trim() || undefined;
+  if (patch.setupCommand !== undefined) p.setupCommand = text(patch.setupCommand, 2000);
+  if (patch.commitGuide !== undefined) p.commitGuide = text(patch.commitGuide, 2000);
+  if (patch.noAttribution !== undefined) p.noAttribution = patch.noAttribution === true || undefined;
+  if (patch.requireChallenge !== undefined) p.requireChallenge = patch.requireChallenge === true || undefined;
+  if (patch.autoChallenge !== undefined) {
+    const paths = [...new Set(patch.autoChallenge.paths.map((x) => x.trim()).filter(Boolean))];
+    p.autoChallenge = { enabled: patch.autoChallenge.enabled, paths, minLines: patch.autoChallenge.minLines };
+  }
+  if (patch.askRules !== undefined) {
+    const rules = Array.isArray(patch.askRules) ? patch.askRules.map((r) => text(r, 300)).filter((r): r is string => !!r) : [];
+    p.askRules = rules.length ? [...new Set(rules)].slice(0, 50) : undefined;
+  }
+  if (patch.allowedDomains !== undefined) {
+    const domains = cleanDomains(patch.allowedDomains);
+    p.allowedDomains = domains.length ? domains : undefined;
+  }
   p.framework = detectFramework(p.path);
   p.updatedAt = Date.now();
   projects.set(p);
   bus.emit({ t: 'project', project: decorate(p) });
+  // Workspaces use their parent's dev command and static root.
+  for (const w of projects.all()) if (w.workspace?.parentId === p.id) bus.emit({ t: 'project', project: decorate(w) });
   return p;
 }
 
@@ -244,7 +313,11 @@ export function projectTemplates() {
 }
 
 export async function git(project: Project, args: string[]): Promise<string> {
-  const { stdout } = await run('git', args, { cwd: project.path, maxBuffer: 20 * 1024 * 1024 });
+  return gitIn(project.path, args);
+}
+
+export async function gitIn(dir: string, args: string[]): Promise<string> {
+  const { stdout } = await run('git', args, { cwd: dir, maxBuffer: 20 * 1024 * 1024 });
   return stdout;
 }
 
@@ -256,7 +329,7 @@ export async function gitStatus(project: Project) {
     return { repo: false as const };
   }
   const branch = (await git(project, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => '')).trim();
-  const porcelain = await git(project, ['status', '--porcelain=v1', '-uall']);
+  const porcelain = await git(project, ['-c', 'core.quotePath=false', 'status', '--porcelain=v1', '-uall']);
   const files = porcelain
     .split('\n')
     .filter(Boolean)

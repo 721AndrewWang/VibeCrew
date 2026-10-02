@@ -11,8 +11,7 @@ const DEVICES: Record<Device, { width: number; height: number; mobile: boolean }
   mobile: { width: 390, height: 844, mobile: true },
 };
 
-const MOBILE_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
 export const hasBrowser = () => !!findChrome();
 
@@ -20,10 +19,14 @@ let browser: Browser | null = null;
 let launching: Promise<Browser> | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
 
+/** Emulated `prefers-color-scheme`: pages with a dark theme switch to it. */
+export type ColorScheme = 'light' | 'dark';
+
 interface Session {
   ctx: BrowserContext;
   page: Page;
   device: Device;
+  colorScheme: ColorScheme;
   logs: ConsoleEntry[];
   projectId: string;
 }
@@ -33,7 +36,7 @@ async function getBrowser(): Promise<Browser> {
   if (browser?.isConnected()) return browser;
   if (launching) return launching;
   const executablePath = findChrome();
-  if (!executablePath) throw new Error('没有找到 Chrome/Chromium。请安装 Google Chrome，或设置环境变量 VIBECREW_CHROME_PATH。');
+  if (!executablePath) throw new Error('没有找到 Chrome/Chromium。请安装 Google Chrome，或设置环境变量 CREW_CHROME_PATH。');
   launching = (async () => {
     const { chromium } = await import('playwright-core');
     const b = await chromium.launch({
@@ -60,10 +63,11 @@ function touch() {
   idleTimer = setTimeout(() => void closeBrowser(), 10 * 60_000);
 }
 
-async function newContext(device: Device): Promise<BrowserContext> {
+async function newContext(device: Device, colorScheme: ColorScheme = 'light'): Promise<BrowserContext> {
   const b = await getBrowser();
   const d = DEVICES[device];
   return b.newContext({
+    colorScheme,
     viewport: { width: d.width, height: d.height },
     deviceScaleFactor: 1,
     isMobile: d.mobile,
@@ -89,11 +93,11 @@ function collect(page: Page, logs: ConsoleEntry[]) {
   });
   page.on('pageerror', (e) => add('error', `Uncaught ${e.name}: ${e.message}${e.stack ? '\n' + e.stack.split('\n').slice(1, 4).join('\n') : ''}`));
   page.on('requestfailed', (r) => {
-    if (r.url().includes('/__vibecrew/')) return;
+    if (r.url().includes('/__crew/')) return;
     add('error', `[network] ${r.method()} ${r.url()} 失败：${r.failure()?.errorText || ''}`);
   });
   page.on('response', (r) => {
-    if (r.status() >= 400 && !r.url().includes('/__vibecrew/') && !/favicon\.ico$/.test(r.url())) add('warn', `[network] ${r.status()} ${r.request().method()} ${r.url()}`);
+    if (r.status() >= 400 && !r.url().includes('/__crew/') && !/favicon\.ico$/.test(r.url())) add('warn', `[network] ${r.status()} ${r.request().method()} ${r.url()}`);
   });
 }
 
@@ -137,10 +141,10 @@ export interface ShotResult {
   truncated?: boolean;
 }
 
-export async function screenshot(opts: { projectId: string; path?: string; device?: Device; fullPage?: boolean; selector?: string }): Promise<ShotResult> {
+export async function screenshot(opts: { projectId: string; path?: string; device?: Device; fullPage?: boolean; selector?: string; colorScheme?: ColorScheme }): Promise<ShotResult> {
   const device = opts.device || 'desktop';
   const url = await resolveUrl(opts.projectId, opts.path);
-  const ctx = await newContext(device);
+  const ctx = await newContext(device, opts.colorScheme);
   touch();
   const logs: ConsoleEntry[] = [];
   try {
@@ -168,9 +172,9 @@ export async function screenshot(opts: { projectId: string; path?: string; devic
   }
 }
 
-export async function consoleCheck(opts: { projectId: string; path?: string; waitMs?: number }) {
+export async function consoleCheck(opts: { projectId: string; path?: string; waitMs?: number; colorScheme?: ColorScheme }) {
   const url = await resolveUrl(opts.projectId, opts.path);
-  const ctx = await newContext('desktop');
+  const ctx = await newContext('desktop', opts.colorScheme);
   touch();
   const logs: ConsoleEntry[] = [];
   try {
@@ -198,7 +202,11 @@ function locate(page: Page, s: ActStep, forInput = false): Locator {
   if (s.selector) return page.locator(s.selector).first();
   if (s.text) {
     if (forInput) return page.getByLabel(s.text).or(page.getByPlaceholder(s.text)).first();
-    return page.getByRole('button', { name: s.text }).or(page.getByRole('link', { name: s.text })).or(page.getByText(s.text)).first();
+    return page
+      .getByRole('button', { name: s.text })
+      .or(page.getByRole('link', { name: s.text }))
+      .or(page.getByText(s.text))
+      .first();
   }
   throw new Error('需要 selector 或 text 来定位元素');
 }
@@ -227,7 +235,7 @@ function describe(s: ActStep): string {
   }
 }
 
-export async function act(opts: { key: string; projectId: string; path?: string; steps: ActStep[]; screenshot?: boolean; device?: Device }) {
+export async function act(opts: { key: string; projectId: string; path?: string; steps: ActStep[]; screenshot?: boolean; device?: Device; colorScheme?: ColorScheme }) {
   const device = opts.device || 'desktop';
   let sess = sessions.get(opts.key);
   if (sess && (sess.device !== device || sess.projectId !== opts.projectId || sess.page.isClosed())) {
@@ -236,12 +244,16 @@ export async function act(opts: { key: string; projectId: string; path?: string;
     sess = undefined;
   }
   if (!sess) {
-    const ctx = await newContext(device);
+    const ctx = await newContext(device, opts.colorScheme);
     const page = await ctx.newPage();
     const logs: ConsoleEntry[] = [];
     collect(page, logs);
-    sess = { ctx, page, device, logs, projectId: opts.projectId };
+    sess = { ctx, page, device, colorScheme: opts.colorScheme || 'light', logs, projectId: opts.projectId };
     sessions.set(opts.key, sess);
+  } else if (opts.colorScheme && opts.colorScheme !== sess.colorScheme) {
+    // Switched in place, so the page, its state and any login are kept.
+    await sess.page.emulateMedia({ colorScheme: opts.colorScheme });
+    sess.colorScheme = opts.colorScheme;
   }
   touch();
   const { page } = sess;
@@ -293,23 +305,30 @@ export async function act(opts: { key: string; projectId: string; path?: string;
           await page.waitForTimeout(250);
           break;
         case 'eval': {
-          const r = await page.evaluate((code) => {
-            // eslint-disable-next-line no-new-func
-            const v = new Function(`return (${code})`)();
-            return Promise.resolve(v).then((x) => {
-              try {
-                return JSON.stringify(x);
-              } catch {
-                return String(x);
-              }
-            });
-          }, s.value || s.text || 'undefined');
+          const r = await page.evaluate(
+            (code) => {
+              // Runs page-side code the bot wrote, by design.
+              const v = new Function(`return (${code})`)();
+              return Promise.resolve(v).then((x) => {
+                try {
+                  return JSON.stringify(x);
+                } catch {
+                  return String(x);
+                }
+              });
+            },
+            s.value || s.text || 'undefined',
+          );
           lines.push(`✓ 执行脚本 → ${String(r).slice(0, 1500)}`);
           continue;
         }
         case 'expect_text': {
           const want = s.text || s.value || '';
-          const ok = await page.getByText(want).first().isVisible().catch(() => false);
+          const ok = await page
+            .getByText(want)
+            .first()
+            .isVisible()
+            .catch(() => false);
           if (!ok) throw new Error(`页面上没有看到「${want}」`);
           break;
         }

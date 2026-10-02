@@ -1,11 +1,11 @@
-// Builds the VibeCrew AppImage and installs it for the current user:
-//   ~/Applications/VibeCrew.AppImage
-//   ~/.local/share/applications/vibecrew.desktop   (app menu / dock entry)
-//   ~/.local/share/icons/hicolor/<size>/apps/vibecrew.png
+// Builds the Crew AppImage and installs it for the current user:
+//   ~/Applications/Crew.AppImage
+//   ~/.local/share/applications/crew.desktop   (app menu / dock entry)
+//   ~/.local/share/icons/hicolor/<size>/apps/crew.png
 //
 //   npm run desktop:install            build + install (or update)
 //   npm run desktop:install -- --skip-build   install the AppImage already in release/
-//   npm run desktop:uninstall          remove all of the above (your data in ~/.vibecrew stays)
+//   npm run desktop:uninstall          remove all of the above (your data in ~/.crew stays)
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,14 +17,15 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const home = os.homedir();
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const APP_DIR = path.join(home, 'Applications');
-const APPIMAGE = path.join(APP_DIR, 'VibeCrew.AppImage');
-const DESKTOP_FILE = path.join(home, '.local', 'share', 'applications', 'vibecrew.desktop');
+const APPIMAGE = path.join(APP_DIR, 'Crew.AppImage');
+const DESKTOP_FILE = path.join(home, '.local', 'share', 'applications', 'crew.desktop');
 const ICON_ROOT = path.join(home, '.local', 'share', 'icons', 'hicolor');
-const AUTOSTART_FILE = path.join(home, '.config', 'autostart', 'vibecrew.desktop');
-const APPARMOR_PROFILE = '/etc/apparmor.d/vibecrew';
+const AUTOSTART_FILE = path.join(home, '.config', 'autostart', 'crew.desktop');
+const APPARMOR_PROFILE = '/etc/apparmor.d/crew';
 /** Optional root-owned install made by `sudo desktop/install-system.sh` (runs sandboxed). */
-const SYSTEM_BIN = '/opt/VibeCrew/vibecrew';
+const SYSTEM_BIN = '/opt/Crew/crew';
 const SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
+const CREW_HOME = path.resolve(process.env.CREW_HOME || path.join(home, '.crew'));
 
 const args = new Set(process.argv.slice(2));
 
@@ -43,7 +44,7 @@ function tryRun(cmd, cmdArgs) {
 }
 
 /**
- * How the launcher starts VibeCrew. The system install in /opt (with its AppArmor profile) runs
+ * How the launcher starts Crew. The system install in /opt (with its AppArmor profile) runs
  * with Chromium's sandbox. The AppImage cannot: Ubuntu 23.10+ blocks the user namespaces the
  * sandbox needs, and its AppRun adds --no-sandbox by itself; the flag is written out to be explicit.
  */
@@ -62,15 +63,15 @@ function desktopEntry(cmd) {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=VibeCrew',
+    'Name=Crew',
     'GenericName=AI 开发小队',
     'Comment=Web 开发 AI 机器人小队（基于 Claude Code）',
     `Exec=${cmd} %U`,
-    'Icon=vibecrew',
+    'Icon=crew',
     'Terminal=false',
     // Electron names the X11 window class after the executable.
-    'StartupWMClass=vibecrew',
-    // Reopening while VibeCrew sits in the tray (or the quit action) maps no new window, which
+    'StartupWMClass=crew',
+    // Reopening while Crew sits in the tray (or the quit action) maps no new window, which
     // would leave GNOME's busy cursor spinning for ~15 s.
     'StartupNotify=false',
     'Categories=Development;IDE;',
@@ -82,16 +83,16 @@ function desktopEntry(cmd) {
     `Exec=${cmd}`,
     '',
     '[Desktop Action quit]',
-    'Name=退出 VibeCrew（停止所有机器人）',
+    'Name=退出 Crew（停止所有机器人）',
     `Exec=${cmd} --quit`,
     '',
   ].join('\n');
 }
 
-/** The pid of a running VibeCrew desktop instance, from Electron's single-instance lock. */
+/** The pid of a running Crew desktop instance, from Electron's single-instance lock. */
 function runningInstance() {
   try {
-    const target = fs.readlinkSync(path.join(home, '.config', 'VibeCrew', 'SingletonLock'));
+    const target = fs.readlinkSync(path.join(home, '.config', 'Crew', 'SingletonLock'));
     const pid = Number(target.split('-').pop());
     if (!pid) return null;
     process.kill(pid, 0);
@@ -110,12 +111,12 @@ function hasLibfuse2() {
   return ['/usr/lib/x86_64-linux-gnu/libfuse.so.2', '/usr/lib/aarch64-linux-gnu/libfuse.so.2', '/lib/x86_64-linux-gnu/libfuse.so.2'].some((f) => fs.existsSync(f));
 }
 
-/** True when /opt/VibeCrew holds a different build than release/ (install-system.sh copies with cp -a). */
+/** True when /opt/Crew holds a different build than release/ (install-system.sh copies with cp -a). */
 function systemCopyStale() {
   const same = (rel) => {
     try {
       const a = fs.statSync(path.join(root, 'release', 'linux-unpacked', rel));
-      const b = fs.statSync(path.join('/opt/VibeCrew', rel));
+      const b = fs.statSync(path.join('/opt/Crew', rel));
       return a.size === b.size && Math.trunc(a.mtimeMs) === Math.trunc(b.mtimeMs);
     } catch {
       return false;
@@ -128,6 +129,69 @@ function systemCopyStale() {
  * Makes GNOME pick up new icons without creating a user icon cache: a cache in
  * ~/.local/share/icons/hicolor would hide icons other tools copy there later.
  */
+/** Icons of the logo chosen in Settings → 外观 (the running app keeps them in sync as well). */
+function iconDir() {
+  let id;
+  // Before the first start after the rename, the settings are still in VibeCrew's folder.
+  for (const dir of [CREW_HOME, path.join(home, '.vibecrew')]) {
+    try {
+      id = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8')).logo;
+      break;
+    } catch {
+      /* no settings there */
+    }
+  }
+  const dir = typeof id === 'string' && /^[a-z]+$/.test(id) ? path.join(root, 'desktop', 'logos', id) : '';
+  return dir && fs.existsSync(dir) ? dir : path.join(root, 'desktop', 'icons');
+}
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * Crew used to be called VibeCrew. A running VibeCrew is asked to quit (it holds the port and the
+ * data folder, which Crew moves to ~/.crew on its first start); its AppImage, menu entry and icons
+ * go. Returns the text of its autostart entry, if it had one.
+ */
+function retireVibeCrew() {
+  const appImage = path.join(APP_DIR, 'VibeCrew.AppImage');
+  const desktopFile = path.join(home, '.local', 'share', 'applications', 'vibecrew.desktop');
+  const autostart = path.join(home, '.config', 'autostart', 'vibecrew.desktop');
+  const icons = SIZES.map((s) => path.join(ICON_ROOT, `${s}x${s}`, 'apps', 'vibecrew.png'));
+  if (![appImage, desktopFile, autostart, ...icons].some((f) => fs.existsSync(f))) return null;
+  let pid = null;
+  try {
+    pid =
+      Number(
+        fs
+          .readlinkSync(path.join(home, '.config', 'VibeCrew', 'SingletonLock'))
+          .split('-')
+          .pop(),
+      ) || null;
+  } catch {
+    /* not running */
+  }
+  if (pid && alive(pid)) {
+    console.log(`正在退出旧版 VibeCrew（进程 ${pid}），它的数据会在 Crew 第一次启动时搬过去…`);
+    if (fs.existsSync(appImage)) spawnSync(appImage, ['--no-sandbox', '--quit'], { stdio: 'ignore', timeout: 15000 });
+    else process.kill(pid, 'SIGTERM');
+    for (let i = 0; i < 60 && alive(pid); i++) sleepSync(500);
+    if (alive(pid)) throw new Error('旧版 VibeCrew 没有退出。请从托盘菜单退出它，再运行一次安装。');
+  }
+  const autostartText = fs.existsSync(autostart) ? fs.readFileSync(autostart, 'utf8') : null;
+  for (const f of [appImage, desktopFile, autostart, ...icons]) fs.rmSync(f, { force: true });
+  tryRun('update-desktop-database', [path.dirname(desktopFile)]);
+  console.log('已移除旧版 VibeCrew 的程序、菜单项和图标。');
+  return autostartText;
+}
+
 function refreshIcons() {
   const now = new Date();
   try {
@@ -143,18 +207,24 @@ function uninstall() {
   const bin = fs.existsSync(APPIMAGE) ? APPIMAGE : fs.existsSync(SYSTEM_BIN) ? SYSTEM_BIN : null;
   if (bin) spawnSync(bin, ['--no-sandbox', '--quit'], { stdio: 'ignore', timeout: 15000 });
   for (const f of [APPIMAGE, DESKTOP_FILE, AUTOSTART_FILE]) fs.rmSync(f, { force: true });
-  for (const s of SIZES) fs.rmSync(path.join(ICON_ROOT, `${s}x${s}`, 'apps', 'vibecrew.png'), { force: true });
+  for (const s of SIZES) fs.rmSync(path.join(ICON_ROOT, `${s}x${s}`, 'apps', 'crew.png'), { force: true });
   tryRun('update-desktop-database', [path.dirname(DESKTOP_FILE)]);
   refreshIcons();
-  console.log('已卸载 VibeCrew 桌面应用。你的数据（~/.vibecrew）和项目都保留着。');
-  if (fs.existsSync(SYSTEM_BIN)) console.log(`系统安装还在 /opt/VibeCrew，用 sudo ${path.join(root, 'desktop', 'install-system.sh')} --remove 删除。`);
+  console.log('已卸载 Crew 桌面应用。你的数据（~/.crew）和项目都保留着。');
+  if (fs.existsSync(SYSTEM_BIN)) console.log(`系统安装还在 /opt/Crew，用 sudo ${path.join(root, 'desktop', 'install-system.sh')} --remove 删除。`);
 }
 
 function install() {
   if (!args.has('--skip-build')) run('npm', ['run', 'desktop:pack']);
 
-  const built = path.join(root, 'release', `VibeCrew-${pkg.version}.AppImage`);
+  const built = path.join(root, 'release', `Crew-${pkg.version}.AppImage`);
   if (!fs.existsSync(built)) throw new Error(`找不到 ${built}，请先运行 npm run desktop:pack`);
+
+  const legacyAutostart = retireVibeCrew();
+  if (legacyAutostart && !fs.existsSync(AUTOSTART_FILE)) {
+    fs.mkdirSync(path.dirname(AUTOSTART_FILE), { recursive: true });
+    fs.writeFileSync(AUTOSTART_FILE, legacyAutostart.replace(/VibeCrew/g, 'Crew').replace(/vibecrew/g, 'crew'));
+  }
 
   // Replace atomically so a running copy keeps working until it restarts.
   fs.mkdirSync(APP_DIR, { recursive: true });
@@ -163,10 +233,11 @@ function install() {
   fs.chmodSync(tmp, 0o755);
   fs.renameSync(tmp, APPIMAGE);
 
+  const icons = iconDir();
   for (const s of SIZES) {
     const dir = path.join(ICON_ROOT, `${s}x${s}`, 'apps');
     fs.mkdirSync(dir, { recursive: true });
-    fs.copyFileSync(path.join(root, 'desktop', 'icons', `${s}x${s}.png`), path.join(dir, 'vibecrew.png'));
+    fs.copyFileSync(path.join(icons, `${s}x${s}.png`), path.join(dir, 'crew.png'));
   }
   refreshIcons();
 
@@ -183,18 +254,18 @@ function install() {
 
   const usingSystem = cmd === SYSTEM_BIN;
   console.log(`
-✅ VibeCrew ${pkg.version} 已安装
+✅ Crew ${pkg.version} 已安装
    启动：  ${usingSystem ? `${SYSTEM_BIN}（系统安装，沙盒已开启）` : APPIMAGE}
-   菜单：  在「显示应用」里搜索 VibeCrew（可右键「固定到 Dock」）
-   数据：  ~/.vibecrew（和 npm start 共用）
+   菜单：  在「显示应用」里搜索 Crew（可右键「固定到 Dock」）
+   数据：  ~/.crew（和 npm start 共用）
 `);
   const systemStale = usingSystem && systemCopyStale();
   if (systemStale) {
-    console.log(`⚠️  菜单启动的是 /opt/VibeCrew，但那里还是旧的构建。先更新它：sudo ${path.join(root, 'desktop', 'install-system.sh')}\n`);
+    console.log(`⚠️  菜单启动的是 /opt/Crew，但那里还是旧的构建。先更新它：sudo ${path.join(root, 'desktop', 'install-system.sh')}\n`);
   }
   const pid = runningInstance();
   if (pid && !systemStale) {
-    console.log(`⚠️  VibeCrew 正在运行（可能在托盘里，进程 ${pid}），它还是旧版本。
+    console.log(`⚠️  Crew 正在运行（可能在托盘里，进程 ${pid}），它还是旧版本。
    从托盘菜单选择「退出」，再重新打开，就会用上新版本。
 `);
   }
@@ -203,7 +274,7 @@ function install() {
 `);
   }
   if (!sandboxed) {
-    console.log(`ℹ️  Ubuntu 默认限制了 Chromium 沙盒，所以 VibeCrew 以 --no-sandbox 运行（和大多数 Electron 应用一样）。
+    console.log(`ℹ️  Ubuntu 默认限制了 Chromium 沙盒，所以 Crew 以 --no-sandbox 运行（和大多数 Electron 应用一样）。
    想开启沙盒：sudo ${path.join(root, 'desktop', 'install-system.sh')}，然后重新运行 npm run desktop:install
 `);
   }

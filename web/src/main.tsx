@@ -7,8 +7,8 @@ import './styles/chat.css';
 import './styles/computer.css';
 import './styles/views.css';
 import { App } from './App';
-import { boot } from './store';
 import { connectSocket } from './socket';
+import { boot } from './store';
 
 void boot();
 connectSocket();

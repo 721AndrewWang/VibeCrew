@@ -1,0 +1,41 @@
+name: Release
+
+# Pushing a v* tag builds the AppImage and attaches it to a GitHub Release, with the matching
+# CHANGELOG section as the notes. The tag must match package.json's version.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    name: Build and publish the AppImage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: git config --global user.name ci && git config --global user.email ci@example.com
+      - name: Check that the tag matches package.json
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          [ "$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} but package.json says $v"; exit 1; }
+      - run: npm run check
+      - run: npm run desktop:pack
+        env:
+          # GitHub's own downloads are the fastest from a runner; the scripts default to a mirror.
+          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+      - name: Release notes from the CHANGELOG
+        run: node desktop/release-notes.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.AppImage
+          body_path: release-notes.md

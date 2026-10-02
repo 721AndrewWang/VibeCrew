@@ -1,12 +1,16 @@
 import fs from 'node:fs';
-import type { Bot, Chat } from '../shared/types';
-import { bus } from './bus';
-import { BOT_TEMPLATES, DEFAULT_ALLOW_RULES, DEFAULT_ASK_RULES, DEFAULT_TEAM } from './data/catalog';
-import { bots, chats, messages, projects, routines, settings, uid } from './store';
-import { createProject, HttpError, listProjects } from './projects';
-import { forgetChat, invalidateBot, invalidateChat, systemMessage } from './orchestrator';
+import type { Bot, Chat, Effort, PermissionLevel } from '../shared/types';
 import { memoryFile } from './agents/prompts';
 import { deleteTurns } from './agents/recorder';
+import { bus } from './bus';
+import { BOT_TEMPLATES, DEFAULT_ALLOW_RULES, DEFAULT_ASK_RULES, DEFAULT_TEAM } from './data/catalog';
+import { logger } from './log';
+import { applyChatSettings, forgetChat, invalidateBot, invalidateChat, isChatBusy, systemMessage } from './orchestrator';
+import { createProject, HttpError, listProjects } from './projects';
+import { bots, chats, messages, projects, routines, settings, uid } from './store';
+import { detachWorkspace } from './workspaces';
+
+const log = logger('init');
 
 const NAME_RE = /^[\p{L}\p{N}_-]{1,24}$/u;
 
@@ -34,6 +38,16 @@ function newChat(partial: Partial<Chat> & Pick<Chat, 'kind' | 'title' | 'botIds'
   };
 }
 
+/**
+ * Moving a chat to another project or deleting it removes its workspace, which must not happen
+ * under a running bot turn (or a merge in progress).
+ */
+export function assertWorkspaceIdle(chat: Chat | undefined) {
+  if (chat?.workspaceId && isChatBusy(chat.id)) {
+    throw new HttpError(409, `「${chat.title}」的机器人正在独立工作区里工作（或正在合并），等这一轮结束再操作`);
+  }
+}
+
 export function dmOf(botId: string): Chat | undefined {
   return chats.all().find((c) => c.kind === 'dm' && c.botIds[0] === botId);
 }
@@ -47,7 +61,16 @@ function ensureDm(bot: Bot): Chat {
   return chat;
 }
 
-export function createBot(input: Partial<Bot> & { template?: string }): Bot {
+/** Trimmed, deduplicated globs, or undefined when there are none. */
+function cleanScope(scope: string[] | undefined): string[] | undefined {
+  const out = [...new Set((scope || []).map((g) => g.trim()).filter(Boolean))];
+  return out.length ? out : undefined;
+}
+
+/** A request may send null to clear the budget. */
+type BotInput = Partial<Omit<Bot, 'monthlyBudgetUsd'>> & { monthlyBudgetUsd?: number | null };
+
+export function createBot(input: BotInput & { template?: string }): Bot {
   const tpl = BOT_TEMPLATES.find((t) => t.id === input.template);
   let name = (input.name ?? tpl?.name ?? '').trim();
   if (!name) throw new HttpError(400, '请填写名字');
@@ -64,14 +87,18 @@ export function createBot(input: Partial<Bot> & { template?: string }): Bot {
     color: input.color || tpl?.color || '#0a84ff',
     title: input.title?.trim() || tpl?.title || 'Web 开发助手',
     description: input.description?.trim() || tpl?.description || '',
-    model: input.model ?? '',
-    effort: input.effort ?? '',
+    model: input.model ?? tpl?.model ?? '',
+    effort: input.effort ?? tpl?.effort ?? '',
     permission: input.permission || tpl?.permission || settings.get().defaultPermission,
-    allowRules: input.allowRules ?? [...DEFAULT_ALLOW_RULES],
+    allowRules: input.allowRules ?? [...DEFAULT_ALLOW_RULES, ...(tpl?.allowRules || [])],
     askRules: input.askRules ?? [...DEFAULT_ASK_RULES],
     mcpServers: input.mcpServers ?? {},
     plugins: input.plugins ?? tpl?.plugins ?? [],
     loadUserSettings: input.loadUserSettings ?? true,
+    editScope: cleanScope(input.editScope) ?? (tpl?.editScope ? [...tpl.editScope] : undefined),
+    monthlyBudgetUsd: input.monthlyBudgetUsd || undefined,
+    freshSession: input.freshSession ?? tpl?.freshSession ?? undefined,
+    blindReview: input.blindReview ?? tpl?.blindReview ?? undefined,
     projectId: input.projectId !== undefined ? input.projectId : (listProjects()[0]?.id ?? null),
     template: tpl?.id,
     createdAt: now,
@@ -83,15 +110,42 @@ export function createBot(input: Partial<Bot> & { template?: string }): Bot {
   return bot;
 }
 
-export function updateBot(id: string, patch: Partial<Bot>): Bot {
+export function updateBot(id: string, patch: BotInput): Bot {
   const bot = bots.get(id);
   if (!bot) throw new HttpError(404, '机器人不存在');
   const renamed = patch.name !== undefined && patch.name.trim() !== bot.name;
   if (renamed) checkName(patch.name!.trim(), id);
-  const allowed: (keyof Bot)[] = ['name', 'emoji', 'color', 'title', 'description', 'model', 'effort', 'permission', 'allowRules', 'askRules', 'mcpServers', 'plugins', 'loadUserSettings', 'projectId'];
+  if (patch.projectId !== undefined && patch.projectId !== bot.projectId) assertWorkspaceIdle(dmOf(bot.id));
+  const allowed: (keyof Bot)[] = [
+    'name',
+    'emoji',
+    'color',
+    'title',
+    'description',
+    'model',
+    'effort',
+    'permission',
+    'allowRules',
+    'askRules',
+    'mcpServers',
+    'plugins',
+    'loadUserSettings',
+    'projectId',
+    'editScope',
+    'monthlyBudgetUsd',
+    'freshSession',
+    'blindReview',
+  ];
   for (const k of allowed) {
     if (patch[k] !== undefined) (bot as any)[k] = typeof patch[k] === 'string' ? (patch[k] as string).trim() : patch[k];
   }
+  // An empty scope or budget means none.
+  const scope = cleanScope(bot.editScope);
+  if (scope) bot.editScope = scope;
+  else delete bot.editScope;
+  if (!bot.monthlyBudgetUsd) delete bot.monthlyBudgetUsd;
+  if (!bot.freshSession) delete bot.freshSession;
+  if (!bot.blindReview) delete bot.blindReview;
   bot.updatedAt = Date.now();
   bots.set(bot);
   bus.emit({ t: 'bot', bot });
@@ -105,6 +159,8 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
     for (const b of bots.all()) invalidateBot(b.id);
   }
   if (patch.projectId !== undefined && dm.projectId !== bot.projectId) {
+    // The workspace belongs to the old project.
+    detachWorkspace(dm);
     dm.projectId = bot.projectId;
     dm.sessions = {};
     dmChanged = true;
@@ -123,6 +179,7 @@ export function updateBot(id: string, patch: Partial<Bot>): Bot {
 export function deleteBot(id: string) {
   const bot = bots.get(id);
   if (!bot) return;
+  assertWorkspaceIdle(dmOf(id));
   for (const c of chats.all()) {
     if (c.kind === 'dm' && c.botIds[0] === id) deleteChat(c.id);
     else if (c.botIds.includes(id)) {
@@ -163,9 +220,39 @@ export function createGroup(input: { title?: string; botIds: string[]; leadBotId
   return chat;
 }
 
-export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botIds' | 'leadBotId' | 'projectId' | 'pinned' | 'maxHops'>>): Chat {
+type ChatPatch = Partial<Pick<Chat, 'title' | 'botIds' | 'leadBotId' | 'projectId' | 'pinned' | 'maxHops'>> & {
+  /** The composer's switches; null goes back to each bot's own setting. */
+  permission?: PermissionLevel | null;
+  model?: string | null;
+  effort?: Effort | null;
+};
+
+const LEVELS: PermissionLevel[] = ['auto', 'edits', 'ask', 'review', 'plan'];
+const EFFORTS: Effort[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+export function updateChat(id: string, patch: ChatPatch): Chat {
   const chat = chats.get(id);
   if (!chat) throw new HttpError(404, '对话不存在');
+  let switches = false;
+  if (patch.permission !== undefined) {
+    if (patch.permission === null) delete chat.permission;
+    else if (LEVELS.includes(patch.permission)) chat.permission = patch.permission;
+    else throw new HttpError(400, '未知的权限模式');
+    switches = true;
+  }
+  if (patch.model !== undefined) {
+    if (patch.model === null) delete chat.model;
+    else chat.model = String(patch.model).trim().slice(0, 200);
+    switches = true;
+  }
+  if (patch.effort !== undefined) {
+    if (patch.effort === null) delete chat.effort;
+    else if (EFFORTS.includes(patch.effort)) chat.effort = patch.effort;
+    else throw new HttpError(400, '未知的思考强度');
+    switches = true;
+  }
+  if (switches) applyChatSettings(chat.id);
+  if (patch.projectId !== undefined && patch.projectId !== chat.projectId) assertWorkspaceIdle(chat);
   if (patch.title !== undefined && chat.kind === 'group') chat.title = patch.title.trim() || chat.title;
   if (patch.pinned !== undefined) chat.pinned = patch.pinned;
   if (patch.maxHops !== undefined) chat.maxHops = Math.max(0, Math.min(30, Math.round(patch.maxHops)));
@@ -179,6 +266,7 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
     for (const b of removed) {
       delete chat.sessions[b];
       delete chat.cursors[b];
+      if (chat.context) delete chat.context[b];
     }
     if (!ids.includes(chat.leadBotId || '')) chat.leadBotId = ids[0];
     if (added.length) systemMessage(chat, `${added.map((b) => bots.get(b)!.name).join('、')} 加入了群聊`);
@@ -187,8 +275,11 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
   }
   if (patch.leadBotId !== undefined && chat.botIds.includes(patch.leadBotId || '')) chat.leadBotId = patch.leadBotId;
   if (patch.projectId !== undefined && patch.projectId !== chat.projectId) {
+    // The workspace belongs to the old project.
+    detachWorkspace(chat);
     chat.projectId = patch.projectId;
     chat.sessions = {};
+    chat.context = {};
     invalidateChat(chat.id);
     const p = projects.get(patch.projectId);
     systemMessage(chat, p ? `已切换到项目「${p.name}」` : '已解除项目绑定');
@@ -209,7 +300,9 @@ export function updateChat(id: string, patch: Partial<Pick<Chat, 'title' | 'botI
 export function deleteChat(id: string) {
   const chat = chats.get(id);
   if (!chat) return;
+  assertWorkspaceIdle(chat);
   forgetChat(id);
+  detachWorkspace(chat);
   messages.deleteChat(id);
   deleteTurns(id);
   for (const r of routines.all()) {
@@ -231,7 +324,7 @@ export async function initIfNeeded() {
     try {
       project = await createProject({ name: '我的第一个网站', template: 'static', folder: 'my-first-site' });
     } catch (e) {
-      console.warn('[init] 无法创建示例项目：', (e as Error).message);
+      log.warn('无法创建示例项目：', (e as Error).message);
     }
   }
   const team: Bot[] = [];
@@ -243,7 +336,7 @@ export async function initIfNeeded() {
     const group = createGroup({ title: 'Web 小队', botIds: team.map((b) => b.id), leadBotId: team[0]?.id, projectId: project?.id ?? null });
     systemMessage(
       group,
-      '欢迎来到 VibeCrew！这是你的 Web 开发小队。直接说需求，Chief 会拆解任务并 @ 队友分工；也可以 @Pixel、@Probe、@Lens 直接找人。输入 / 可以使用技能，右侧是项目的实时预览、文件和终端。',
+      '欢迎来到 Crew！这是你的 Web 开发小队。直接说需求，Chief 会拆解任务并 @ 队友分工；也可以 @Pixel、@Probe、@Lens 直接找人。输入 / 可以使用技能，右侧是项目的实时预览、文件和终端。',
       { uiOnly: true },
     );
   }

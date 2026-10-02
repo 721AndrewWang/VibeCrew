@@ -1,8 +1,11 @@
-import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import { cleanEnv } from './config';
+import { logger } from './log';
 import { getProject } from './projects';
+
+const log = logger('terminal');
 
 const require = createRequire(import.meta.url);
 
@@ -11,7 +14,7 @@ let pty: PtyModule | null = null;
 try {
   pty = require('node-pty') as PtyModule;
 } catch (e) {
-  console.warn('[terminal] node-pty 不可用，终端将使用简化模式：', (e as Error).message);
+  log.warn('node-pty 不可用，终端将使用简化模式：', (e as Error).message);
 }
 export const hasPty = !!pty;
 
@@ -36,15 +39,7 @@ function shellPath(): string {
   return process.env.SHELL || (os.platform() === 'win32' ? 'powershell.exe' : '/bin/bash');
 }
 
-export function openTerminal(
-  id: string,
-  projectId: string,
-  cols: number,
-  rows: number,
-  send: (data: string) => void,
-  onExit: (code: number | null) => void,
-  command?: string,
-): Term {
+export function openTerminal(id: string, projectId: string, cols: number, rows: number, send: (data: string) => void, onExit: (code: number | null) => void, command?: string): Term {
   const existing = terms.get(id);
   if (existing) {
     // Re-attach after a page reload: replay the scrollback.
@@ -56,7 +51,7 @@ export function openTerminal(
     return existing;
   }
   const project = getProject(projectId);
-  const env = cleanEnv({ TERM: 'xterm-256color', COLORTERM: 'truecolor', VIBECREW_TERMINAL: '1' });
+  const env = cleanEnv({ TERM: 'xterm-256color', COLORTERM: 'truecolor', CREW_TERMINAL: '1' });
   const term: Term = {
     id,
     projectId,
@@ -144,6 +139,10 @@ export function detachTerminals(send: (data: string) => void) {
 
 export function listTerminals(projectId: string) {
   return [...terms.values()].filter((t) => t.projectId === projectId).map((t) => ({ id: t.id, title: t.title, exited: t.exited }));
+}
+
+export function closeProjectTerminals(projectId: string) {
+  for (const t of [...terms.values()]) if (t.projectId === projectId) closeTerminal(t.id);
 }
 
 export function closeAllTerminals() {

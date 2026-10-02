@@ -1,26 +1,12 @@
+import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2, FolderOpen, FolderPlus, GitBranch, House, MoreHorizontal, Play, Settings, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ArrowUp,
-  Check,
-  Copy,
-  CornerDownLeft,
-  ExternalLink,
-  Folder,
-  FolderGit2,
-  FolderOpen,
-  FolderPlus,
-  House,
-  MoreHorizontal,
-  Play,
-  Settings,
-  Square,
-  Trash2,
-} from 'lucide-react';
+import { defaultAutoChallenge } from '../../../../shared/challenge';
 import type { DevServerState, Project } from '../../../../shared/types';
 import { api } from '../../api';
-import { toast, useStore } from '../../store';
+import { listProjects, openChat, toast, useStore } from '../../store';
 import { copyText, cx, shortPath } from '../../utils';
-import { confirmDialog, MenuButton, Modal } from '../ui';
+import { showWorkspaceChanges } from '../../workspace';
+import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
 
 // ---------------------------------------------------------------- shared bits
@@ -28,7 +14,7 @@ import { PageHead } from './BotsView';
 /** Project picker used by the bot editor and the chat dialogs. */
 export function ProjectSelect({ value, onChange, noneLabel = '不绑定项目' }: { value: string | null; onChange: (v: string | null) => void; noneLabel?: string }) {
   const projects = useStore((s) => s.projects);
-  const list = useMemo(() => Object.values(projects).sort((a, b) => b.updatedAt - a.updatedAt), [projects]);
+  const list = useMemo(() => listProjects(projects), [projects]);
   return (
     <select className="select" value={value || ''} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{noneLabel}</option>
@@ -63,12 +49,45 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [name, setName] = useState(project.name);
   const [devCommand, setDevCommand] = useState(project.devCommand || '');
   const [staticRoot, setStaticRoot] = useState(project.staticRoot || '');
+  const [setupCommand, setSetupCommand] = useState(project.setupCommand || '');
+  const [commitGuide, setCommitGuide] = useState(project.commitGuide || '');
+  const [noAttribution, setNoAttribution] = useState(!!project.noAttribution);
+  const [askRules, setAskRules] = useState((project.askRules || []).join('\n'));
+  const [allowedDomains, setAllowedDomains] = useState((project.allowedDomains || []).join('\n'));
+  const [requireChallenge, setRequireChallenge] = useState(!!project.requireChallenge);
+  const [auto, setAuto] = useState(project.autoChallenge || { ...defaultAutoChallenge(), enabled: false });
+  const [autoPaths, setAutoPaths] = useState(auto.paths.join('\n'));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
-      await api.updateProject(project.id, { name, devCommand, staticRoot });
+      const rules = askRules
+        .split('\n')
+        .map((r) => r.trim())
+        .filter(Boolean);
+      const domains = allowedDomains
+        .split('\n')
+        .map((d) => d.trim())
+        .filter(Boolean);
+      await api.updateProject(project.id, {
+        name,
+        devCommand,
+        staticRoot,
+        setupCommand,
+        commitGuide,
+        noAttribution,
+        askRules: rules,
+        allowedDomains: domains,
+        requireChallenge,
+        autoChallenge: {
+          ...auto,
+          paths: autoPaths
+            .split('\n')
+            .map((x) => x.trim())
+            .filter(Boolean),
+        },
+      });
       toast('项目设置已保存', undefined, 'success');
       onDone();
     } catch (e) {
@@ -94,6 +113,64 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <input className="input mono" value={staticRoot} placeholder="静态文件目录，默认项目根目录" onChange={(e) => setStaticRoot(e.target.value)} />
           <div className="hint">没有开发服务器时，预览直接托管这个目录（相对项目根目录，例如 public 或 dist）。</div>
         </div>
+        <div className="field">
+          <label>新工作区准备命令</label>
+          <input className="input mono" value={setupCommand} placeholder="例如 npm ci，或 uv sync && cd frontend && bun install" onChange={(e) => setSetupCommand(e.target.value)} />
+          <div className="hint">每开一个独立工作区都先在里面跑一遍（比如装依赖），跑完机器人才开始工作。</div>
+        </div>
+        <div className="field span-all">
+          <label>提交信息要求</label>
+          <textarea className="input" rows={2} value={commitGuide} placeholder="例如：英文，祈使句，第一行不超过 72 个字符，正文说明为什么改" onChange={(e) => setCommitGuide(e.target.value)} />
+          <div className="hint">机器人提交时照这个写；合并独立工作区时，合并说明也必须按它写，可以一键生成。</div>
+        </div>
+        <div className="field span-all">
+          <label>必须确认的操作</label>
+          <textarea className="input mono" rows={3} value={askRules} placeholder={'每行一条，例如\nBash(ssh:*)\nBash(docker compose down:*)'} onChange={(e) => setAskRules(e.target.value)} />
+          <div className="hint">在这个项目里工作的所有机器人，碰到这些操作都要先问你。写法和机器人设置里的「必须确认」一样。</div>
+        </div>
+        <div className="field span-all">
+          <label>沙盒里允许访问的域名</label>
+          <textarea className="input mono" rows={2} value={allowedDomains} placeholder={'每行一个，例如\napi.example.com\n10.0.0.5:8080'} onChange={(e) => setAllowedDomains(e.target.value)} />
+          <div className="hint">在「设置 → 沙盒」的全局列表之外，这个项目的命令还能连这些主机。</div>
+        </div>
+        <div className="field span-all">
+          <div className="setting-row">
+            <div>
+              <div className="sr-title">提交不加 AI 署名</div>
+              <div className="hint">机器人的提交和 PR 不带 Co-Authored-By 之类的署名，合并提交里也不写 Crew。</div>
+            </div>
+            <Toggle on={noAttribution} onChange={setNoAttribution} />
+          </div>
+          <div className="setting-row">
+            <div>
+              <div className="sr-title">合并前必须通过对抗审查</div>
+              <div className="hint">独立工作区合并前，Skeptic 要针对最新的提交审一次，而且一条都没推翻才能合并（/challenge）。每次大约花 $0.3～0.6。</div>
+            </div>
+            <Toggle on={requireChallenge} onChange={setRequireChallenge} />
+          </div>
+          <div className="setting-row">
+            <div>
+              <div className="sr-title">按规则自动对抗审查</div>
+              <div className="hint">
+                一串机器人的活干完、改动又碰到下面的文件或者超过行数时，自动请 Skeptic 审一次。每个请求最多两次（审、修、再审），同样的改动不审第二遍。规则是固定的，不让模型判断「有没有风险」。
+              </div>
+            </div>
+            <Toggle on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
+          </div>
+          {auto.enabled && (
+            <div className="form-grid">
+              <div className="field">
+                <label>碰到这些文件就审（每行一个）</label>
+                <textarea className="input mono" rows={5} value={autoPaths} onChange={(e) => setAutoPaths(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>或者改动至少多少行</label>
+                <input className="input num-input" type="number" min={0} step={10} value={auto.minLines} onChange={(e) => setAuto({ ...auto, minLines: Math.max(0, Number(e.target.value) || 0) })} />
+                <div className="hint">加的行和删的行加起来；0 表示不按行数。</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="row">
         <span className="spacer" />
@@ -108,7 +185,37 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   );
 }
 
-function ProjectCard({ project, chatCount }: { project: Project; chatCount: number }) {
+/** The chats working on this project in their own branch. */
+function WorkspaceList({ workspaces }: { workspaces: Project[] }) {
+  const chats = useStore((s) => s.chats);
+  if (!workspaces.length) return null;
+  return (
+    <div className="pc-workspaces">
+      <span className="muted">独立工作区：</span>
+      {workspaces.map((w) => {
+        const chat = chats[w.workspace!.chatId];
+        return (
+          <button
+            key={w.id}
+            className="branch-pill"
+            title={`${w.path}\n打开对话「${chat?.title ?? ''}」查看改动`}
+            onClick={() => {
+              if (!chat) return;
+              openChat(chat.id);
+              showWorkspaceChanges();
+            }}
+          >
+            <GitBranch size={12} />
+            <span>{w.workspace!.branch}</span>
+            {chat && <span className="muted">· {chat.title}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProjectCard({ project, chatCount, workspaces }: { project: Project; chatCount: number; workspaces: Project[] }) {
   const dev = useStore((s) => s.devServers[project.id]);
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
@@ -119,6 +226,7 @@ function ProjectCard({ project, chatCount }: { project: Project; chatCount: numb
   const isStatic = project.devDetected === null && !active;
 
   // A status change from the server means the click took effect.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: clear the pending flag when a new status arrives
   useEffect(() => setPending(false), [status]);
 
   const toggleDev = () => {
@@ -135,7 +243,7 @@ function ProjectCard({ project, chatCount }: { project: Project; chatCount: numb
   const remove = async () => {
     const ok = await confirmDialog({
       title: `从列表移除「${project.name}」？`,
-      body: '只是从 VibeCrew 移除，不会删除文件。使用这个项目的对话会解除绑定。',
+      body: `只是从 Crew 移除，不会删除文件。使用这个项目的对话会解除绑定${workspaces.length ? `，它们的 ${workspaces.length} 个独立工作区也会关闭（没合并的改动保留在各自的分支里）` : ''}。`,
       ok: '移除',
       danger: true,
     });
@@ -185,6 +293,7 @@ function ProjectCard({ project, chatCount }: { project: Project; chatCount: numb
             </span>
             <span className="muted">{chatCount ? `${chatCount} 个对话在用` : '没有对话在用'}</span>
           </div>
+          <WorkspaceList workspaces={workspaces} />
           {status === 'error' && dev?.error && <div className="pc-error">{dev.error}</div>}
         </div>
         <div className="pc-actions">
@@ -223,7 +332,16 @@ export function ProjectsView() {
   const projects = useStore((s) => s.projects);
   const chats = useStore((s) => s.chats);
   const [dialog, setDialog] = useState<null | 'create' | 'open'>(null);
-  const list = useMemo(() => Object.values(projects).sort((a, b) => b.updatedAt - a.updatedAt), [projects]);
+  const list = useMemo(() => listProjects(projects), [projects]);
+  const workspaces = useMemo(() => {
+    const m: Record<string, Project[]> = {};
+    for (const p of Object.values(projects))
+      if (p.workspace) {
+        m[p.workspace.parentId] ??= [];
+        m[p.workspace.parentId].push(p);
+      }
+    return m;
+  }, [projects]);
   const counts = useMemo(() => {
     const m: Record<string, number> = {};
     for (const c of Object.values(chats)) if (c.projectId) m[c.projectId] = (m[c.projectId] || 0) + 1;
@@ -244,7 +362,9 @@ export function ProjectsView() {
 
         {list.length === 0 ? (
           <div className="card empty">
-            <div className="big">📁</div>
+            <div className="big">
+              <Glyph emoji="📁" size={26} />
+            </div>
             <h3>还没有项目</h3>
             <div>新建一个网站，或者打开电脑上已有的项目文件夹，机器人就能在里面工作。</div>
             <div className="row">
@@ -259,7 +379,7 @@ export function ProjectsView() {
         ) : (
           <div className="stack">
             {list.map((p) => (
-              <ProjectCard key={p.id} project={p} chatCount={counts[p.id] || 0} />
+              <ProjectCard key={p.id} project={p} chatCount={counts[p.id] || 0} workspaces={workspaces[p.id] || []} />
             ))}
           </div>
         )}

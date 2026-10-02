@@ -28,6 +28,11 @@ export function fmtShort(ts: number) {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** "22:52" today, otherwise "昨天 22:52", "周一 22:52", "9月3日 22:52". */
+export function fmtWhen(ts: number) {
+  return isSameDay(ts, Date.now()) ? fmtClock(ts) : `${fmtShort(ts)} ${fmtClock(ts)}`;
+}
+
 export function fmtDay(ts: number) {
   const now = Date.now();
   if (isSameDay(ts, now)) return '今天';
@@ -36,6 +41,14 @@ export function fmtDay(ts: number) {
   const w = `周${'日一二三四五六'[d.getDay()]}`;
   if (d.getFullYear() === new Date().getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${w}`;
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/** "claude-opus-5-5" → "Opus 5.5" (a date suffix dropped); other providers' model ids stay as they are. */
+export function modelLabel(id: string | undefined): string {
+  if (!id) return '';
+  const m = id.match(/^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/i);
+  if (!m) return id;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}${m[3] ? `.${m[3]}` : ''}${m[4] ? '（1M）' : ''}`;
 }
 
 export function fmtDuration(ms: number) {
@@ -76,7 +89,9 @@ export function shortPath(p: string | undefined, root?: string) {
 }
 
 function trunc(s: unknown, n = 60) {
-  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  const t = String(s ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
@@ -128,7 +143,11 @@ export function toolInfo(name: string, input: any, root?: string): ToolInfo {
     case 'ExitPlanMode':
       return { icon: '📋', verb: '提交方案', target: '' };
     case 'mcp__crew__preview_screenshot':
-      return { icon: '📸', verb: '截图预览', target: `${input?.path || '当前页面'}${input?.device && input.device !== 'desktop' ? ` · ${input.device === 'mobile' ? '手机' : '平板'}` : ''}${input?.fullPage ? ' · 整页' : ''}` };
+      return {
+        icon: '📸',
+        verb: '截图预览',
+        target: `${input?.path || '当前页面'}${input?.device && input.device !== 'desktop' ? ` · ${input.device === 'mobile' ? '手机' : '平板'}` : ''}${input?.fullPage ? ' · 整页' : ''}`,
+      };
     case 'mcp__crew__preview_console':
       return { icon: '🩺', verb: '检查控制台', target: input?.path || '当前页面' };
     case 'mcp__crew__browser_act':
@@ -175,10 +194,10 @@ export function statusLabel(s: BotStatus | undefined): { text: string; tone: 'id
 }
 
 export const PERMISSION_INFO: Record<PermissionLevel, { label: string; icon: string; desc: string }> = {
-  auto: { label: '全自动', icon: '🚀', desc: '自主改文件、跑命令；只有「必须确认」规则里的操作会问你' },
-  edits: { label: '自动改文件', icon: '✏️', desc: '可直接修改项目文件；运行命令前先问你（白名单命令除外）' },
+  auto: { label: '全自动', icon: '🚀', desc: '直接改文件、跑命令，不再问你；只有「必须确认」里的操作会问' },
+  edits: { label: '自动改文件', icon: '✏️', desc: '直接修改项目文件；运行命令前先问你（只读命令和白名单除外）' },
   ask: { label: '每步确认', icon: '✋', desc: '每次修改和命令都要你点头（白名单除外）' },
-  review: { label: 'AI 审查员', icon: '🛡️', desc: '由 Claude Code 的 AI 审查员实时把关，高风险操作会被拦截' },
+  review: { label: '自动（AI 把关）', icon: '🛡️', desc: '像 Claude Code 的 Auto：AI 审查员判断，安全的操作直接做，高风险的拦下来' },
   plan: { label: '只读', icon: '👀', desc: '只能阅读和分析，给出方案，不改任何东西' },
 };
 

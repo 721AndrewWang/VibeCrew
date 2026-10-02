@@ -1,8 +1,9 @@
 import { Cron } from 'croner';
 import type { Chat, Routine, RoutineTrigger } from '../shared/types';
 import { bus, internal } from './bus';
-import { bots, chats, routines, uid } from './store';
 import { isChatBusy, projectBusy, runInChat } from './orchestrator';
+import { chatProjectId } from './projects';
+import { bots, chats, routines, uid } from './store';
 import { ensureWatch } from './watcher';
 
 function cronFor(t: RoutineTrigger): string | null {
@@ -117,8 +118,16 @@ export function deleteRoutine(id: string) {
 
 function watchFor(r: Routine) {
   if (r.trigger.type !== 'file_change' && r.trigger.type !== 'git_commit') return;
-  const pid = routineChat(r)?.projectId;
-  if (pid) ensureWatch(pid);
+  const chat = routineChat(r);
+  if (chat?.projectId) ensureWatch(chat.projectId);
+  const active = chatProjectId(chat);
+  if (active && active !== chat?.projectId) ensureWatch(active);
+}
+
+/** Your edits in the chat's project folder, or in its isolated workspace. */
+function watchesProject(r: Routine, projectId: string): boolean {
+  const chat = routineChat(r);
+  return !!chat && (chat.projectId === projectId || chatProjectId(chat) === projectId);
 }
 
 const debounce = new Map<string, NodeJS.Timeout>();
@@ -145,7 +154,7 @@ export function startRoutines() {
     if (projectBusy(projectId)) return;
     for (const r of routines.all()) {
       if (!r.enabled || r.trigger.type !== 'file_change') continue;
-      if (routineChat(r)?.projectId !== projectId) continue;
+      if (!watchesProject(r, projectId)) continue;
       const wait = Math.max(2, r.trigger.debounceSec || 10) * 1000;
       clearTimeout(debounce.get(r.id));
       debounce.set(
@@ -170,7 +179,7 @@ export function startRoutines() {
     if (ev.t !== 'msg' || ev.msg.role !== 'bot' || ev.msg.trigger?.type !== 'routine') return;
     if (ev.msg.status !== 'done' && ev.msg.status !== 'error' && ev.msg.status !== 'stopped') return;
     const r = routines.get(ev.msg.trigger.routineId);
-    if (!r || r.lastStatus !== 'running') return;
+    if (r?.lastStatus !== 'running') return;
     r.lastStatus = ev.msg.status === 'done' ? 'ok' : 'error';
     emit(r);
   });

@@ -3,26 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
-    <title>VibeCrew</title>
+    <title>Crew</title>
     <style>
       :root {
-        --bg: #f4f4f7;
-        --fg: #1c1c1f;
-        --muted: #8b8b94;
+        --bg: #f7f7f7;
+        --fg: #111111;
+        --muted: #8c8c8c;
         --card: #ffffff;
-        --border: #e2e2e8;
-        --accent: #0a84ff;
-        --red: #e5383b;
+        --border: #e6e6e6;
+        --accent: #171717;
+        --on-accent: #ffffff;
+        --red: #c43c3c;
         color-scheme: light dark;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #111114;
-          --fg: #f2f2f6;
-          --muted: #85858f;
-          --card: #1c1c21;
-          --border: #2b2b32;
-          --red: #ff5a52;
+          --bg: #0a0a0a;
+          --fg: #ededed;
+          --muted: #6b6b6b;
+          --card: #151515;
+          --border: #262626;
+          --red: #e06464;
+          --accent: #f2f2f2;
+          --on-accent: #0a0a0a;
         }
       }
       html,
@@ -105,7 +108,7 @@
       button.primary {
         background: var(--accent);
         border-color: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
       }
       .error h1 {
         color: var(--red);
@@ -117,8 +120,8 @@
   </head>
   <body>
     <main id="root">
-      <img src="icons/128x128.png" alt="" />
-      <h1 id="title">正在启动 VibeCrew…</h1>
+      <img id="logo" alt="" />
+      <h1 id="title">正在启动 Crew…</h1>
       <p id="hint">机器人小队马上就位</p>
       <div class="spinner" id="spinner"></div>
       <pre id="detail" hidden></pre>
@@ -130,6 +133,9 @@
     <script>
       const q = new URLSearchParams(location.search);
       const $ = (id) => document.getElementById(id);
+      // The logo chosen in Settings → 外观 (main.cjs passes it; its icons are in logos/).
+      const logo = q.get('logo');
+      $('logo').src = logo && /^[a-z]+$/.test(logo) ? `logos/${logo}/128x128.png` : 'icons/128x128.png';
       const msg = q.get('msg');
       if (msg) $('title').textContent = msg;
       if (q.get('state') === 'error') {
@@ -143,14 +149,14 @@
         }
         $('actions').hidden = false;
       }
-      const bridge = window.vibecrewDesktop;
+      const bridge = window.crewDesktop;
       $('retry').onclick = () => {
         $('actions').hidden = true;
         $('spinner').hidden = false;
         $('title').textContent = '正在重新启动…';
-        bridge && bridge.retry();
+        bridge?.retry();
       };
-      $('logs').onclick = () => bridge && bridge.openLogs();
+      $('logs').onclick = () => bridge?.openLogs();
     </script>
   </body>
 </html>

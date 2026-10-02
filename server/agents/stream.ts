@@ -36,13 +36,14 @@ export class TurnStream {
   private blockToPart = new Map<number, number>();
   private jsonBuf = new Map<number, string>();
   private streamedIds = new Set<string>();
-  private inStreamedMessage = false;
   errorCode: string | null = null;
   stopped = false;
 
   constructor(
     readonly msg: ChatMessage,
     private onActivity: (state: 'thinking' | 'tool', detail?: string) => void,
+    /** Called after every change to the message, so progress can be saved while the turn runs. */
+    private onProgress: () => void = () => {},
   ) {
     msg.parts = msg.parts || [];
   }
@@ -55,12 +56,14 @@ export class TurnStream {
     this.parts.push(part);
     const index = this.parts.length - 1;
     bus.emit({ t: 'msg_part', chatId: this.msg.chatId, id: this.msg.id, index, part });
+    this.onProgress();
     return index;
   }
 
   updatePart(part: MessagePart) {
     const index = this.parts.indexOf(part);
     if (index >= 0) bus.emit({ t: 'msg_part', chatId: this.msg.chatId, id: this.msg.id, index, part });
+    this.onProgress();
   }
 
   private appendText(index: number, delta: string) {
@@ -68,6 +71,7 @@ export class TurnStream {
     if (!p || (p.type !== 'text' && p.type !== 'thinking')) return;
     p.text += delta;
     bus.emit({ t: 'msg_text', chatId: this.msg.chatId, id: this.msg.id, index, delta });
+    this.onProgress();
   }
 
   private toolPart(id: string): ToolPart | undefined {
@@ -83,7 +87,6 @@ export class TurnStream {
           this.blockToPart.clear();
           this.jsonBuf.clear();
           if (ev.message?.id) this.streamedIds.add(ev.message.id);
-          this.inStreamedMessage = true;
           this.onActivity('thinking');
         } else if (ev.type === 'content_block_start') {
           const b = ev.content_block;
@@ -112,8 +115,6 @@ export class TurnStream {
             }
             this.updatePart(p);
           }
-        } else if (ev.type === 'message_stop') {
-          this.inStreamedMessage = false;
         }
         return;
       }
@@ -181,7 +182,7 @@ export class TurnStream {
   }
 
   finish(result: SDKResultMessage) {
-    this.msg.meta = { costUsd: result.total_cost_usd, durationMs: result.duration_ms, numTurns: result.num_turns };
+    this.msg.meta = { costUsd: result.total_cost_usd, durationMs: result.duration_ms, numTurns: result.num_turns, model: mainModel(result.modelUsage) };
     const isError = result.is_error || result.subtype !== 'success';
     if (this.stopped) {
       this.msg.status = 'stopped';
@@ -190,10 +191,7 @@ export class TurnStream {
       this.msg.status = 'error';
       const resultText = result.subtype === 'success' ? (result as any).result : '';
       this.msg.error =
-        (this.errorCode && ERROR_TEXT[this.errorCode]) ||
-        (result.subtype === 'error_max_turns' ? '达到了最大轮数限制。' : '') ||
-        (typeof resultText === 'string' && resultText) ||
-        '执行出错。';
+        (this.errorCode && ERROR_TEXT[this.errorCode]) || (result.subtype === 'error_max_turns' ? '达到了最大轮数限制。' : '') || (typeof resultText === 'string' && resultText) || '执行出错。';
       this.closeOpenTools('error');
     } else {
       this.msg.status = 'done';
@@ -206,9 +204,7 @@ export class TurnStream {
     if (this.stopped) this.msg.status = 'stopped';
     else {
       this.msg.status = 'error';
-      this.msg.error = /ENOENT|spawn/.test(text)
-        ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 VIBECREW_CLAUDE_PATH。`
-        : text;
+      this.msg.error = /ENOENT|spawn/.test(text) ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 CREW_CLAUDE_PATH。` : text;
     }
     this.closeOpenTools('error');
   }
@@ -221,4 +217,11 @@ export class TurnStream {
       .filter(Boolean)
       .join('\n\n');
   }
+}
+
+/** The model that produced most of a turn's output. */
+function mainModel(usage: Record<string, { outputTokens?: number }> | undefined): string | undefined {
+  const entries = Object.entries(usage || {});
+  if (!entries.length) return undefined;
+  return entries.reduce((a, b) => ((b[1].outputTokens || 0) > (a[1].outputTokens || 0) ? b : a))[0];
 }

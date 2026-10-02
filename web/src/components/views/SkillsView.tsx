@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
 import { ArrowLeft, Info, Play, Plus, Save, Search, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Skill } from '../../../../shared/types';
 import { api } from '../../api';
 import { openChat, setDraft, toast, useStore } from '../../store';
 import { cx } from '../../utils';
-import { confirmDialog } from '../ui';
+import { confirmDialog, Glyph } from '../ui';
 import { PageHead } from './BotsView';
 
 const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -107,7 +107,9 @@ function SkillEditor({ skill, onSaved, onDeleted, onBack }: { skill: Skill | nul
         <button className="icon-btn split-back" onClick={onBack} aria-label="返回列表">
           <ArrowLeft size={18} />
         </button>
-        <span className="se-icon">{f.icon || '⚡'}</span>
+        <span className="se-icon">
+          <Glyph emoji={f.icon || '⚡'} size={22} />
+        </span>
         <div className="se-title">
           <div className="se-cmd mono">/{f.name || '新技能'}</div>
           <div className="muted">{isNew ? '新建技能' : skill.builtin ? '内置技能' : '自定义技能'}</div>
@@ -217,7 +219,9 @@ export function SkillsView() {
             <div className="card list-card">
               {filtered.map((s) => (
                 <button key={s.name} className={cx('skill-item', selected === s.name && 'on')} onClick={() => setSelected(s.name)}>
-                  <span className="si-icon">{s.icon}</span>
+                  <span className="si-icon">
+                    <Glyph emoji={s.icon} size={17} />
+                  </span>
                   <div className="si-text">
                     <div className="si-cmd mono">/{s.name}</div>
                     <div className="si-title">{s.title}</div>
@@ -227,7 +231,9 @@ export function SkillsView() {
               ))}
               {selected === NEW && (
                 <button className="skill-item on">
-                  <span className="si-icon">✨</span>
+                  <span className="si-icon">
+                    <Glyph emoji="✨" size={17} />
+                  </span>
                   <div className="si-text">
                     <div className="si-cmd mono">新技能</div>
                     <div className="si-title">未保存</div>
@@ -236,21 +242,19 @@ export function SkillsView() {
               )}
               {!filtered.length && selected !== NEW && <div className="empty">没有匹配的技能</div>}
             </div>
-            <div className="tip-card">💡 在浏览器预览里点 ⏺ 录制操作，可以一键把演示变成技能（类似 Grokbot 的 Teach a task）</div>
+            <div className="tip-card">
+              <Glyph emoji="💡" size={13} /> 在浏览器预览里点「录制演示」，可以一键把演示变成技能（类似 Grokbot 的 Teach a task）
+            </div>
           </div>
 
           <div className="split-main">
             {showEditor ? (
-              <SkillEditor
-                key={selected!}
-                skill={current}
-                onSaved={(name) => setSelected(name)}
-                onDeleted={() => setSelected(null)}
-                onBack={() => setSelected(null)}
-              />
+              <SkillEditor key={selected!} skill={current} onSaved={(name) => setSelected(name)} onDeleted={() => setSelected(null)} onBack={() => setSelected(null)} />
             ) : (
               <div className="card empty">
-                <div className="big">⚡</div>
+                <div className="big">
+                  <Glyph emoji="⚡" size={26} />
+                </div>
                 <h3>选择一个技能</h3>
                 <div>在左侧选择技能查看和修改，或者新建一个。</div>
                 <button className="btn primary" onClick={() => setSelected(NEW)}>

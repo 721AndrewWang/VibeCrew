@@ -45,7 +45,7 @@ export function hostAllowed(host: string | undefined): boolean {
 }
 
 function tokenOf(req: http.IncomingMessage): string | null {
-  const header = req.headers['x-vibecrew-token'];
+  const header = req.headers['x-crew-token'];
   if (typeof header === 'string' && header) return header;
   const c = parseCookies(req.headers.cookie)[COOKIE];
   if (c) return c;
@@ -84,7 +84,7 @@ function trustedLocal(req: http.IncomingMessage): boolean {
 }
 
 /**
- * Requests from this machine to VibeCrew's own origin are trusted; everything else
+ * Requests from this machine to Crew's own origin are trusted; everything else
  * (other devices on the LAN) needs the access token, handed out once via a ?token= link.
  */
 export function guard(req: Request, res: Response, next: NextFunction) {
@@ -117,7 +117,7 @@ export function guard(req: Request, res: Response, next: NextFunction) {
     .status(401)
     .type('html')
     .send(
-      '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>VibeCrew</title><body style="font-family:system-ui;padding:40px;text-align:center"><h2>需要访问链接</h2><p>请在电脑上打开 VibeCrew 的「设置 → 手机访问」，扫描二维码或使用其中的链接。</p></body>',
+      '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crew</title><body style="font-family:system-ui;padding:40px;text-align:center"><h2>需要访问链接</h2><p>请在电脑上打开 Crew 的「设置 → 手机访问」，扫描二维码或使用其中的链接。</p></body>',
     );
 }
 

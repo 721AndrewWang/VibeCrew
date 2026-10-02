@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import type {
   Attachment,
   AuthStatus,
@@ -13,12 +14,15 @@ import type {
   PluginDef,
   PreviewInfo,
   Project,
+  ProviderPreset,
   PublicSettings,
   RecordedStep,
   Routine,
+  SandboxStatus,
   ServerEvent,
   Skill,
   TurnSummary,
+  UsageSummary,
 } from '../../shared/types';
 import { api } from './api';
 import { desktop } from './desktop';
@@ -67,8 +71,11 @@ export interface AppState {
   version: string;
   settings: PublicSettings;
   auth: AuthStatus;
-  features: { pty: boolean; browser: boolean };
+  features: { pty: boolean; browser: boolean; sandbox: SandboxStatus };
+  /** botId → spend today and this month. */
+  usage: Record<string, UsageSummary>;
   models: { id: string; label: string }[];
+  providers: ProviderPreset[];
   templates: BotTemplate[];
   plugins: PluginDef[];
   lanUrl?: string;
@@ -98,10 +105,28 @@ export interface AppState {
   preview: Record<string, PreviewUi>;
   toasts: Toast[];
   mobilePane: 'list' | 'chat' | 'computer';
-  modal: null | { kind: 'newGroup' } | { kind: 'newBot' } | { kind: 'botEditor'; botId: string } | { kind: 'newProject' } | { kind: 'chatSettings'; chatId: string } | { kind: 'saveRecording'; projectId: string };
+  modal:
+    | null
+    | { kind: 'newGroup' }
+    | { kind: 'newBot' }
+    | { kind: 'botEditor'; botId: string }
+    | { kind: 'newProject' }
+    | { kind: 'chatSettings'; chatId: string }
+    | { kind: 'saveRecording'; projectId: string }
+    | { kind: 'trace'; chatId: string; msgId: string };
 }
 
 const LS_UI = 'vc-ui';
+
+/** The logo last seen (App.tsx keeps it), so the boot screen shows it before the settings arrive. */
+function cachedLogo(): LogoId {
+  try {
+    const v = localStorage.getItem('vc-logo');
+    return isLogoId(v) ? v : DEFAULT_LOGO;
+  } catch {
+    return DEFAULT_LOGO;
+  }
+}
 
 function loadUi(): Partial<AppState> {
   try {
@@ -116,10 +141,29 @@ export const useStore = create<AppState>(() => ({
   booted: false,
   connected: false,
   version: '',
-  settings: { defaultModel: '', authMode: 'claude-code', hasApiKey: false, baseUrl: '', lanEnabled: false, port: 4321, projectsRoot: '', defaultPermission: 'edits', maxHops: 8 },
+  settings: {
+    defaultModel: '',
+    authMode: 'claude-code',
+    hasApiKey: false,
+    baseUrl: '',
+    provider: { preset: '', baseUrl: '', model: '', fastModel: '' },
+    hasProviderToken: false,
+    lanEnabled: false,
+    port: 4321,
+    projectsRoot: '',
+    defaultPermission: 'edits',
+    maxHops: 8,
+    logo: cachedLogo(),
+    denyRules: [],
+    sandbox: { enabled: false, allowedDomains: [] },
+    routing: { mode: 'off' },
+    rotateAtTokens: 60_000,
+  },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
-  features: { pty: false, browser: false },
+  features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },
+  usage: {},
   models: [],
+  providers: [],
   templates: [],
   plugins: [],
   bots: {},
@@ -181,7 +225,9 @@ export async function boot() {
       settings: b.settings,
       auth: b.auth,
       features: b.features,
+      usage: b.usage || {},
       models: b.models,
+      providers: b.providers || [],
       templates: b.templates,
       plugins: b.plugins,
       lanUrl: b.lanUrl,
@@ -198,7 +244,10 @@ export async function boot() {
       msgs: {},
       mobilePane: cur.booted ? cur.mobilePane : active && window.innerWidth > 760 ? 'chat' : 'list',
     });
-    if (active) void loadMessages(active);
+    if (active) {
+      if (location.hash !== `#/chat/${active}`) history.replaceState(null, '', `#/chat/${active}`);
+      void loadMessages(active);
+    }
   } catch (e) {
     set({ bootError: (e as Error).message });
   }
@@ -283,6 +332,9 @@ export function applyEvent(ev: ServerEvent) {
       if (ev.msg.chatId === s.activeChatId && ev.msg.role === 'bot' && ev.msg.status !== 'streaming' && !document.hidden) void api.read(ev.msg.chatId).catch(() => {});
       break;
     }
+    case 'usage':
+      set({ usage: ev.usage });
+      break;
     case 'msg_deleted': {
       const st = s.msgs[ev.chatId];
       if (st) set({ msgs: { ...s.msgs, [ev.chatId]: { ...st, list: st.list.filter((m) => m.id !== ev.id) } } });
@@ -384,13 +436,24 @@ export function setView(view: View) {
   set({ view, mobilePane: view === 'chat' ? get().mobilePane : 'chat' });
 }
 
-export function openChat(chatId: string) {
+export function openChat(chatId: string, fromAddress = false) {
   const c = get().chats[chatId];
   set({ view: 'chat', activeChatId: chatId, mobilePane: 'chat' });
-  history.replaceState(null, '', `#/chat/${chatId}`);
+  // Each chat gets its own history entry, so back and forward move between chats.
+  const hash = `#/chat/${chatId}`;
+  if (!fromAddress && location.hash !== hash) history.pushState(null, '', hash);
   void loadMessages(chatId);
   if (c?.unread) void api.read(chatId).catch(() => {});
 }
+
+/** Follows the address: back/forward, links to `#/chat/<id>`, or an edited URL. */
+function followAddress() {
+  const id = location.hash.match(/^#\/chat\/(.+)$/)?.[1];
+  if (!id || !get().booted || !get().chats[id]) return;
+  if (id !== get().activeChatId || get().view !== 'chat') openChat(id, true);
+}
+window.addEventListener('hashchange', followAddress);
+window.addEventListener('popstate', followAddress);
 
 export async function loadMessages(chatId: string, older = false) {
   const st = get().msgs[chatId];
@@ -492,11 +555,31 @@ export function closeModal() {
   set({ modal: null });
 }
 
-/** The chat whose project the computer pane shows. */
+/** The project a chat's bots work in: its isolated workspace when it has one, otherwise its project. */
+export function chatProjectId(chat: Chat | null | undefined, projects: Record<string, Project> = get().projects): string | null {
+  if (!chat) return null;
+  if (chat.workspaceId && projects[chat.workspaceId]) return chat.workspaceId;
+  return chat.projectId;
+}
+
+export function useChatProject(chat: Chat | null | undefined): Project | null {
+  return useStore((s) => {
+    const id = chatProjectId(chat, s.projects);
+    return id ? (s.projects[id] ?? null) : null;
+  });
+}
+
+/** The user's projects, without the chats' isolated workspaces. */
+export function listProjects(projects: Record<string, Project>): Project[] {
+  return Object.values(projects)
+    .filter((p) => !p.workspace)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** The project (or workspace) the computer pane of the open chat shows. */
 export function activeProjectId(): string | null {
   const s = get();
-  const c = s.activeChatId ? s.chats[s.activeChatId] : null;
-  return c?.projectId ?? null;
+  return chatProjectId(s.activeChatId ? s.chats[s.activeChatId] : null, s.projects);
 }
 
 export function dmOf(botId: string): Chat | undefined {

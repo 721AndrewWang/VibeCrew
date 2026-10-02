@@ -1,11 +1,11 @@
 {
-  "name": "VibeCrew",
-  "short_name": "VibeCrew",
+  "name": "Crew",
+  "short_name": "Crew",
   "description": "本地运行的 Web 开发 AI 机器人小队",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f5f7",
-  "theme_color": "#5e5ce6",
+  "background_color": "#f7f7f7",
+  "theme_color": "#111111",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },

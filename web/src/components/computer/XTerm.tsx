@@ -1,26 +1,33 @@
-import { useEffect, useRef } from 'react';
-import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { type ITheme, Terminal } from '@xterm/xterm';
+import { useEffect, useRef } from 'react';
 import { onTerminal, send } from '../../socket';
 import { useDarkMode } from './theme';
 
+// Neutral greys, matching the app's black / white / grey palette (styles/base.css).
 const DARK: ITheme = {
-  background: '#141418',
-  foreground: '#e6e6eb',
-  cursor: '#e6e6eb',
-  selectionBackground: 'rgba(10,132,255,0.35)',
-  black: '#1c1c21',
-  brightBlack: '#6b6b76',
+  background: '#0c0c0c',
+  foreground: '#e5e5e5',
+  cursor: '#e5e5e5',
+  selectionBackground: 'rgba(255,255,255,0.2)',
+  black: '#1a1a1a',
+  brightBlack: '#6b6b6b',
+  blue: '#6ea8ff',
+  brightBlue: '#94c0ff',
+  cyan: '#4fd1e8',
+  brightCyan: '#7fe0f0',
 };
 
 const LIGHT: ITheme = {
-  background: '#fbfbfd',
-  foreground: '#1c1c1f',
-  cursor: '#1c1c1f',
-  selectionBackground: 'rgba(10,132,255,0.25)',
-  black: '#1c1c1f',
-  white: '#8b8b94',
-  brightWhite: '#6b6b76',
+  background: '#f6f6f6',
+  foreground: '#111111',
+  cursor: '#111111',
+  selectionBackground: 'rgba(0,0,0,0.15)',
+  black: '#111111',
+  white: '#8c8c8c',
+  brightWhite: '#6b6b6b',
+  blue: '#2f6ff0',
+  brightBlue: '#1f55c9',
   yellow: '#b26b00',
   brightYellow: '#9a5b00',
   green: '#1f8a3a',
@@ -43,7 +50,14 @@ function makeTerm(dark: boolean, readOnly: boolean) {
   });
 }
 
-function useFit(host: React.RefObject<HTMLDivElement | null>, term: React.RefObject<Terminal | null>, fit: React.RefObject<FitAddon | null>, active: boolean, onResize?: (cols: number, rows: number) => void) {
+function useFit(
+  host: React.RefObject<HTMLDivElement | null>,
+  term: React.RefObject<Terminal | null>,
+  fit: React.RefObject<FitAddon | null>,
+  active: boolean,
+  onResize?: (cols: number, rows: number) => void,
+) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fit again when the tab becomes visible
   useEffect(() => {
     const el = host.current;
     if (!el) return;
@@ -73,6 +87,7 @@ export function LiveTerminal({ id, projectId, command, active }: { id: string; p
   const fit = useRef<FitAddon | null>(null);
   const dark = useDarkMode();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one terminal per session id; the theme is applied separately
   useEffect(() => {
     const t = makeTerm(dark, false);
     const f = new FitAddon();
@@ -97,7 +112,6 @@ export function LiveTerminal({ id, projectId, command, active }: { id: string; p
       t.dispose();
       term.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
@@ -121,6 +135,7 @@ export function LogTerminal({ content, active }: { content: string; active: bool
   const written = useRef(0);
   const dark = useDarkMode();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: created once; the theme is applied separately
   useEffect(() => {
     const t = makeTerm(dark, true);
     const f = new FitAddon();
@@ -133,7 +148,6 @@ export function LogTerminal({ content, active }: { content: string; active: bool
       t.dispose();
       term.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

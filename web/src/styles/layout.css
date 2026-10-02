@@ -4,7 +4,7 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  background: var(--sidebar);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   min-height: 0;
 }
@@ -26,9 +26,18 @@
   flex: 1;
 }
 
-.brand img {
+.brand img,
+.brand .logo {
   width: 26px;
   height: 26px;
+  filter: drop-shadow(0 2px 6px var(--glow));
+}
+
+.brand span {
+  background: linear-gradient(120deg, var(--text) 0%, var(--text) 35%, var(--accent) 75%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .sb-search {
@@ -39,8 +48,17 @@
   padding: 0 10px;
   height: 32px;
   border-radius: var(--radius-sm);
-  background: var(--bg-active);
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-elev) 75%, transparent);
   color: var(--text-3);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+.sb-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .sb-search input {
@@ -74,20 +92,31 @@
   background: var(--bg-hover);
 }
 
+/* The open chat: a soft tint of the accent with a gradient bar, not a solid block. */
 .chat-item.active {
-  background: var(--accent);
-  color: #fff;
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg-elev));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent),
+    var(--shadow-1);
 }
 
-.chat-item.active .ci-time,
-.chat-item.active .ci-preview,
-.chat-item.active .ci-preview b,
-.chat-item.active .ci-status {
-  color: rgba(255, 255, 255, 0.85) !important;
+.chat-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-grad);
+}
+
+.chat-item.active .ci-title {
+  color: var(--accent-text);
 }
 
 .chat-item.active .avatar .status {
-  border-color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 12%, var(--bg-elev));
 }
 
 .ci-main {
@@ -159,16 +188,21 @@
   font-weight: 600;
 }
 
+.ci-status .wait-ic {
+  flex: none;
+}
+
 .ci-unread {
   flex: none;
   min-width: 19px;
   height: 19px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-grad);
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 700;
+  box-shadow: 0 2px 6px var(--glow);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -237,6 +271,7 @@
 
 .sb-nav-item.on {
   color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .nav-dot {
@@ -254,6 +289,13 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.page-head h1 {
+  background: linear-gradient(120deg, var(--text) 55%, var(--accent-text));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .page-inner {

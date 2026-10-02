@@ -6,7 +6,10 @@ const WEB_TOOLS = new Set(['WebFetch', 'WebSearch']);
 /** Tools without side effects; Claude Code normally runs them without asking. */
 const READ_ONLY = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'TodoWrite', 'Task', 'Agent', 'BashOutput', 'TaskOutput', 'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool']);
 
-export type Decision = { behavior: 'allow' } | { behavior: 'ask' } | { behavior: 'deny'; message: string };
+/** The outcome and, in words the user sees, what settled it. */
+export type Decision = { behavior: 'allow'; because: string } | { behavior: 'ask'; because: string } | { behavior: 'deny'; message: string; because: string };
+
+export const LEVEL_LABEL: Record<PermissionLevel, string> = { auto: '全自动', edits: '自动改文件', ask: '每步确认', review: '自动（AI 把关）', plan: '只读' };
 
 function parseRule(rule: string): { tool: string; spec?: string } {
   const m = rule.trim().match(/^([^()]+?)(?:\((.*)\))?$/);
@@ -21,7 +24,7 @@ function wildcard(spec: string): RegExp {
   return new RegExp(`^${s}$`, 's');
 }
 
-function glob(spec: string): RegExp {
+export function glob(spec: string): RegExp {
   let s = '';
   for (let i = 0; i < spec.length; i++) {
     const c = spec[i];
@@ -105,23 +108,43 @@ function matchOne(rule: string, toolName: string, input: any, cwd: string, segme
 }
 
 /** True when the rules cover the whole action (every part of a compound shell command). */
+/** Commands that only read or print, and cannot write files themselves. */
+const HELPERS = new Set(['cd', 'pwd', 'true', 'false', 'echo', 'printf', 'head', 'tail', 'wc', 'cut', 'tr', 'nl', 'cat', 'basename', 'dirname', 'date', 'column', 'grep', 'ls']);
+
+/**
+ * A part of a command that needs no rule: a helper above, without command substitution or output
+ * written to a file (2>&1 and /dev/null are fine).
+ */
+export function harmless(seg: string): boolean {
+  const s = seg.trim().replace(/\s*(\d?>&\d|&?\d?>{1,2}\s*\/dev\/null)/g, '');
+  if (!s || /[`>]|\$\(/.test(s)) return false;
+  return HELPERS.has(s.split(/\s+/)[0]);
+}
+
 export function rulesAllow(rules: string[], toolName: string, input: any, cwd: string): boolean {
   if (!rules.length) return false;
   if (toolName === 'Bash') {
-    const segs = splitCommand(String(input?.command || ''));
-    return segs.length > 0 && segs.every((seg) => rules.some((r) => matchOne(r, toolName, input, cwd, seg)));
+    const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+    // `cd dir; git log | head`: only git log needs a rule.
+    return segs.length > 0 && segs.every((seg) => harmless(seg) || rules.some((r) => matchOne(r, toolName, input, cwd, seg)));
   }
   return rules.some((r) => matchOne(r, toolName, input, cwd));
 }
 
-/** True when any rule matches any part of the action. */
-export function rulesTouch(rules: string[], toolName: string, input: any, cwd: string): boolean {
-  if (!rules.length) return false;
+/** The first rule that matches any part of the action, or null. */
+export function matchingRule(rules: string[], toolName: string, input: any, cwd: string): string | null {
+  if (!rules.length) return null;
   if (toolName === 'Bash') {
     const segs = splitCommand(String(input?.command || ''));
-    return segs.some((seg) => rules.some((r) => matchOne(r, toolName, input, cwd, seg)));
+    for (const seg of segs) for (const r of rules) if (matchOne(r, toolName, input, cwd, seg)) return r;
+    return null;
   }
-  return rules.some((r) => matchOne(r, toolName, input, cwd));
+  return rules.find((r) => matchOne(r, toolName, input, cwd)) ?? null;
+}
+
+/** True when any rule matches any part of the action. */
+export function rulesTouch(rules: string[], toolName: string, input: any, cwd: string): boolean {
+  return matchingRule(rules, toolName, input, cwd) !== null;
 }
 
 export function insideDir(dir: string, p: string | undefined): boolean {
@@ -132,35 +155,59 @@ export function insideDir(dir: string, p: string | undefined): boolean {
 }
 
 /**
- * VibeCrew's approval gate. Claude Code has already applied the bot's allow/ask rules
+ * Crew's approval gate. Claude Code has already applied the bot's allow/ask rules
  * (passed as settings); this sees whatever it would have prompted for.
+ * `projectRules` are the project's own must-ask rules, named apart from the bot's.
  */
-export function decide(
-  bot: Bot,
-  level: PermissionLevel,
-  toolName: string,
-  input: any,
-  cwd: string,
-  opts: { matchedAskRule?: unknown },
-): Decision {
-  if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow' };
-  if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow' };
+export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown; projectRules?: string[] }): Decision {
+  const mode = `权限是「${LEVEL_LABEL[level]}」`;
+  if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow', because: 'Crew 自己的工具' };
+  if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow', because: '只读操作' };
   if (toolName === 'ExitPlanMode' && level === 'plan') {
-    return { behavior: 'deny', message: '你是只读角色，不能执行修改。请直接在回复中给出方案或结论，由用户或队友来实施。' };
+    return { behavior: 'deny', message: '你是只读角色，不能执行修改。请直接在回复中给出方案或结论，由用户或队友来实施。', because: `${mode}，不能开始修改` };
   }
-  const askRule = !!opts.matchedAskRule || rulesTouch(bot.askRules, toolName, input, cwd);
-  if (askRule) return { behavior: 'ask' };
+  // A role's lane: edits outside it are refused, so the work goes to the teammate whose lane it is.
+  if (
+    EDIT_TOOLS.has(toolName) &&
+    bot.editScope?.length &&
+    !rulesAllow(
+      bot.editScope.map((g) => `Edit(${g})`),
+      toolName,
+      input,
+      cwd,
+    )
+  ) {
+    const scope = bot.editScope.join('、');
+    return {
+      behavior: 'deny',
+      message: `这个文件不在你负责的范围内（你只能修改：${scope}）。不要用命令行绕过去改它；请 @ 负责它的队友来改，或者让用户在你的设置里调整「只能修改的路径」。`,
+      because: `角色范围只包括 ${scope}`,
+    };
+  }
+  const botRule = matchingRule(bot.askRules, toolName, input, cwd);
+  if (botRule) return { behavior: 'ask', because: `机器人的「必须确认」规则 ${botRule}` };
+  const projectRule = opts.projectRules?.length ? matchingRule(opts.projectRules, toolName, input, cwd) : null;
+  if (projectRule) return { behavior: 'ask', because: `项目的「必须确认」规则 ${projectRule}` };
+  if (opts.matchedAskRule) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${String(opts.matchedAskRule)}` };
+  // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
+  if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
+    const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+    if (segs.length && segs.every(harmless)) return { behavior: 'allow', because: `${mode}，这条命令只读取和打印` };
+  }
   // Rules added with "always allow" during this session.
-  if (rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow' };
+  const allowRule = matchingRule(bot.allowRules, toolName, input, cwd);
+  if (allowRule && rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow', because: `「总是允许」规则 ${allowRule}` };
   switch (level) {
     case 'auto':
-      return { behavior: 'allow' };
+      return { behavior: 'allow', because: mode };
     case 'edits':
-      if (EDIT_TOOLS.has(toolName)) return insideDir(cwd, filePathOf(input)) ? { behavior: 'allow' } : { behavior: 'ask' };
-      if (WEB_TOOLS.has(toolName)) return { behavior: 'allow' };
-      return { behavior: 'ask' };
+      if (EDIT_TOOLS.has(toolName)) {
+        return insideDir(cwd, filePathOf(input)) ? { behavior: 'allow', because: `${mode}，文件在项目里` } : { behavior: 'ask', because: `${mode}，但这个文件在项目外` };
+      }
+      if (WEB_TOOLS.has(toolName)) return { behavior: 'allow', because: `${mode}，联网查资料不改东西` };
+      return allowRule ? { behavior: 'ask', because: `${mode}；「总是允许」规则 ${allowRule} 只覆盖了命令的一部分` } : { behavior: 'ask', because: `${mode}，运行命令要先问` };
     default:
-      return { behavior: 'ask' };
+      return { behavior: 'ask', because: allowRule ? `${mode}；「总是允许」规则 ${allowRule} 只覆盖了命令的一部分` : mode };
   }
 }
 
@@ -189,9 +236,22 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
     case 'Bash':
       return { title: input?.description ? `运行命令：${short(input.description, 60)}` : '运行命令', detail: String(input?.command || '') };
     case 'Write':
-      return { title: `写入文件 ${rel(input?.file_path)}`, detail: String(input?.content || '').split('\n').slice(0, 40).join('\n') };
+      return {
+        title: `写入文件 ${rel(input?.file_path)}`,
+        detail: String(input?.content || '')
+          .split('\n')
+          .slice(0, 40)
+          .join('\n'),
+      };
     case 'Edit':
-      return { title: `修改文件 ${rel(input?.file_path)}`, detail: `- ${String(input?.old_string || '').split('\n').join('\n- ')}\n+ ${String(input?.new_string || '').split('\n').join('\n+ ')}` };
+      return {
+        title: `修改文件 ${rel(input?.file_path)}`,
+        detail: `- ${String(input?.old_string || '')
+          .split('\n')
+          .join('\n- ')}\n+ ${String(input?.new_string || '')
+          .split('\n')
+          .join('\n+ ')}`,
+      };
     case 'MultiEdit':
       return { title: `修改文件 ${rel(input?.file_path)}（${input?.edits?.length || 0} 处）` };
     case 'NotebookEdit':
@@ -212,14 +272,35 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
 }
 
 /** The rule "always allow" adds for this action. */
+/** The rule for one simple command, e.g. "git log --oneline" → Bash(git log*). */
+function commandRule(seg: string): string | undefined {
+  // Leading VAR=value assignments are not the command.
+  const tokens = seg.trim().split(/\s+/).filter(Boolean);
+  while (tokens.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+  if (!tokens.length) return undefined;
+  if (/^(npm|pnpm|yarn|bun)$/.test(tokens[0]) && tokens[1] === 'run' && tokens[2]) return `Bash(${tokens.slice(0, 3).join(' ')}*)`;
+  if (/^(npm|pnpm|yarn|bun|npx|bunx|uv|uvx|git|node|python3?|pip3?|docker|cargo|go|make)$/.test(tokens[0]) && tokens[1] && !tokens[1].startsWith('-')) return `Bash(${tokens[0]} ${tokens[1]}*)`;
+  return `Bash(${tokens[0]}*)`;
+}
+
+/**
+ * What "always allow" should add. For a compound command that is one rule per command it runs
+ * (helpers like cd or head need none): a rule for its first command alone would not cover the rest.
+ */
+export function suggestRules(toolName: string, input: any, cwd: string): string[] {
+  if (toolName !== 'Bash') {
+    const r = suggestRule(toolName, input, cwd);
+    return r ? [r] : [];
+  }
+  const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+  const needed = segs.filter((seg) => !harmless(seg));
+  return [...new Set((needed.length ? needed : segs.slice(0, 1)).map(commandRule).filter((r): r is string => !!r))];
+}
+
 export function suggestRule(toolName: string, input: any, cwd: string): string | undefined {
   if (toolName === 'Bash') {
-    const first = splitCommand(String(input?.command || ''))[0];
-    if (!first) return undefined;
-    const tokens = first.split(/\s+/);
-    if (/^(npm|pnpm|yarn|bun)$/.test(tokens[0]) && tokens[1] === 'run' && tokens[2]) return `Bash(${tokens.slice(0, 3).join(' ')}*)`;
-    if (/^(npm|pnpm|yarn|bun|npx|git|node|python3?|pip3?|docker|cargo|go|make)$/.test(tokens[0]) && tokens[1]) return `Bash(${tokens[0]} ${tokens[1]}*)`;
-    return `Bash(${tokens[0]}*)`;
+    const first = splitCommand(String(input?.command || '')).find((seg) => seg.trim());
+    return first ? commandRule(first) : undefined;
   }
   if (EDIT_TOOLS.has(toolName)) {
     const fp = filePathOf(input);

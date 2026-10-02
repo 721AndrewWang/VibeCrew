@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
 import { CalendarClock, Clock, FileClock, GitCommitHorizontal, Hand, MessageCircle, Pencil, Play, Plus, Save, Timer, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Bot, Chat, Routine, RoutineTrigger } from '../../../../shared/types';
 import { api } from '../../api';
 import { dmOf, openChat, toast, useStore } from '../../store';
 import { cx, fmtRelative, fmtShort } from '../../utils';
-import { Avatar, confirmDialog, Modal, Toggle, useNow } from '../ui';
+import { Avatar, confirmDialog, Glyph, Modal, Toggle, useNow } from '../ui';
 import { PageHead } from './BotsView';
 
 type TriggerType = RoutineTrigger['type'];
@@ -199,7 +199,7 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
           <div className="preset-row">
             {PRESETS.map((p) => (
               <button key={p.label} className="preset-chip" onClick={() => set(p.form)}>
-                <span>{p.icon}</span> {p.label}
+                <Glyph emoji={p.icon} size={14} /> {p.label}
               </button>
             ))}
           </div>
@@ -452,7 +452,9 @@ export function RoutinesView() {
 
         {list.length === 0 ? (
           <div className="card empty routines-empty">
-            <div className="big">⏰</div>
+            <div className="big">
+              <Glyph emoji="⏰" size={26} />
+            </div>
             <h3>还没有定时任务</h3>
             <div>
               定时任务会在固定时间、每隔一段时间、你保存文件后或每次 Git 提交后，自动让机器人做一件事，
@@ -463,7 +465,7 @@ export function RoutinesView() {
               <div className="preset-row center">
                 {PRESETS.map((p) => (
                   <button key={p.label} className="preset-chip" onClick={() => setEditing({ preset: p })}>
-                    <span>{p.icon}</span> {p.label}
+                    <Glyph emoji={p.icon} size={14} /> {p.label}
                   </button>
                 ))}
               </div>

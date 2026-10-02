@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg);
+  background: transparent;
 }
 
 .chat-layout.with-computer.computer-max .chat-col,
@@ -30,14 +30,16 @@
 }
 
 .resizer::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   left: 2px;
   width: 1px;
   background: var(--border);
-  transition: background 0.15s, width 0.15s;
+  transition:
+    background 0.15s,
+    width 0.15s;
 }
 
 .resizer:hover::after,
@@ -68,8 +70,8 @@ body.resizing iframe {
   height: 58px;
   padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
-  backdrop-filter: blur(12px);
+  background: color-mix(in oklab, var(--bg-elev) 78%, transparent);
+  backdrop-filter: blur(14px) saturate(1.2);
   flex: none;
 }
 
@@ -161,15 +163,44 @@ body.resizing iframe {
   color: var(--orange);
 }
 
+/* A notice card in the cool palette; the amber bar and label carry the warning. */
 .auth-banner {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 9px 14px;
-  background: var(--orange-soft);
-  border-bottom: 1px solid color-mix(in srgb, var(--orange) 30%, transparent);
+  margin: 10px 14px 2px;
+  padding: 9px 12px 9px 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 16%, var(--border));
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg-elev));
+  box-shadow: var(--shadow-1);
   font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+}
+
+.auth-banner::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--orange), color-mix(in oklab, var(--orange) 60%, var(--red)));
+}
+
+.auth-banner b {
+  color: var(--orange);
+}
+
+/* Black / white / grey: the bar and label turn neutral too. */
+:root:not([data-accent]) .auth-banner::before {
+  background: var(--text);
+}
+
+:root:not([data-accent]) .auth-banner b {
   color: var(--text);
 }
 
@@ -254,6 +285,12 @@ body.resizing iframe {
 
 .msg-name {
   font-weight: 650;
+  color: var(--bot-color, var(--text));
+}
+
+/* Black / white / grey: bot names in the text colour rather than each bot's own colour. */
+:root:not([data-accent]) .msg-name {
+  color: var(--text);
 }
 
 .msg-meta {
@@ -294,12 +331,13 @@ body.resizing iframe {
   color: var(--bubble-me-text);
   border-bottom-right-radius: 6px;
   white-space: pre-wrap;
+  box-shadow: 0 4px 14px var(--glow);
 }
 
 .bubble.me-bubble .mention {
-  color: #fff;
+  color: var(--bubble-me-text);
   font-weight: 650;
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in oklab, var(--bubble-me-text) 18%, transparent);
   padding: 0 3px;
   border-radius: 4px;
 }
@@ -376,9 +414,10 @@ body.resizing iframe {
   max-width: 80%;
   text-align: center;
   font-size: 12px;
-  color: var(--text-3);
-  background: var(--bg-sunken);
-  padding: 4px 12px;
+  color: var(--text-2);
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg-elev));
+  border: 1px solid color-mix(in oklab, var(--accent) 12%, var(--border));
+  padding: 5px 14px;
   border-radius: 12px;
   line-height: 1.6;
 }
@@ -620,55 +659,55 @@ body.resizing iframe {
 }
 
 /* highlight.js dark overrides */
-:root[data-theme='dark'] .hljs,
-:root[data-theme='dark'] .hljs-subst {
+:root[data-theme="dark"] .hljs,
+:root[data-theme="dark"] .hljs-subst {
   color: #d6deeb;
 }
-:root[data-theme='dark'] .hljs-keyword,
-:root[data-theme='dark'] .hljs-selector-tag,
-:root[data-theme='dark'] .hljs-built_in {
+:root[data-theme="dark"] .hljs-keyword,
+:root[data-theme="dark"] .hljs-selector-tag,
+:root[data-theme="dark"] .hljs-built_in {
   color: #c792ea;
 }
-:root[data-theme='dark'] .hljs-string,
-:root[data-theme='dark'] .hljs-attr {
+:root[data-theme="dark"] .hljs-string,
+:root[data-theme="dark"] .hljs-attr {
   color: #ecc48d;
 }
-:root[data-theme='dark'] .hljs-title,
-:root[data-theme='dark'] .hljs-name,
-:root[data-theme='dark'] .hljs-section {
+:root[data-theme="dark"] .hljs-title,
+:root[data-theme="dark"] .hljs-name,
+:root[data-theme="dark"] .hljs-section {
   color: #82aaff;
 }
-:root[data-theme='dark'] .hljs-comment {
+:root[data-theme="dark"] .hljs-comment {
   color: #7f8b99;
 }
-:root[data-theme='dark'] .hljs-number,
-:root[data-theme='dark'] .hljs-literal {
+:root[data-theme="dark"] .hljs-number,
+:root[data-theme="dark"] .hljs-literal {
   color: #f78c6c;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .hljs,
-  :root:not([data-theme='light']) .hljs-subst {
+  :root:not([data-theme="light"]) .hljs,
+  :root:not([data-theme="light"]) .hljs-subst {
     color: #d6deeb;
   }
-  :root:not([data-theme='light']) .hljs-keyword,
-  :root:not([data-theme='light']) .hljs-selector-tag,
-  :root:not([data-theme='light']) .hljs-built_in {
+  :root:not([data-theme="light"]) .hljs-keyword,
+  :root:not([data-theme="light"]) .hljs-selector-tag,
+  :root:not([data-theme="light"]) .hljs-built_in {
     color: #c792ea;
   }
-  :root:not([data-theme='light']) .hljs-string,
-  :root:not([data-theme='light']) .hljs-attr {
+  :root:not([data-theme="light"]) .hljs-string,
+  :root:not([data-theme="light"]) .hljs-attr {
     color: #ecc48d;
   }
-  :root:not([data-theme='light']) .hljs-title,
-  :root:not([data-theme='light']) .hljs-name,
-  :root:not([data-theme='light']) .hljs-section {
+  :root:not([data-theme="light"]) .hljs-title,
+  :root:not([data-theme="light"]) .hljs-name,
+  :root:not([data-theme="light"]) .hljs-section {
     color: #82aaff;
   }
-  :root:not([data-theme='light']) .hljs-comment {
+  :root:not([data-theme="light"]) .hljs-comment {
     color: #7f8b99;
   }
-  :root:not([data-theme='light']) .hljs-number,
-  :root:not([data-theme='light']) .hljs-literal {
+  :root:not([data-theme="light"]) .hljs-number,
+  :root:not([data-theme="light"]) .hljs-literal {
     color: #f78c6c;
   }
 }
@@ -743,10 +782,12 @@ body.resizing iframe {
 }
 
 .tool-icon {
+  display: grid;
+  place-items: center;
   width: 18px;
-  text-align: center;
   flex: none;
   font-size: 12px;
+  color: var(--text-3);
 }
 
 .tool-verb {
@@ -910,6 +951,10 @@ body.resizing iframe {
   cursor: pointer;
 }
 
+.thinking summary svg {
+  vertical-align: -2px;
+}
+
 .thinking-text {
   white-space: pre-wrap;
   padding: 6px 10px;
@@ -920,11 +965,13 @@ body.resizing iframe {
 /* ---------------------------------------------------------------- approvals */
 .approval {
   width: min(560px, 100%);
-  border: 1.5px solid var(--orange);
+  border: 1.5px solid color-mix(in oklab, var(--accent) 70%, var(--accent-2));
   border-radius: 14px;
-  background: var(--bg-elev);
+  background: color-mix(in oklab, var(--accent) 4%, var(--bg-elev));
   padding: 10px 12px;
-  box-shadow: 0 0 0 4px var(--orange-soft);
+  box-shadow:
+    0 0 0 4px var(--accent-soft),
+    0 8px 24px var(--glow);
 }
 
 .approval:not(.pending) {
@@ -1001,6 +1048,7 @@ body.resizing iframe {
   padding: 4px 6px 4px 10px;
   border-radius: 10px;
   background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 16%, transparent);
   font-size: 12.5px;
   color: var(--accent-text);
 }
@@ -1152,7 +1200,9 @@ body.resizing iframe {
   background: var(--bg-elev);
   border-radius: 20px;
   box-shadow: var(--shadow-1);
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .composer-box:focus-within {
@@ -1175,9 +1225,18 @@ body.resizing iframe {
 
 .composer-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 2px 8px 8px 10px;
+}
+
+.composer-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  min-width: 0;
 }
 
 .composer-tools .icon-btn {
@@ -1197,23 +1256,130 @@ body.resizing iframe {
   margin-right: 8px;
 }
 
+/* Claude Code-style switches under the message box: permission mode, model, effort. */
+.switch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 190px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.switch-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switch-pill svg {
+  flex: none;
+}
+
+.switch-pill:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.switch-pill .chev {
+  color: var(--text-3);
+}
+
+.switch-pill.warn {
+  color: var(--orange);
+}
+
+.switch-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ctx-ring {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.ctx-ring:hover {
+  background: var(--bg-hover);
+}
+
+.ctx-ring.warn {
+  color: var(--orange);
+}
+
+.ctx-ring.danger {
+  color: var(--red);
+}
+
+.ctx-track,
+.ctx-fill {
+  fill: none;
+  stroke-width: 2.2;
+}
+
+.ctx-track {
+  stroke: var(--border-strong);
+}
+
+.ctx-fill {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s;
+}
+
+.ctx-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 170px;
+}
+
+.switch-desc {
+  max-width: 280px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+  white-space: normal;
+}
+
 .send-btn {
   width: 32px;
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px var(--glow);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  transition: transform 0.1s, opacity 0.15s, background 0.15s;
+  transition:
+    transform 0.1s,
+    opacity 0.15s,
+    background 0.15s;
 }
 
 .send-btn:disabled {
   opacity: 0.35;
   cursor: default;
+  box-shadow: none;
 }
 
 .send-btn:not(:disabled):active {
@@ -1223,6 +1389,7 @@ body.resizing iframe {
 .send-btn.stop {
   background: var(--text);
   color: var(--bg);
+  box-shadow: none;
 }
 
 .popup {
@@ -1259,10 +1426,12 @@ body.resizing iframe {
 }
 
 .pi-icon {
+  display: grid;
+  place-items: center;
   width: 22px;
-  text-align: center;
   font-size: 15px;
   flex: none;
+  color: var(--text-2);
 }
 
 .pi-main {
@@ -1342,4 +1511,148 @@ body.resizing iframe {
   .ch-sub {
     max-width: 38vw;
   }
+}
+
+/* A chat working in its own git branch (isolated workspace). */
+.project-pill.isolated {
+  max-width: 320px;
+  border-color: color-mix(in srgb, var(--purple) 40%, var(--border));
+  color: var(--text);
+}
+
+.project-pill.isolated svg {
+  color: var(--purple);
+  flex: none;
+}
+
+.project-pill .pill-branch {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--purple);
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .project-pill .pill-branch {
+    display: none;
+  }
+}
+
+/* Links in messages are underlined: with a black / white accent, colour alone does not mark them. */
+.md a {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- turn trace */
+.msg-foot .link-btn {
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.msg-foot .link-btn:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+.trace-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.trace-totals b {
+  color: var(--text);
+  font-weight: 600;
+}
+.trace-steps {
+  display: flex;
+  flex-direction: column;
+}
+.trace-row {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+.trace-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.trace-head:disabled {
+  cursor: default;
+}
+.trace-head:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+.trace-at {
+  width: 56px;
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.trace-icon {
+  flex: none;
+  color: var(--text-2);
+}
+.trace-row.attachment .trace-title,
+.trace-row.attachment .trace-icon {
+  color: var(--text-3);
+}
+.trace-row.error .trace-title {
+  color: var(--danger, #c33);
+}
+.trace-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-tokens,
+.trace-wait {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.trace-bar {
+  position: absolute;
+  left: 70px;
+  bottom: 0;
+  height: 2px;
+  background: var(--text-3);
+  opacity: 0.5;
+}
+.trace-detail {
+  margin: 0 0 8px 70px;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

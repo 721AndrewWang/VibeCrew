@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RecordedStep, Skill } from '../shared/types';
+import { bus } from './bus';
 import { DATA } from './config';
 import { BUILTIN_SKILLS } from './data/builtinSkills';
-import { bus } from './bus';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 

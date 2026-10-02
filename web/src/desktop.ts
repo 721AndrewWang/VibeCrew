@@ -8,4 +8,4 @@ export interface DesktopBridge {
   setAutostart(on: boolean): Promise<boolean | null>;
 }
 
-export const desktop: DesktopBridge | undefined = (window as unknown as { vibecrewDesktop?: DesktopBridge }).vibecrewDesktop;
+export const desktop: DesktopBridge | undefined = (window as unknown as { crewDesktop?: DesktopBridge }).crewDesktop;

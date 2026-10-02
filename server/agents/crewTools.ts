@@ -4,6 +4,7 @@ import type { ConsoleEntry } from '../../shared/types';
 import { act, consoleCheck, screenshot } from '../browser';
 import { notify } from '../bus';
 import { devServer } from '../devserver';
+import { bots, messages } from '../store';
 import { appendMemory } from './prompts';
 
 export interface CrewContext {
@@ -13,6 +14,8 @@ export interface CrewContext {
   projectId: () => string | null;
   /** The page the user is looking at in the preview. */
   currentPage: () => string | undefined;
+  /** A blind reviewer: chat_history shows it the user's messages only. */
+  blind?: boolean;
 }
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
@@ -34,6 +37,10 @@ function fmtLogs(logs: ConsoleEntry[], limit = 40): string {
 }
 
 const device = z.enum(['desktop', 'tablet', 'mobile']).optional().describe('设备尺寸：desktop 1280×800、tablet 820×1180、mobile 390×844，默认 desktop');
+const colorScheme = z
+  .enum(['light', 'dark'])
+  .optional()
+  .describe('配色：dark 模拟系统的暗色模式（prefers-color-scheme: dark），页面有暗色主题时会切过去；默认 light。检查暗色模式一定要用它实际看，不要只读 CSS 推断');
 
 export function crewServer(ctx: CrewContext) {
   const projectId = () => {
@@ -48,6 +55,22 @@ export function crewServer(ctx: CrewContext) {
     version: '1.0.0',
     tools: [
       tool(
+        'chat_history',
+        '读这个对话里消息的全文。群聊里较早的、和这一轮关系不大的队友消息只给了一行摘要（带 #编号），需要细节时用它查；也可以看最近几条。',
+        {
+          seqs: z.array(z.number().int()).max(20).optional().describe('要看的消息编号（摘要里的 #后面的数字）'),
+          last: z.number().int().min(1).max(20).optional().describe('看最近的几条消息'),
+        },
+        async ({ seqs, last }) => {
+          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user' || m.notice === 'outside-edit'));
+          const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
+          if (!picked.length) return fail('没有找到这些消息。');
+          const who = (m: (typeof all)[number]) => (m.role === 'user' ? '用户' : m.role === 'system' ? '系统' : `@${bots.get(m.botId || '')?.name || '队友'}`);
+          return text(picked.map((m) => `【${who(m)} · #${m.seq}】\n${(m.prompt || m.text).trim() || '（没有文字）'}`).join('\n\n'));
+        },
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
         'preview_screenshot',
         '用真实的浏览器打开项目预览并截图，返回图片和控制台错误摘要。修改界面后用它确认实际效果；可以指定页面、设备尺寸、整页截图或只截某个元素。',
         {
@@ -55,10 +78,11 @@ export function crewServer(ctx: CrewContext) {
           device,
           fullPage: z.boolean().optional().describe('截取整页（最多 3 屏高）'),
           selector: z.string().optional().describe('只截取匹配这个 CSS 选择器的元素'),
+          colorScheme,
         },
         async (args) => {
           try {
-            const r = await screenshot({ projectId: projectId(), path: pagePath(args.path), device: args.device, fullPage: args.fullPage, selector: args.selector });
+            const r = await screenshot({ projectId: projectId(), path: pagePath(args.path), device: args.device, fullPage: args.fullPage, selector: args.selector, colorScheme: args.colorScheme });
             const issues = r.logs.filter((l) => l.level === 'error' || l.level === 'warn');
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             return {
@@ -66,7 +90,7 @@ export function crewServer(ctx: CrewContext) {
                 { type: 'image' as const, data: r.png.toString('base64'), mimeType: 'image/png' },
                 {
                   type: 'text' as const,
-                  text: `页面 ${where}（${r.title || '无标题'}），${args.device || 'desktop'}${r.truncated ? '，页面较长只截取了前 3 屏' : ''}。\n${issues.length ? `控制台问题：\n${fmtLogs(issues)}` : '控制台没有错误或警告。'}`,
+                  text: `页面 ${where}（${r.title || '无标题'}），${args.device || 'desktop'}${args.colorScheme === 'dark' ? '，暗色模式' : ''}${r.truncated ? '，页面较长只截取了前 3 屏' : ''}。\n${issues.length ? `控制台问题：\n${fmtLogs(issues)}` : '控制台没有错误或警告。'}`,
                 },
               ],
             };
@@ -82,10 +106,11 @@ export function crewServer(ctx: CrewContext) {
         {
           path: z.string().optional().describe('页面路径，不填则是用户当前正在看的页面'),
           waitMs: z.number().optional().describe('页面加载后再等待多少毫秒收集日志，默认 1500'),
+          colorScheme,
         },
         async (args) => {
           try {
-            const r = await consoleCheck({ projectId: projectId(), path: pagePath(args.path), waitMs: args.waitMs });
+            const r = await consoleCheck({ projectId: projectId(), path: pagePath(args.path), waitMs: args.waitMs, colorScheme: args.colorScheme });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             if (!r.logs.length) return text(`页面 ${where}（HTTP ${r.status}，${r.title || '无标题'}）：控制台干净，没有日志。`);
             return text(`页面 ${where}（HTTP ${r.status}，${r.title || '无标题'}）共 ${r.logs.length} 条日志：\n${fmtLogs(r.logs, 60)}`);
@@ -114,6 +139,7 @@ export function crewServer(ctx: CrewContext) {
             .describe('按顺序执行的操作'),
           screenshot: z.boolean().optional().describe('操作结束后附带截图'),
           device,
+          colorScheme,
         },
         async (args) => {
           try {
@@ -124,14 +150,10 @@ export function crewServer(ctx: CrewContext) {
               steps: args.steps,
               screenshot: args.screenshot,
               device: args.device,
+              colorScheme: args.colorScheme,
             });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-            const summary = [
-              ...r.lines,
-              '',
-              `当前页面：${where}（${r.title || '无标题'}）`,
-              r.logs.length ? `期间的控制台日志：\n${fmtLogs(r.logs)}` : '期间没有控制台日志。',
-            ].join('\n');
+            const summary = [...r.lines, '', `当前页面：${where}（${r.title || '无标题'}）`, r.logs.length ? `期间的控制台日志：\n${fmtLogs(r.logs)}` : '期间没有控制台日志。'].join('\n');
             const content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] = [];
             if (r.png) content.push({ type: 'image', data: r.png.toString('base64'), mimeType: 'image/png' });
             content.push({ type: 'text', text: summary });
@@ -161,9 +183,14 @@ export function crewServer(ctx: CrewContext) {
               }
             }
             const s = ds.state;
-            const tail = ds.logs(action === 'logs' ? 6000 : 1500).replace(ANSI, '').replace(/\r/g, '');
+            const tail = ds
+              .logs(action === 'logs' ? 6000 : 1500)
+              .replace(ANSI, '')
+              .replace(/\r/g, '');
             const status = { stopped: '未运行', installing: '安装依赖中', starting: '启动中', running: '运行中', error: '出错' }[s.status];
-            return text(`状态：${status}${s.command ? `\n命令：${s.command}` : ''}${s.url ? `\n地址：${s.url}` : ''}${s.error ? `\n错误：${s.error}` : ''}${tail.trim() ? `\n\n最近日志：\n${tail.trim()}` : ''}`);
+            return text(
+              `状态：${status}${s.command ? `\n命令：${s.command}` : ''}${s.url ? `\n地址：${s.url}` : ''}${s.error ? `\n错误：${s.error}` : ''}${tail.trim() ? `\n\n最近日志：\n${tail.trim()}` : ''}`,
+            );
           } catch (e) {
             return fail((e as Error).message);
           }
@@ -178,15 +205,10 @@ export function crewServer(ctx: CrewContext) {
           return text('已记住。');
         },
       ),
-      tool(
-        'notify_user',
-        '给用户发送一条桌面/手机通知。用于定时任务或长任务中发现需要用户关注的事情。',
-        { title: z.string(), body: z.string() },
-        async ({ title, body }) => {
-          notify(`${ctx.botName}：${title}`, body, { chatId: ctx.chatId, level: 'info' });
-          return text('通知已发送。');
-        },
-      ),
+      tool('notify_user', '给用户发送一条桌面/手机通知。用于定时任务或长任务中发现需要用户关注的事情。', { title: z.string(), body: z.string() }, async ({ title, body }) => {
+        notify(`${ctx.botName}：${title}`, body, { chatId: ctx.chatId, level: 'info' });
+        return text('通知已发送。');
+      }),
     ],
   });
 }

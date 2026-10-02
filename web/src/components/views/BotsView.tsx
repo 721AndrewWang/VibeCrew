@@ -1,10 +1,11 @@
-import { useMemo, type ReactNode } from 'react';
-import { ChevronLeft, FolderGit2, MessageCircle, MoreHorizontal, Plus, Puzzle, Settings, Trash2, UserPlus, Users } from 'lucide-react';
-import type { Bot } from '../../../../shared/types';
+import { ChevronLeft, Coins, FolderGit2, MessageCircle, MoreHorizontal, Plus, Puzzle, Scissors, Settings, Trash2, UserPlus, Users } from 'lucide-react';
+import { type ReactNode, useMemo } from 'react';
+import type { Bot, ModelOption } from '../../../../shared/types';
 import { api } from '../../api';
 import { dmOf, openChat, openModal, toast, useStore } from '../../store';
 import { cx, PERMISSION_INFO, statusLabel } from '../../utils';
-import { Avatar, confirmDialog, MenuButton } from '../ui';
+import { Avatar, confirmDialog, Glyph, MenuButton } from '../ui';
+import { ImprovementsPanel } from './ImprovementsPanel';
 
 /** Shared header for the management pages. */
 export function PageHead({ title, sub, children }: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
@@ -25,6 +26,21 @@ export function PageHead({ title, sub, children }: { title: ReactNode; sub?: Rea
 export function modelLabel(models: { id: string; label: string }[], id: string) {
   if (!id) return '默认模型';
   return models.find((m) => m.id === id)?.label || id;
+}
+
+const TIER = { high: { mark: '$$$', title: '高档模型：最强，也最贵' }, mid: { mark: '$$', title: '中档模型：日常开发够用' }, low: { mark: '$', title: '便宜模型：简单任务' } } as const;
+
+export function tierMark(models: ModelOption[], id: string) {
+  const t = models.find((m) => m.id === id)?.tier;
+  return t ? <span className="tier">{TIER[t].mark}</span> : null;
+}
+export function tierTitle(models: ModelOption[], id: string) {
+  const t = models.find((m) => m.id === id)?.tier;
+  return t ? TIER[t].title : undefined;
+}
+
+export function fmtUsd(n: number) {
+  return n >= 10 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
 }
 
 export async function deleteBotFlow(bot: Bot): Promise<boolean> {
@@ -56,6 +72,7 @@ const TONE_DOT: Record<string, string> = { idle: '', busy: 'green pulse', wait: 
 function BotCard({ bot }: { bot: Bot }) {
   const status = useStore((s) => s.statuses[bot.id]);
   const models = useStore((s) => s.models);
+  const usage = useStore((s) => s.usage[bot.id]);
   const project = useStore((s) => (bot.projectId ? s.projects[bot.projectId] : undefined));
   const st = statusLabel(status);
   const perm = PERMISSION_INFO[bot.permission];
@@ -87,9 +104,24 @@ function BotCard({ bot }: { bot: Bot }) {
       </div>
       <div className="bc-badges">
         <span className="badge" title={perm.desc}>
-          {perm.icon} {perm.label}
+          <Glyph emoji={perm.icon} size={11} /> {perm.label}
         </span>
-        <span className="badge">{modelLabel(models, bot.model)}</span>
+        <span className="badge" title={tierTitle(models, bot.model)}>
+          {modelLabel(models, bot.model)}
+          {tierMark(models, bot.model)}
+        </span>
+        {bot.editScope?.length ? (
+          <span className="badge" title={`只能修改：${bot.editScope.join('、')}`}>
+            <Scissors size={11} /> 只改 {bot.editScope[0]}
+            {bot.editScope.length > 1 ? ` 等 ${bot.editScope.length} 处` : ''}
+          </span>
+        ) : null}
+        {usage?.month.turns ? (
+          <span className="badge" title={`今天 ${fmtUsd(usage.today.costUsd)} · ${usage.today.turns} 轮`}>
+            <Coins size={11} /> 本月 {fmtUsd(usage.month.costUsd)}
+            {bot.monthlyBudgetUsd ? ` / ${fmtUsd(bot.monthlyBudgetUsd)}` : ''} · {usage.month.turns} 轮
+          </span>
+        ) : null}
         {bot.plugins.length > 0 && (
           <span className="badge accent">
             <Puzzle size={11} /> {bot.plugins.length} 个插件
@@ -132,7 +164,9 @@ export function BotsView() {
 
         {list.length === 0 ? (
           <div className="card empty">
-            <div className="big">🤖</div>
+            <div className="big">
+              <Glyph emoji="🤖" size={26} />
+            </div>
             <h3>还没有机器人</h3>
             <div>从模板添加一位前端工程师、测试工程师或代码审查员，组建你的 Web 开发小队。</div>
             <button className="btn primary" onClick={() => openModal({ kind: 'newBot' })}>
@@ -140,15 +174,18 @@ export function BotsView() {
             </button>
           </div>
         ) : (
-          <div className="bot-grid">
-            {list.map((b) => (
-              <BotCard key={b.id} bot={b} />
-            ))}
-            <button className="add-card" onClick={() => openModal({ kind: 'newBot' })}>
-              <Plus size={22} />
-              <span>添加机器人</span>
-            </button>
-          </div>
+          <>
+            <ImprovementsPanel />
+            <div className="bot-grid">
+              {list.map((b) => (
+                <BotCard key={b.id} bot={b} />
+              ))}
+              <button className="add-card" onClick={() => openModal({ kind: 'newBot' })}>
+                <Plus size={22} />
+                <span>添加机器人</span>
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

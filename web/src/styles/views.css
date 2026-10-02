@@ -77,6 +77,10 @@
   gap: 0 16px;
 }
 
+.form-grid .span-all {
+  grid-column: 1 / -1;
+}
+
 .num-input {
   width: 96px;
   flex: none;
@@ -94,6 +98,10 @@
   padding: 4px;
   text-align: center;
   font-size: 19px;
+}
+
+:root:not([data-accent]) .emoji-input {
+  filter: grayscale(1);
 }
 
 .note {
@@ -203,7 +211,9 @@
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  transition: color 0.12s, border-color 0.12s;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .tab:hover {
@@ -245,7 +255,10 @@
   border-radius: var(--radius);
   background: var(--bg-elev);
   text-align: left;
-  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    box-shadow 0.12s;
 }
 
 .choice-card:hover {
@@ -256,7 +269,9 @@
 .choice-card.on {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 4px 16px var(--glow);
 }
 
 .choice-card.row-card {
@@ -291,11 +306,13 @@
   flex: none;
   border-radius: 10px;
   background: var(--bg-sunken);
+  color: var(--text-2);
   font-size: 20px;
 }
 
 .choice-card.on .cc-icon {
   background: var(--bg-elev);
+  color: var(--text);
 }
 
 .cc-text {
@@ -316,7 +333,7 @@
   flex: none;
   border-radius: 50%;
   border: 1.5px solid var(--border-strong);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .choice-card.on .cc-radio,
@@ -338,12 +355,18 @@
   gap: 10px;
   padding: 16px;
   min-width: 0;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition:
+    box-shadow 0.18s,
+    border-color 0.18s,
+    transform 0.18s;
 }
 
 .bot-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-1);
+  border-color: color-mix(in oklab, var(--accent) 30%, var(--border));
+  box-shadow:
+    0 10px 28px var(--glow),
+    var(--shadow-1);
+  transform: translateY(-1px);
 }
 
 .bot-card .avatar .status {
@@ -463,7 +486,10 @@
   color: var(--text-3);
   font-size: 13px;
   font-weight: 500;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
 }
 
 .add-card:hover {
@@ -488,7 +514,11 @@
   border-radius: var(--radius);
   background: var(--bg-elev);
   text-align: left;
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s, opacity 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.12s,
+    opacity 0.12s;
 }
 
 .tpl-card:hover:not(:disabled) {
@@ -614,7 +644,9 @@
 }
 
 .swatch.on {
-  box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--bg-elev),
+    0 0 0 4px var(--accent);
 }
 
 .swatch.custom {
@@ -666,7 +698,7 @@
 }
 
 .rule-tag::before {
-  content: '';
+  content: "";
   width: 6px;
   height: 6px;
   flex: none;
@@ -824,7 +856,9 @@
   border-radius: var(--radius-sm);
   background: var(--bg-elev);
   color: var(--text-3);
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .list-search:focus-within {
@@ -870,10 +904,16 @@
 }
 
 .si-icon {
+  display: grid;
+  place-items: center;
   width: 28px;
   flex: none;
   font-size: 18px;
-  text-align: center;
+  color: var(--text-2);
+}
+
+.skill-item.on .si-icon {
+  color: var(--accent-text);
 }
 
 .si-text {
@@ -895,6 +935,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tip-card svg {
+  vertical-align: -2px;
 }
 
 .tip-card {
@@ -926,6 +970,7 @@
   flex: none;
   border-radius: 12px;
   background: var(--bg-sunken);
+  color: var(--text-2);
   font-size: 24px;
 }
 
@@ -1103,7 +1148,10 @@
   color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    color 0.12s;
 }
 
 .preset-chip:hover {
@@ -1149,7 +1197,9 @@
   background: var(--bg-elev);
   font-size: 13px;
   font-weight: 500;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .day-chip:hover {
@@ -1159,7 +1209,7 @@
 .day-chip.on {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* ---------------------------------------------------------------- projects */
@@ -1181,8 +1231,9 @@
   height: 40px;
   flex: none;
   border-radius: 11px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow: 0 4px 12px var(--glow);
 }
 
 .pc-info {
@@ -1342,7 +1393,9 @@
   border-radius: var(--radius);
   background: var(--bg-elev);
   text-align: left;
-  transition: border-color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 }
 
 .pick-card:hover {
@@ -1385,7 +1438,7 @@
   flex: none;
   border: 1.5px solid var(--border-strong);
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .pick-card.on .pick-check {
@@ -1448,6 +1501,7 @@
   gap: 10px;
   padding: 13px 18px;
   border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 4%, var(--bg-elev)), var(--bg-elev));
 }
 
 .sc-head h2 {
@@ -1462,9 +1516,32 @@
   width: 30px;
   height: 30px;
   flex: none;
+  border-radius: 9px;
+  background: var(--accent-grad);
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px var(--glow);
+}
+
+.badge .tier {
+  margin-left: 4px;
+  opacity: 0.6;
+  letter-spacing: -0.5px;
+}
+
+.notice {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-sunken);
+}
+.notice.warn {
+  border-color: var(--text-3);
+}
+.notice .code-line {
+  margin-top: 8px;
 }
 
 .sc-body {
@@ -1517,7 +1594,13 @@
 }
 
 .callout.warn {
-  background: var(--orange-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 14%, var(--border));
+  border-left: 3px solid var(--orange);
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg-elev));
+}
+
+:root:not([data-accent]) .callout.warn {
+  border-left-color: var(--text);
 }
 
 .code-line {
@@ -1660,6 +1743,11 @@
     flex-wrap: wrap;
   }
 
+  /* Controls too wide to sit beside the text go below it. */
+  .setting-row > div:first-child {
+    flex-basis: 220px;
+  }
+
   .fb-bar {
     flex-wrap: wrap;
   }
@@ -1680,4 +1768,321 @@
   .kv .k {
     width: 72px;
   }
+}
+
+.pc-workspaces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.pc-workspaces .branch-pill .muted {
+  font-family: var(--font);
+  color: var(--text-3);
+}
+
+/* Model connection: provider presets and the connection test result. */
+.callout.ok {
+  background: var(--green-soft);
+}
+
+.callout.error {
+  background: var(--red-soft);
+  overflow-wrap: anywhere;
+}
+
+.provider-grid .pick-card {
+  align-items: flex-start;
+}
+
+.provider-grid .pick-title {
+  white-space: normal;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.provider-hint {
+  margin: -4px 0 12px;
+  line-height: 1.6;
+}
+
+/* Settings → 外观: accent presets. */
+.accent-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accent-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 52px;
+  padding: 6px 4px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.accent-swatch:hover {
+  background: var(--bg-hover);
+}
+
+.accent-swatch i {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  transition:
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+
+.accent-swatch.on {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.accent-swatch.on i {
+  box-shadow:
+    0 0 0 2px var(--bg-elev),
+    0 0 0 4px var(--accent);
+  transform: scale(1.04);
+}
+
+.logo-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.logo-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 56px;
+  padding: 6px 4px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.logo-choice:hover {
+  background: var(--bg-hover);
+}
+
+.logo-choice .logo {
+  border-radius: 22%;
+  transition:
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+
+.logo-choice.on {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.logo-choice.on .logo {
+  box-shadow:
+    0 0 0 2px var(--bg-elev),
+    0 0 0 4px var(--accent);
+  transform: scale(1.04);
+}
+
+/* All six in one row on a phone. */
+@media (max-width: 640px) {
+  .logo-choices {
+    gap: 2px;
+  }
+
+  .logo-choice {
+    min-width: 50px;
+    padding: 6px 2px 4px;
+  }
+}
+
+.test-ic {
+  vertical-align: -2px;
+}
+
+/* ---------------------------------------------------------------- improvements */
+.improve-card {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+.improve-hint {
+  margin: 4px 0 10px;
+}
+.improve-empty {
+  font-size: 13px;
+  padding: 4px 0;
+}
+.improve-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.improve-title {
+  font-size: 14px;
+}
+.improve-why {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.improve-change {
+  font-size: 12.5px;
+}
+.improve-change .del,
+.improve-diff .del {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.improve-diff .del {
+  text-decoration: none;
+}
+.improve-change .add,
+.improve-diff .add {
+  color: var(--text);
+  font-weight: 500;
+}
+.improve-diff {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.improve-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.improve-card .link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.improve-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  text-decoration: none !important;
+}
+.improve-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.improve-effect {
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- routing */
+.routing-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.routing-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.routing-totals b {
+  color: var(--text);
+}
+.routing-bins {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.routing-bins th,
+.routing-bins td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+  font-weight: normal;
+}
+.routing-bins th:first-child,
+.routing-bins td:first-child {
+  color: var(--text-3);
+}
+.routing-recent {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+.routing-row {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.routing-row .mono {
+  flex: none;
+  width: 110px;
+}
+.routing-row .muted {
+  flex: none;
+  width: 80px;
+}
+.routing-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.improve-skill {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.improve-flags {
+  padding: 6px 10px;
+  border: 1px solid var(--text-3);
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.improve-candidates {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.improve-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
 }

@@ -1,17 +1,22 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import pkg from '../package.json';
+import { migrate } from './migrations';
 
-export const APP_VERSION = '0.1.0';
-export const APP_NAME = 'VibeCrew';
+export const APP_VERSION: string = pkg.version;
+export const APP_NAME = 'Crew';
+/** Demo mode: scripted bots instead of a model (CREW_FAKE_AGENT=1). */
+export const FAKE_AGENT = process.env.CREW_FAKE_AGENT === '1';
 
 export const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const WEB_DIST = path.join(ROOT_DIR, 'web', 'dist');
 export const INJECT_SCRIPT = path.join(ROOT_DIR, 'server', 'inject', 'preview-inject.js');
 
-export const HOME_DIR = path.resolve(process.env.VIBECREW_HOME || path.join(os.homedir(), '.vibecrew'));
+export const HOME_DIR = path.resolve(process.env.CREW_HOME || path.join(os.homedir(), '.crew'));
+migrateFromVibeCrew();
 export const DATA = {
   settings: path.join(HOME_DIR, 'settings.json'),
   bots: path.join(HOME_DIR, 'bots.json'),
@@ -23,18 +28,24 @@ export const DATA = {
   uploads: path.join(HOME_DIR, 'uploads'),
   turns: path.join(HOME_DIR, 'turns'),
   memory: path.join(HOME_DIR, 'memory'),
+  /** Git worktrees of chats that work in an isolated workspace. */
+  worktrees: path.join(HOME_DIR, 'worktrees'),
+  /** Proposed changes to bots and what the user decided (the improvement ledger). */
+  improvements: path.join(HOME_DIR, 'improvements.json'),
+  /** Shadow routing decisions. */
+  routing: path.join(HOME_DIR, 'routing.json'),
 };
 
-for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory]) {
+for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {
   fs.mkdirSync(dir, { recursive: true });
 }
+// Before any store reads its file. A folder written by a newer Crew stops the start here.
+for (const m of migrate(HOME_DIR)) console.warn(`[migrate] ${m.title} (schema ${m.version})`);
 
-export const DEFAULT_PROJECTS_ROOT = path.resolve(
-  process.env.VIBECREW_PROJECTS || path.join(os.homedir(), 'VibeCrewProjects'),
-);
+export const DEFAULT_PROJECTS_ROOT = path.resolve(process.env.CREW_PROJECTS || path.join(os.homedir(), 'CrewProjects'));
 
 /**
- * Variables that describe the Claude Code session VibeCrew itself may have been launched from.
+ * Variables that describe the Claude Code session Crew itself may have been launched from.
  * Passing them on would make the bots' Claude Code processes think they are nested sessions.
  */
 const SESSION_VARS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_AGENT_SDK_VERSION|CLAUDE_PREVIEW_.*|MCP_CONNECTION_NONBLOCKING|MCP_SERVER_CONNECTION_BATCH_SIZE)$/;
@@ -60,15 +71,18 @@ export function cleanEnv(extra: Record<string, string | undefined> = {}): Record
     if (v === undefined) continue;
     if (SESSION_VARS.test(k) || DESKTOP_VARS.test(k)) continue;
     if (k.startsWith('CLAUDE_CODE_') && !KEEP_CLAUDE_CODE_VARS.has(k)) continue;
-    if (k.startsWith('VIBECREW_')) continue;
+    if (k.startsWith('CREW_')) continue;
     out[k] = v;
   }
   // The desktop app runs this server without the user's NODE_OPTIONS; programs we start get them back.
-  if (process.env.VIBECREW_USER_NODE_OPTIONS && out.NODE_OPTIONS === undefined) out.NODE_OPTIONS = process.env.VIBECREW_USER_NODE_OPTIONS;
+  if (process.env.CREW_USER_NODE_OPTIONS && out.NODE_OPTIONS === undefined) out.NODE_OPTIONS = process.env.CREW_USER_NODE_OPTIONS;
   // Paths the AppImage launcher prepended (its bundled libraries break system programs).
   for (const k of ['PATH', 'LD_LIBRARY_PATH', 'XDG_DATA_DIRS', 'GSETTINGS_SCHEMA_DIR']) {
     if (!out[k]) continue;
-    const v = out[k].split(':').filter((p) => p && !p.includes('/.mount_')).join(':');
+    const v = out[k]
+      .split(':')
+      .filter((p) => p && !p.includes('/.mount_'))
+      .join(':');
     if (v) out[k] = v;
     else delete out[k];
   }
@@ -102,22 +116,14 @@ export function findClaudeExecutable(refresh = false): string | null {
     const real = resolveExecutable(claudeCandidate);
     if (real) return real;
   }
-  const candidates = [
-    process.env.VIBECREW_CLAUDE_PATH,
-    process.env.CLAUDE_PATH,
-  ].filter(Boolean) as string[];
+  const candidates = [process.env.CREW_CLAUDE_PATH, process.env.CLAUDE_PATH].filter(Boolean) as string[];
   try {
     const found = execFileSync('bash', ['-lc', 'command -v claude'], { encoding: 'utf8', timeout: 5000 }).trim();
     if (found) candidates.push(found);
   } catch {
     /* not on PATH */
   }
-  candidates.push(
-    path.join(os.homedir(), '.local', 'bin', 'claude'),
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  );
+  candidates.push(path.join(os.homedir(), '.local', 'bin', 'claude'), path.join(os.homedir(), '.claude', 'local', 'claude'), '/usr/local/bin/claude', '/opt/homebrew/bin/claude');
   for (const c of candidates) {
     const real = resolveExecutable(c);
     if (real) {
@@ -146,7 +152,7 @@ export function findChrome(): string | null {
   }
   const home = os.homedir();
   const candidates = [
-    process.env.VIBECREW_CHROME_PATH,
+    process.env.CREW_CHROME_PATH,
     process.env.CHROME_PATH,
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
@@ -158,7 +164,11 @@ export function findChrome(): string | null {
   ].filter(Boolean) as string[];
   try {
     const pw = path.join(home, '.cache', 'ms-playwright');
-    for (const d of fs.readdirSync(pw).filter((d) => d.startsWith('chromium-')).sort().reverse()) {
+    for (const d of fs
+      .readdirSync(pw)
+      .filter((d) => d.startsWith('chromium-'))
+      .sort()
+      .reverse()) {
       candidates.push(path.join(pw, d, 'chrome-linux64', 'chrome'), path.join(pw, d, 'chrome-linux', 'chrome'));
     }
   } catch {
@@ -183,4 +193,39 @@ export function lanAddress(): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Crew used to be called VibeCrew. On the first start after the rename its data folder
+ * (~/.vibecrew) and default projects folder (~/VibeCrewProjects) move to the new names, and the
+ * saved paths follow. Folders given through CREW_HOME / CREW_PROJECTS are left alone.
+ */
+function migrateFromVibeCrew() {
+  if (process.env.CREW_HOME) return;
+  const home = os.homedir();
+  const move = (from: string, to: string) => {
+    try {
+      if (fs.existsSync(to) || !fs.lstatSync(from).isDirectory()) return false;
+      fs.renameSync(from, to);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  move(path.join(home, '.vibecrew'), HOME_DIR);
+  if (process.env.CREW_PROJECTS) return;
+  const oldRoot = path.join(home, 'VibeCrewProjects');
+  const newRoot = path.join(home, 'CrewProjects');
+  if (!move(oldRoot, newRoot)) return;
+  // The projects folder moved: settings.json and projects.json keep absolute paths.
+  const esc = (p: string) => JSON.stringify(p).slice(1, -1);
+  for (const name of ['settings.json', 'projects.json']) {
+    const file = path.join(HOME_DIR, name);
+    try {
+      const text = fs.readFileSync(file, 'utf8');
+      if (text.includes(esc(oldRoot))) fs.writeFileSync(file, text.split(esc(oldRoot)).join(esc(newRoot)));
+    } catch {
+      /* not there yet */
+    }
+  }
 }

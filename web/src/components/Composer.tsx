@@ -1,16 +1,15 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { ArrowUp, Camera, ImagePlus, Mic, MicOff, MousePointerClick, Slash, Square } from 'lucide-react';
+import { type ClipboardEvent, type DragEvent, type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Bot, Chat, Skill } from '../../../shared/types';
 import { api, fileToBase64 } from '../api';
 import { desktop } from '../desktop';
-import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useStore } from '../store';
+import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useChatProject, useStore } from '../store';
 import { cx } from '../utils';
+import { ContextRing, EffortSwitch, ModelSwitch, ModeSwitch } from './ChatSwitches';
 import { AttachmentChips } from './Message';
-import { Avatar } from './ui';
+import { Avatar, Glyph } from './ui';
 
-type Popup =
-  | { type: 'mention'; query: string; start: number; index: number }
-  | { type: 'skill'; query: string; index: number };
+type Popup = { type: 'mention'; query: string; start: number; index: number } | { type: 'skill'; query: string; index: number };
 
 const EMPTY = { text: '', attachments: [] };
 
@@ -70,7 +69,8 @@ export function Composer({ chat }: { chat: Chat }) {
   const bots = useStore((s) => s.bots);
   const skills = useStore((s) => s.skills);
   const statuses = useStore((s) => s.statuses);
-  const project = useStore((s) => (chat.projectId ? s.projects[chat.projectId] : null));
+  // Element picking and screenshots use the preview the chat works in (its workspace, if any).
+  const project = useChatProject(chat);
   const auth = useStore((s) => s.auth);
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -89,6 +89,7 @@ export function Composer({ chat }: { chat: Chat }) {
   });
 
   // Autosize.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resize whenever the text changes
   useLayoutEffect(() => {
     const el = ta.current;
     if (!el) return;
@@ -96,11 +97,13 @@ export function Composer({ chat }: { chat: Chat }) {
     el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.4)) + 'px';
   }, [draft.text]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the chat changes
   useEffect(() => {
     if (window.innerWidth > 760) ta.current?.focus();
     setPopup(null);
   }, [chat.id]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: members is derived from bots and chat.botIds
   const mentionItems = useMemo(() => {
     if (popup?.type !== 'mention') return [] as { bot?: Bot; all?: boolean; invite?: boolean }[];
     const q = popup.query.toLowerCase();
@@ -239,17 +242,35 @@ export function Composer({ chat }: { chat: Chat }) {
   const placeholder = narrow
     ? `发消息${chat.kind === 'group' ? '，@ 队友' : ''}，/ 技能`
     : chat.kind === 'group'
-      ? `发消息给群聊，@ 指定队友，/ 使用技能${auth.ready ? '' : '（Claude 未连接）'}`
-      : `发消息给 ${members[0]?.name || ''}，/ 使用技能${auth.ready ? '' : '（Claude 未连接）'}`;
+      ? `发消息给群聊，@ 指定队友，/ 使用技能${auth.ready ? '' : '（模型未连接）'}`
+      : `发消息给 ${members[0]?.name || ''}，/ 使用技能${auth.ready ? '' : '（模型未连接）'}`;
 
   return (
-    <div className={cx('composer', dragging && 'dragging')} onDragOver={(e) => (e.preventDefault(), setDragging(true))} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
+    <div
+      className={cx('composer', dragging && 'dragging')}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+    >
       {popup && items.length > 0 && (
         <div className="popup">
           {popup.type === 'skill'
             ? skillItems.map((s, i) => (
-                <button key={s.name} className={cx('popup-item', i === popup.index && 'active')} onMouseDown={(e) => (e.preventDefault(), choose(i))} onMouseEnter={() => setPopup({ ...popup, index: i })}>
-                  <span className="pi-icon">{s.icon}</span>
+                <button
+                  key={s.name}
+                  className={cx('popup-item', i === popup.index && 'active')}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    choose(i);
+                  }}
+                  onMouseEnter={() => setPopup({ ...popup, index: i })}
+                >
+                  <span className="pi-icon">
+                    <Glyph emoji={s.icon} />
+                  </span>
                   <span className="pi-main">
                     <b>/{s.name}</b> {s.title}
                     {s.argsHint && <span className="pi-hint"> · {s.argsHint}</span>}
@@ -257,8 +278,22 @@ export function Composer({ chat }: { chat: Chat }) {
                 </button>
               ))
             : mentionItems.map((it, i) => (
-                <button key={it.bot?.id || 'all'} className={cx('popup-item', i === popup.index && 'active')} onMouseDown={(e) => (e.preventDefault(), choose(i))} onMouseEnter={() => setPopup({ ...popup, index: i })}>
-                  {it.all ? <span className="pi-icon">👥</span> : <Avatar bot={it.bot} size={22} />}
+                <button
+                  key={it.bot?.id || 'all'}
+                  className={cx('popup-item', i === popup.index && 'active')}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    choose(i);
+                  }}
+                  onMouseEnter={() => setPopup({ ...popup, index: i })}
+                >
+                  {it.all ? (
+                    <span className="pi-icon">
+                      <Glyph emoji="👥" />
+                    </span>
+                  ) : (
+                    <Avatar bot={it.bot} size={22} />
+                  )}
                   <span className="pi-main">
                     <b>{it.all ? '所有人' : it.bot!.name}</b> <span className="pi-hint">{it.all ? '群里每个机器人都会回复' : it.bot!.title}</span>
                   </span>
@@ -267,7 +302,7 @@ export function Composer({ chat }: { chat: Chat }) {
               ))}
         </div>
       )}
-      <AttachmentChips items={draft.attachments} onRemove={(id) => removeAttachment(chat.id, id)} projectId={chat.projectId} />
+      <AttachmentChips items={draft.attachments} onRemove={(id) => removeAttachment(chat.id, id)} projectId={project?.id ?? null} />
       <div className="composer-box">
         <textarea
           ref={ta}
@@ -284,11 +319,15 @@ export function Composer({ chat }: { chat: Chat }) {
           onBlur={() => setTimeout(() => setPopup(null), 150)}
         />
         <div className="composer-tools">
-          <button className="icon-btn" title="使用技能（/）" onClick={() => {
-            setDraft(chat.id, { text: '/' });
-            setPopup({ type: 'skill', query: '', index: 0 });
-            ta.current?.focus();
-          }}>
+          <button
+            className="icon-btn"
+            title="使用技能（/）"
+            onClick={() => {
+              setDraft(chat.id, { text: '/' });
+              setPopup({ type: 'skill', query: '', index: 0 });
+              ta.current?.focus();
+            }}
+          >
             <Slash size={17} />
           </button>
           <button className="icon-btn" title="附加图片（也可以直接粘贴或拖进来）" onClick={() => fileInput.current?.click()}>
@@ -315,17 +354,22 @@ export function Composer({ chat }: { chat: Chat }) {
               {speech.on ? <MicOff size={17} /> : <Mic size={17} />}
             </button>
           )}
-          <span className="spacer" />
-          <span className="composer-hint">Enter 发送 · Shift+Enter 换行</span>
-          {busy && !draft.text.trim() && !draft.attachments.length ? (
-            <button className="send-btn stop" title="停止" onClick={() => void api.stop(chat.id)}>
-              <Square size={13} fill="currentColor" />
-            </button>
-          ) : (
-            <button className="send-btn" title="发送" disabled={!draft.text.trim() && !draft.attachments.length} onClick={send}>
-              <ArrowUp size={18} />
-            </button>
-          )}
+          <ModeSwitch chat={chat} />
+          {/* Model, effort, context and send: wraps to its own row when the message box is narrow. */}
+          <div className="composer-right">
+            <ModelSwitch chat={chat} />
+            <EffortSwitch chat={chat} />
+            <ContextRing chat={chat} />
+            {busy && !draft.text.trim() && !draft.attachments.length ? (
+              <button className="send-btn stop" title="停止" onClick={() => void api.stop(chat.id)}>
+                <Square size={13} fill="currentColor" />
+              </button>
+            ) : (
+              <button className="send-btn" title="发送" disabled={!draft.text.trim() && !draft.attachments.length} onClick={send}>
+                <ArrowUp size={18} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
       <input

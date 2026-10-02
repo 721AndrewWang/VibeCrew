@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
-import type { PreviewInfo } from '../shared/types';
+import type { PreviewInfo, Project } from '../shared/types';
 import { bus, internal } from './bus';
 import { INJECT_SCRIPT } from './config';
 import { devServer } from './devserver';
@@ -42,10 +42,10 @@ const MIME: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
-const INJECT_TAG = '<script src="/__vibecrew/inject.js"></script>';
+const INJECT_TAG = '<script src="/__crew/inject.js"></script>';
 
 function injectHtml(html: string): string {
-  if (html.includes('/__vibecrew/inject.js')) return html;
+  if (html.includes('/__crew/inject.js')) return html;
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + INJECT_TAG);
   if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + INJECT_TAG);
   return INJECT_TAG + html;
@@ -54,7 +54,7 @@ function injectHtml(html: string): string {
 function page(title: string, body: string): string {
   return injectHtml(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>body{font-family:-apple-system,system-ui,"PingFang SC","Noto Sans SC",sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;color:#555;background:#fafafa}
-@media (prefers-color-scheme:dark){body{background:#111;color:#aaa}}div{text-align:center;max-width:480px;padding:24px}h1{font-size:20px;color:inherit}code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:4px}ul{text-align:left;line-height:1.9}a{color:#0a84ff}</style>
+@media (prefers-color-scheme:dark){body{background:#111;color:#aaa}}div{text-align:center;max-width:480px;padding:24px}h1{font-size:20px;color:inherit}code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:4px}ul{text-align:left;line-height:1.9}a{color:inherit;text-decoration:underline}</style>
 </head><body><div>${body}</div></body></html>`);
 }
 
@@ -110,7 +110,7 @@ class PreviewServer {
 
   info(): PreviewInfo {
     const t = this.target();
-    let project;
+    let project: Project | null;
     try {
       project = getProject(this.projectId);
     } catch {
@@ -126,13 +126,13 @@ class PreviewServer {
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = new URL(req.url || '/', 'http://preview.local');
-    if (url.pathname === '/__vibecrew/inject.js') {
+    if (url.pathname === '/__crew/inject.js') {
       const cfg = { liveReload: !this.target() };
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(`window.__VIBECREW_CFG__=${JSON.stringify(cfg)};\n${fs.readFileSync(INJECT_SCRIPT, 'utf8')}`);
+      res.end(`window.__CREW_CFG__=${JSON.stringify(cfg)};\n${fs.readFileSync(INJECT_SCRIPT, 'utf8')}`);
       return;
     }
-    if (url.pathname === '/__vibecrew/events') {
+    if (url.pathname === '/__crew/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
       res.write(': hi\n\n');
       this.sse.add(res);
@@ -149,7 +149,7 @@ class PreviewServer {
   }
 
   private serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
-    let project;
+    let project: Project;
     try {
       project = getProject(this.projectId);
     } catch {
@@ -228,32 +228,29 @@ class PreviewServer {
     delete headers['accept-encoding'];
     if (typeof headers.origin === 'string') headers.origin = t.origin;
     if (typeof headers.referer === 'string') headers.referer = headers.referer.replace(selfOrigin, t.origin);
-    const upstream = http.request(
-      { hostname: t.hostname, port: t.port || 80, path: req.url, method: req.method, headers },
-      (up) => {
-        const h: http.OutgoingHttpHeaders = { ...up.headers };
-        delete h['x-frame-options'];
-        delete h['content-security-policy'];
-        if (typeof h.location === 'string' && h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/';
-        const ct = String(up.headers['content-type'] || '');
-        if (ct.includes('text/html')) {
-          const chunks: Buffer[] = [];
-          up.on('data', (c) => chunks.push(c));
-          up.on('end', () => {
-            const body = injectHtml(Buffer.concat(chunks).toString('utf8'));
-            delete h['content-length'];
-            delete h['content-encoding'];
-            delete h['transfer-encoding'];
-            h['cache-control'] = 'no-store';
-            res.writeHead(up.statusCode || 200, h);
-            res.end(body);
-          });
-          return;
-        }
-        res.writeHead(up.statusCode || 200, h);
-        up.pipe(res);
-      },
-    );
+    const upstream = http.request({ hostname: t.hostname, port: t.port || 80, path: req.url, method: req.method, headers }, (up) => {
+      const h: http.OutgoingHttpHeaders = { ...up.headers };
+      delete h['x-frame-options'];
+      delete h['content-security-policy'];
+      if (typeof h.location === 'string' && h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/';
+      const ct = String(up.headers['content-type'] || '');
+      if (ct.includes('text/html')) {
+        const chunks: Buffer[] = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          const body = injectHtml(Buffer.concat(chunks).toString('utf8'));
+          delete h['content-length'];
+          delete h['content-encoding'];
+          delete h['transfer-encoding'];
+          h['cache-control'] = 'no-store';
+          res.writeHead(up.statusCode || 200, h);
+          res.end(body);
+        });
+        return;
+      }
+      res.writeHead(up.statusCode || 200, h);
+      up.pipe(res);
+    });
     upstream.on('error', (e) => {
       if (res.headersSent) return res.end();
       res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });
@@ -345,6 +342,12 @@ export async function restartPreviews() {
     const info = await ensurePreview(id);
     bus.emit({ t: 'preview', info });
   }
+}
+
+/** Shuts down one project's preview server (its workspace was removed). */
+export function closePreview(projectId: string) {
+  previews.get(projectId)?.close();
+  previews.delete(projectId);
 }
 
 export function closeAllPreviews() {

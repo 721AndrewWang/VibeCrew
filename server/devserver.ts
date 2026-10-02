@@ -1,8 +1,8 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import type { DevServerState, Project } from '../shared/types';
 import { bus } from './bus';
 import { cleanEnv } from './config';
-import { devCommand, needsInstall, packageManager, getProject } from './projects';
+import { devCommand, getProject, needsInstall, packageManager } from './projects';
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
 const URL_RE = /(https?):\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|[\w.-]+):(\d{2,5})(\/[^\s'"]*)?/i;
@@ -99,7 +99,7 @@ class DevServer {
     const child = this.spawnStep(command, project);
     this.proc = child;
     this.urlTimer = setTimeout(() => {
-      if (this.state.status === 'starting') this.append('\r\n\x1b[33m[VibeCrew] 没能从输出中识别到访问地址，可以在浏览器地址栏手动输入，例如 http://localhost:3000\x1b[0m\r\n');
+      if (this.state.status === 'starting') this.append('\r\n\x1b[33m[Crew] 没能从输出中识别到访问地址，可以在浏览器地址栏手动输入，例如 http://localhost:3000\x1b[0m\r\n');
     }, 45_000);
     child.on('exit', (code, signal) => {
       if (this.proc !== child) return;
@@ -166,6 +166,14 @@ export function devServer(projectId: string): DevServer {
     servers.set(projectId, s);
   }
   return s;
+}
+
+/** Stops a project's dev server and drops it (its workspace was removed). */
+export async function disposeDevServer(projectId: string) {
+  const s = servers.get(projectId);
+  if (!s) return;
+  await s.stop();
+  servers.delete(projectId);
 }
 
 export function devServerStates(): DevServerState[] {

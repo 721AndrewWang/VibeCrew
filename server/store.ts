@@ -1,8 +1,11 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import type { Bot, Chat, ChatMessage, PermissionLevel, Project, PublicSettings, Routine } from '../shared/types';
+import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
+import type { AuthMode, Bot, Chat, ChatMessage, Improvement, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine, RoutingRecord, SandboxSettings } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
+import { SCHEMA_VERSION } from './migrations';
+import { DEFAULT_ALLOWED } from './sandbox';
 
 export function uid(prefix = ''): string {
   return prefix + crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x');
@@ -79,15 +82,28 @@ export class Collection<T extends { id: string }> {
 }
 
 export interface Settings {
+  /** Shape of the data folder; see migrations.ts. */
+  schemaVersion: number;
   defaultModel: string;
-  authMode: 'claude-code' | 'api-key';
+  authMode: AuthMode;
   apiKey: string;
   baseUrl: string;
+  /** Another provider's Anthropic-compatible endpoint (authMode 'provider'). */
+  provider: ProviderSettings;
+  /** Sent as ANTHROPIC_AUTH_TOKEN; never leaves the server. */
+  providerToken: string;
   lanEnabled: boolean;
   port: number;
   projectsRoot: string;
   defaultPermission: PermissionLevel;
   maxHops: number;
+  /** Also read by the desktop app (desktop/main.cjs) for its window, tray and Dock icons. */
+  logo: LogoId;
+  /** Refused for every bot, whatever its permission mode (PublicSettings.denyRules). */
+  denyRules: string[];
+  sandbox: SandboxSettings;
+  routing: { mode: 'off' | 'shadow' };
+  rotateAtTokens: number;
   /** Secret for LAN access and API calls. */
   token: string;
   /** Values for ${VAR} placeholders in plugin configs (e.g. GITHUB_TOKEN). */
@@ -96,15 +112,23 @@ export interface Settings {
 }
 
 const DEFAULT_SETTINGS: Settings = {
+  schemaVersion: SCHEMA_VERSION,
   defaultModel: '',
   authMode: 'claude-code',
   apiKey: '',
   baseUrl: '',
+  provider: { preset: '', baseUrl: '', model: '', fastModel: '' },
+  providerToken: '',
   lanEnabled: false,
   port: 4321,
   projectsRoot: DEFAULT_PROJECTS_ROOT,
   defaultPermission: 'edits',
   maxHops: 8,
+  logo: DEFAULT_LOGO,
+  denyRules: [],
+  sandbox: { enabled: true, allowedDomains: [...DEFAULT_ALLOWED] },
+  routing: { mode: 'shadow' },
+  rotateAtTokens: 60_000,
   token: '',
   pluginSecrets: {},
   initialized: false,
@@ -115,6 +139,9 @@ class SettingsStore {
 
   constructor() {
     this.data = { ...DEFAULT_SETTINGS, ...readJson<Partial<Settings>>(DATA.settings, {}) };
+    if (!isLogoId(this.data.logo)) this.data.logo = DEFAULT_LOGO;
+    if (!this.data.routing) this.data.routing = { mode: 'shadow' };
+    if (!this.data.sandbox) this.data.sandbox = { ...DEFAULT_SETTINGS.sandbox, allowedDomains: [...DEFAULT_ALLOWED] };
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -138,11 +165,18 @@ class SettingsStore {
       authMode: s.authMode,
       hasApiKey: !!s.apiKey,
       baseUrl: s.baseUrl,
+      provider: s.provider,
+      hasProviderToken: !!s.providerToken,
       lanEnabled: s.lanEnabled,
       port: s.port,
       projectsRoot: s.projectsRoot,
       defaultPermission: s.defaultPermission,
       maxHops: s.maxHops,
+      logo: s.logo,
+      denyRules: s.denyRules,
+      sandbox: s.sandbox || { enabled: false, allowedDomains: [] },
+      routing: s.routing || { mode: 'off' },
+      rotateAtTokens: s.rotateAtTokens ?? 60_000,
     };
   }
 
@@ -182,17 +216,21 @@ class MessageStore {
     } catch {
       /* new chat */
     }
-    // Turns interrupted by a restart can no longer finish.
+    // Turns interrupted by a restart can no longer finish; what they had written stays.
+    const interrupted: ChatMessage[] = [];
     for (const m of map.values()) {
       if (m.status === 'streaming' || m.status === 'queued') {
         m.status = 'stopped';
+        m.interrupted = true;
         for (const p of m.parts || []) {
           if (p.type === 'tool' && p.status === 'running') p.status = 'error';
           if (p.type === 'approval' && p.status === 'pending') p.status = 'expired';
         }
+        interrupted.push(m);
       }
     }
     this.cache.set(chatId, map);
+    for (const m of interrupted) this.put(m);
     if (lines > 50 && lines > map.size * 2) this.compact(chatId);
     return map;
   }
@@ -229,7 +267,9 @@ class MessageStore {
   }
 
   compact(chatId: string) {
-    const lines = this.sorted(chatId).map((m) => JSON.stringify(m)).join('\n');
+    const lines = this.sorted(chatId)
+      .map((m) => JSON.stringify(m))
+      .join('\n');
     const tmp = this.file(chatId) + '.tmp';
     fs.writeFileSync(tmp, lines ? lines + '\n' : '');
     fs.renameSync(tmp, this.file(chatId));
@@ -241,4 +281,6 @@ export const bots = new Collection<Bot>(DATA.bots);
 export const chats = new Collection<Chat>(DATA.chats);
 export const projects = new Collection<Project>(DATA.projects);
 export const routines = new Collection<Routine>(DATA.routines);
+export const improvements = new Collection<Improvement>(DATA.improvements);
+export const routingLog = new Collection<RoutingRecord>(DATA.routing);
 export const messages = new MessageStore();

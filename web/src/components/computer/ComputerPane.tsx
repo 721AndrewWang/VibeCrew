@@ -1,12 +1,13 @@
-import { ChevronLeft, FileCode2, FolderPlus, GitCompareArrows, Globe, Maximize2, Minimize2, Play, RotateCw, Square, SquareTerminal, X } from 'lucide-react';
+import { ChevronLeft, FileCode2, FolderPlus, GitBranch, GitCompareArrows, Globe, Maximize2, Minimize2, Play, RotateCw, Square, SquareTerminal, X } from 'lucide-react';
 import type { Chat } from '../../../../shared/types';
 import { api } from '../../api';
-import { openModal, setComputer, toast, useStore, type ComputerTab } from '../../store';
+import { type ComputerTab, chatProjectId, openModal, setComputer, toast, useStore } from '../../store';
 import { cx } from '../../utils';
+import { Glyph } from '../ui';
 import { BrowserTab } from './BrowserTab';
+import { ChangesTab } from './ChangesTab';
 import { FilesTab } from './FilesTab';
 import { TerminalTab } from './TerminalTab';
-import { ChangesTab } from './ChangesTab';
 
 const TABS: { id: ComputerTab; label: string; icon: typeof Globe }[] = [
   { id: 'browser', label: '浏览器', icon: Globe },
@@ -18,7 +19,12 @@ const TABS: { id: ComputerTab; label: string; icon: typeof Globe }[] = [
 function DevControls({ projectId }: { projectId: string }) {
   const ds = useStore((s) => s.devServers[projectId]);
   const project = useStore((s) => s.projects[projectId]);
-  if (!project?.devDetected) return <span className="dev-pill static" title="静态网页由 VibeCrew 直接提供，保存即刷新">静态站点</span>;
+  if (!project?.devDetected)
+    return (
+      <span className="dev-pill static" title="静态网页由 Crew 直接提供，保存即刷新">
+        静态站点
+      </span>
+    );
   const status = ds?.status || 'stopped';
   const run = (action: 'start' | 'stop' | 'restart') => api.dev(projectId, action).catch((e) => toast('操作失败', e.message, 'error'));
   const label = { stopped: '未启动', installing: '安装依赖中', starting: '启动中', running: '运行中', error: '出错了' }[status];
@@ -49,8 +55,10 @@ function DevControls({ projectId }: { projectId: string }) {
 export function ComputerPane({ chat, visible }: { chat: Chat; visible: boolean }) {
   const tab = useStore((s) => s.computer.tab);
   const maximized = useStore((s) => s.computer.maximized);
-  const project = useStore((s) => (chat.projectId ? s.projects[chat.projectId] : null));
-  const errors = useStore((s) => (chat.projectId ? (s.preview[chat.projectId]?.console || []).filter((c) => c.level === 'error').length : 0));
+  // The chat's isolated workspace when it has one: preview, files and terminal all follow it.
+  const projectId = useStore((s) => chatProjectId(chat, s.projects));
+  const project = useStore((s) => (projectId ? s.projects[projectId] : null));
+  const errors = useStore((s) => (projectId ? (s.preview[projectId]?.console || []).filter((c) => c.level === 'error').length : 0));
 
   return (
     <section className={cx('computer', !visible && 'hidden')}>
@@ -68,6 +76,12 @@ export function ComputerPane({ chat, visible }: { chat: Chat; visible: boolean }
           ))}
         </div>
         <span className="spacer" />
+        {project?.workspace && (
+          <button className="branch-pill" title={`独立工作区：${project.path}`} onClick={() => setComputer({ tab: 'changes' })}>
+            <GitBranch size={12} />
+            <span>{project.workspace.branch}</span>
+          </button>
+        )}
         {project && <DevControls projectId={project.id} />}
         <button className="icon-btn hide-mobile" title={maximized ? '还原' : '放大'} onClick={() => setComputer({ maximized: !maximized })}>
           {maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -78,7 +92,9 @@ export function ComputerPane({ chat, visible }: { chat: Chat; visible: boolean }
       </div>
       {!project ? (
         <div className="empty" style={{ flex: 1 }}>
-          <div className="big">🗂️</div>
+          <div className="big">
+            <Glyph emoji="🗂️" size={26} />
+          </div>
           <h3>这个对话还没有绑定项目</h3>
           <p>绑定一个项目文件夹后，机器人就能在里面写代码，这里会显示实时预览、文件和终端。</p>
           <div className="row">

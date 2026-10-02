@@ -1,9 +1,9 @@
+import { Play, Plus, Rocket, RotateCw, Square, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Play, Plus, RotateCw, Rocket, Square, SquareTerminal, X } from 'lucide-react';
 import type { Project } from '../../../../shared/types';
 import { api } from '../../api';
-import { toast, useStore } from '../../store';
 import { send } from '../../socket';
+import { toast, useStore } from '../../store';
 import { cx } from '../../utils';
 import { LiveTerminal, LogTerminal } from './XTerm';
 
@@ -30,6 +30,7 @@ function newId() {
 function DevServerPanel({ project, active }: { project: Project; active: boolean }) {
   const ds = useStore((s) => s.devServers[project.id]);
   const logs = useStore((s) => s.devLogs[project.id]) || '';
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load the logs once per project
   useEffect(() => {
     if (logs) return;
     api
@@ -38,7 +39,6 @@ function DevServerPanel({ project, active }: { project: Project; active: boolean
         if (r.logs) useStore.setState((s) => ({ devLogs: { ...s.devLogs, [project.id]: r.logs + (s.devLogs[project.id] || '') } }));
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
   const status = ds?.status || 'stopped';
   const run = (a: 'start' | 'stop' | 'restart') => api.dev(project.id, a).catch((e) => toast('操作失败', e.message, 'error'));
@@ -105,15 +105,15 @@ export function TerminalTab({ project, active }: { project: Project; active: boo
     setCurrent(t.id);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each request carries a new nonce
   useEffect(() => {
     if (request && Date.now() - request.nonce < 5000) add(request.command);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.nonce]);
 
   // Start with one shell if there is nothing else to show.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: open a first terminal when the tab is shown
   useEffect(() => {
     if (active && !hasDev && !tabs.length) add();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   const close = (id: string) => {

@@ -1,7 +1,7 @@
-import { memo, useMemo, type MouseEvent } from 'react';
-import { Marked, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
+import { Marked, type Tokens } from 'marked';
+import { type MouseEvent, memo, useMemo } from 'react';
 import { openFileInEditor, toast } from '../store';
 import { copyText } from '../utils';
 
@@ -72,6 +72,7 @@ function render(text: string, names: string[]): string {
 }
 
 export const Markdown = memo(function Markdown({ text, names = [], projectId, className }: { text: string; names?: string[]; projectId?: string | null; className?: string }) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: names is a fresh array each render; its contents are the key
   const html = useMemo(() => render(text, names), [text, names.join('|')]);
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
@@ -90,5 +91,6 @@ export const Markdown = memo(function Markdown({ text, names = [], projectId, cl
     }
     if (t.classList.contains('code-path') && !projectId) toast('这个对话没有绑定项目');
   };
+  // biome-ignore lint/security/noDangerouslySetInnerHtml: rendered by marked, then run through DOMPurify
   return <div className={className ? `md ${className}` : 'md'} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 });

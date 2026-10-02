@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { AtSign, ChevronRight, File, FileCode2, Folder, FolderOpen, Globe, PanelLeft, RefreshCw, Save } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Chat, Project } from '../../../../shared/types';
 import { api, type FileContent, type TreeEntry } from '../../api';
 import { addAttachment, attachmentId, setComputer, toast, updatePreview, useStore } from '../../store';
 import { cx, fmtBytes } from '../../utils';
+import { Glyph } from '../ui';
 import { CodeEditor } from './CodeEditor';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|ico|bmp)$/i;
@@ -71,6 +72,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
   }, [active, loadDir]);
 
   // Files changed on disk: refresh listings and the open file.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload what is shown when files change on disk
   useEffect(() => {
     if (!loaded.current || !filesVersion) return;
     for (const dir of Object.keys(children)) if (dir === '' || expanded.has(dir)) void loadDir(dir);
@@ -80,10 +82,10 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
       if (openPath && lastChanged.includes(openPath) && !dirty) void openFile(openPath, false);
       return () => clearTimeout(t);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filesVersion]);
 
   // "Open this file" requests from chat messages.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each request carries a new nonce
   useEffect(() => {
     if (!openReq || openReq.projectId !== project.id) return;
     const parts = openReq.path.split('/');
@@ -93,7 +95,6 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
     for (const d of dirs) void loadDir(d);
     setExpanded((e) => new Set([...e, ...dirs]));
     void openFile(openReq.path);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openReq?.nonce]);
 
   const toggle = (dir: string) => {
@@ -204,7 +205,9 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
         <div className="editor-body">
           {!openPath && (
             <div className="empty">
-              <div className="big">📄</div>
+              <div className="big">
+                <Glyph emoji="📄" size={26} />
+              </div>
               <p>从左侧选择文件查看或编辑。机器人修改文件后，这里会自动刷新。</p>
             </div>
           )}

@@ -1,13 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { basicSetup } from 'codemirror';
-import { EditorView, keymap } from '@codemirror/view';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
+import { html } from '@codemirror/lang-html';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { EditorView, keymap } from '@codemirror/view';
+import { basicSetup } from 'codemirror';
+import { useEffect, useRef } from 'react';
 import { useDarkMode } from './theme';
 
 function languageFor(path: string): Extension {
@@ -66,6 +66,7 @@ export function CodeEditor({ path, value, onChange, onSave }: { path: string; va
   cb.current = { onChange, onSave };
   const dark = useDarkMode();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new editor per file; later edits to value and theme are applied separately
   useEffect(() => {
     const state = EditorState.create({
       doc: value,
@@ -97,7 +98,6 @@ export function CodeEditor({ path, value, onChange, onSave }: { path: string; va
       view.current = null;
     };
     // A new file gets a fresh editor (language, undo history).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
   useEffect(() => {

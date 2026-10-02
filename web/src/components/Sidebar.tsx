@@ -1,10 +1,29 @@
+import {
+  Bot as BotIcon,
+  Clock,
+  FolderGit2,
+  FolderPlus,
+  GitBranch,
+  Hourglass,
+  MessageCircle,
+  Pin,
+  PinOff,
+  RotateCcw,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  SquarePen,
+  Trash2,
+  UserPlus,
+  Users,
+  Zap,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Bot as BotIcon, Clock, FolderGit2, MessageCircle, Pin, Search, Settings, SquarePen, Users, Zap, FolderPlus, UserPlus, Trash2, PinOff, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import type { Chat } from '../../../shared/types';
 import { api } from '../api';
 import { openChat, openModal, setView, toast, useStore, type View } from '../store';
 import { cx, fmtShort, statusLabel } from '../utils';
-import { Avatar, confirmDialog, GroupAvatar, Menu, MenuButton, useNow, type MenuItem } from './ui';
+import { Avatar, confirmDialog, GroupAvatar, Logo, Menu, MenuButton, type MenuItem, useNow } from './ui';
 
 const NAV: { view: View; label: string; icon: typeof MessageCircle }[] = [
   { view: 'chat', label: '对话', icon: MessageCircle },
@@ -54,15 +73,14 @@ function ChatItem({ chat, active }: { chat: Chat; active: boolean }) {
   const [menu, setMenu] = useState<DOMRect | null>(null);
   useNow(60_000);
   const members = chat.botIds.map((id) => bots[id]).filter(Boolean);
-  const working = members
-    .map((b) => ({ b, s: statuses[b.id] }))
-    .filter((x) => x.s && x.s.state !== 'idle' && x.s.state !== 'error' && x.s.chatId === chat.id);
+  const working = members.map((b) => ({ b, s: statuses[b.id] })).filter((x) => x.s && x.s.state !== 'idle' && x.s.state !== 'error' && x.s.chatId === chat.id);
   const waiting = working.find((x) => x.s.state === 'waiting');
   const shown = waiting || working[0];
   const dm = chat.kind === 'dm' ? members[0] : null;
   return (
     <div
       className={cx('chat-item', active && 'active')}
+      data-chat={chat.id}
       onClick={() => openChat(chat.id)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -73,13 +91,22 @@ function ChatItem({ chat, active }: { chat: Chat; active: boolean }) {
       <div className="ci-main">
         <div className="ci-top">
           <span className="ci-title">{chat.title}</span>
+          {chat.workspaceId && <GitBranch size={11} className="ci-pin" aria-label="独立工作区" />}
           {chat.pinned && <Pin size={11} className="ci-pin" />}
           <span className="ci-time">{chat.lastMessage ? fmtShort(chat.lastMessage.ts) : ''}</span>
         </div>
         <div className="ci-bottom">
           {shown ? (
             <span className={cx('ci-status', shown.s.state === 'waiting' ? 'wait' : 'busy')}>
-              {shown.s.state === 'waiting' ? '⏳ ' : <span className="typing-mini"><i /><i /><i /></span>}
+              {shown.s.state === 'waiting' ? (
+                <Hourglass size={11} className="wait-ic" />
+              ) : (
+                <span className="typing-mini">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              )}
               {chat.kind === 'group' ? `${shown.b.name} ` : ''}
               {statusLabel(shown.s).text}
             </span>
@@ -129,8 +156,8 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sb-head">
         <div className="brand">
-          <img src="/icon.svg" alt="" />
-          <span>VibeCrew</span>
+          <Logo />
+          <span>Crew</span>
         </div>
         <MenuButton
           title="新建"

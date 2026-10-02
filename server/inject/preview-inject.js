@@ -1,36 +1,42 @@
-// Injected into every page shown in the VibeCrew preview.
-// Talks to the VibeCrew window (the iframe parent) via postMessage:
+// Injected into every page shown in the Crew preview.
+// Talks to the Crew window (the iframe parent) via postMessage:
 // console capture, navigation tracking, element picking, demo recording, live reload.
-(function () {
-  if (window.__vibecrew) return;
-  var cfg = window.__VIBECREW_CFG__ || {};
+(() => {
+  if (window.__crew) return;
+  var cfg = window.__CREW_CFG__ || {};
   var inFrame = window.parent !== window;
   var hostOrigin = null;
   var outbox = [];
   var MAX_TEXT = 4000;
-  window.__vibecrew = { version: 1 };
+  window.__crew = { version: 1 };
 
   function post(msg) {
     if (!inFrame) return;
-    msg.__vibecrew = true;
+    msg.__crew = true;
     if (!hostOrigin) {
       if (outbox.length < 200) outbox.push(msg);
       return;
     }
-    try { window.parent.postMessage(msg, hostOrigin); } catch (e) { /* ignore */ }
+    try {
+      window.parent.postMessage(msg, hostOrigin);
+    } catch {
+      /* ignore */
+    }
   }
 
   function announce(type) {
     if (!inFrame) return;
     // Only the URL and title go out before the host introduces itself.
     try {
-      window.parent.postMessage({ __vibecrew: true, type: type, url: location.href, title: document.title }, '*');
-    } catch (e) { /* ignore */ }
+      window.parent.postMessage({ __crew: true, type: type, url: location.href, title: document.title }, '*');
+    } catch {
+      /* ignore */
+    }
   }
 
   // ---------- serialization ----------
   function describeNode(n) {
-    if (!n || !n.tagName) return String(n);
+    if (!n?.tagName) return String(n);
     var s = '<' + n.tagName.toLowerCase();
     if (n.id) s += '#' + n.id;
     if (typeof n.className === 'string' && n.className.trim()) s += '.' + n.className.trim().split(/\s+/).slice(0, 3).join('.');
@@ -49,16 +55,20 @@
       if (v.nodeType === 1) return describeNode(v);
       if (depth > 0) return Array.isArray(v) ? '[Array(' + v.length + ')]' : '{…}';
       var seen = [];
-      return JSON.stringify(v, function (k, val) {
-        if (val && typeof val === 'object') {
-          if (seen.indexOf(val) >= 0) return '[Circular]';
-          seen.push(val);
-          if (val.nodeType === 1) return describeNode(val);
-        }
-        if (typeof val === 'function') return '[Function]';
-        return val;
-      }, 0);
-    } catch (e) {
+      return JSON.stringify(
+        v,
+        (_k, val) => {
+          if (val && typeof val === 'object') {
+            if (seen.indexOf(val) >= 0) return '[Circular]';
+            seen.push(val);
+            if (val.nodeType === 1) return describeNode(val);
+          }
+          if (typeof val === 'function') return '[Function]';
+          return val;
+        },
+        0,
+      );
+    } catch {
       return String(v);
     }
   }
@@ -74,7 +84,7 @@
   }
 
   // ---------- console capture ----------
-  ['error', 'warn', 'info', 'log'].forEach(function (level) {
+  ['error', 'warn', 'info', 'log'].forEach((level) => {
     var orig = console[level];
     if (typeof orig !== 'function') return;
     console[level] = function () {
@@ -83,40 +93,51 @@
         for (var i = 0; i < arguments.length; i++) parts.push(fmt(arguments[i]));
         var text = parts.join(' ');
         if (text.indexOf('[vite]') !== 0 || level === 'error') sendConsole(level, text);
-      } catch (e) { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return orig.apply(this, arguments);
     };
   });
 
-  window.addEventListener('error', function (ev) {
-    try {
-      var t = ev.target;
-      if (t && t !== window && t.tagName) {
-        var url = t.src || t.href || '';
-        sendConsole('error', '资源加载失败: ' + describeNode(t) + (url ? ' ' + url : ''));
-        return;
+  window.addEventListener(
+    'error',
+    (ev) => {
+      try {
+        var t = ev.target;
+        if (t && t !== window && t.tagName) {
+          var url = t.src || t.href || '';
+          sendConsole('error', '资源加载失败: ' + describeNode(t) + (url ? ' ' + url : ''));
+          return;
+        }
+        var loc = ev.filename ? ev.filename.replace(location.origin, '') + ':' + ev.lineno + ':' + ev.colno : '';
+        sendConsole('error', 'Uncaught ' + (ev.error ? fmt(ev.error) : ev.message), loc);
+      } catch {
+        /* ignore */
       }
-      var loc = ev.filename ? ev.filename.replace(location.origin, '') + ':' + ev.lineno + ':' + ev.colno : '';
-      sendConsole('error', 'Uncaught ' + (ev.error ? fmt(ev.error) : ev.message), loc);
-    } catch (e) { /* ignore */ }
-  }, true);
+    },
+    true,
+  );
 
-  window.addEventListener('unhandledrejection', function (ev) {
+  window.addEventListener('unhandledrejection', (ev) => {
     sendConsole('error', 'Unhandled promise rejection: ' + fmt(ev.reason));
   });
 
   if (window.fetch) {
     var origFetch = window.fetch;
     window.fetch = function (input, init) {
-      var method = (init && init.method) || (input && input.method) || 'GET';
-      var url = typeof input === 'string' ? input : (input && input.url) || String(input);
-      return origFetch.apply(this, arguments).then(function (res) {
-        if (res.status >= 400 && url.indexOf('/__vibecrew') < 0) sendConsole('warn', '[network] ' + res.status + ' ' + method.toUpperCase() + ' ' + url);
-        return res;
-      }, function (err) {
-        sendConsole('error', '[network] ' + method.toUpperCase() + ' ' + url + ' 失败: ' + fmt(err));
-        throw err;
-      });
+      var method = init?.method || input?.method || 'GET';
+      var url = typeof input === 'string' ? input : input?.url || String(input);
+      return origFetch.apply(this, arguments).then(
+        (res) => {
+          if (res.status >= 400 && url.indexOf('/__crew') < 0) sendConsole('warn', '[network] ' + res.status + ' ' + method.toUpperCase() + ' ' + url);
+          return res;
+        },
+        (err) => {
+          sendConsole('error', '[network] ' + method.toUpperCase() + ' ' + url + ' 失败: ' + fmt(err));
+          throw err;
+        },
+      );
     };
   }
 
@@ -128,11 +149,10 @@
       return xo.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function () {
-      var x = this;
-      x.addEventListener('loadend', function () {
-        if (!x.__vc) return;
-        if (x.status === 0) sendConsole('error', '[network] ' + x.__vc.m + ' ' + x.__vc.u + ' 失败');
-        else if (x.status >= 400) sendConsole('warn', '[network] ' + x.status + ' ' + x.__vc.m + ' ' + x.__vc.u);
+      this.addEventListener('loadend', () => {
+        if (!this.__vc) return;
+        if (this.status === 0) sendConsole('error', '[network] ' + this.__vc.m + ' ' + this.__vc.u + ' 失败');
+        else if (this.status >= 400) sendConsole('warn', '[network] ' + this.status + ' ' + this.__vc.m + ' ' + this.__vc.u);
       });
       return xs.apply(this, arguments);
     };
@@ -146,7 +166,7 @@
     post({ type: 'nav', url: location.href, title: document.title });
     if (recording) record({ type: 'navigate', url: location.pathname + location.search + location.hash });
   }
-  ['pushState', 'replaceState'].forEach(function (fn) {
+  ['pushState', 'replaceState'].forEach((fn) => {
     var orig = history[fn];
     history[fn] = function () {
       var r = orig.apply(this, arguments);
@@ -158,45 +178,59 @@
   window.addEventListener('hashchange', navChanged);
 
   // Keep the scroll position across live reloads.
-  var SCROLL_KEY = '__vibecrew_scroll:' + location.pathname;
+  var SCROLL_KEY = '__crew_scroll:' + location.pathname;
   try {
     var saved = sessionStorage.getItem(SCROLL_KEY);
     if (saved) {
       sessionStorage.removeItem(SCROLL_KEY);
       var y = parseInt(saved, 10) || 0;
-      var restore = function () { window.scrollTo(0, y); };
+      var restore = () => {
+        window.scrollTo(0, y);
+      };
       if (document.readyState === 'complete') restore();
       else window.addEventListener('load', restore);
     }
-  } catch (e) { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   function reloadKeepingScroll() {
-    try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch (e) { /* ignore */ }
+    try {
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+    } catch {
+      /* ignore */
+    }
     location.reload();
   }
 
   // ---------- live reload (static projects) ----------
   if (cfg.liveReload && window.EventSource) {
     try {
-      var es = new EventSource('/__vibecrew/events');
-      es.onmessage = function (ev) {
+      var es = new EventSource('/__crew/events');
+      es.onmessage = (ev) => {
         var data = {};
-        try { data = JSON.parse(ev.data); } catch (e) { return; }
+        try {
+          data = JSON.parse(ev.data);
+        } catch {
+          return;
+        }
         if (data.type !== 'change') return;
         var paths = data.paths || [];
-        var cssOnly = paths.length > 0 && paths.every(function (p) { return /\.css$/i.test(p); });
+        var cssOnly = paths.length > 0 && paths.every((p) => /\.css$/i.test(p));
         if (cssOnly) {
           var links = document.querySelectorAll('link[rel="stylesheet"]');
           for (var i = 0; i < links.length; i++) {
             var href = links[i].getAttribute('href');
-            if (!href || /^(https?:)?\/\//.test(href) && href.indexOf(location.host) < 0) continue;
+            if (!href || (/^(https?:)?\/\//.test(href) && href.indexOf(location.host) < 0)) continue;
             links[i].setAttribute('href', href.replace(/([?&])__vc=\d+/, '$1').replace(/[?&]$/, '') + (href.indexOf('?') >= 0 ? '&' : '?') + '__vc=' + Date.now());
           }
         } else {
           reloadKeepingScroll();
         }
       };
-    } catch (e) { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   // ---------- helpers for element info ----------
@@ -205,20 +239,29 @@
   }
 
   function isUnique(sel) {
-    try { return document.querySelectorAll(sel).length === 1; } catch (e) { return false; }
+    try {
+      return document.querySelectorAll(sel).length === 1;
+    } catch {
+      return false;
+    }
   }
 
   function segment(el) {
     var tag = el.tagName.toLowerCase();
     if (el.id && !/^\d/.test(el.id) && isUnique('#' + cssEscape(el.id))) return { sel: '#' + cssEscape(el.id), anchor: true };
     var s = tag;
-    var cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter(function (c) {
-      return c && c.length < 40 && !/^(active|hover|focus|open|show|is-|has-)/.test(c) && c.indexOf(':') < 0;
-    }).slice(0, 2) : [];
+    var cls =
+      typeof el.className === 'string'
+        ? el.className
+            .trim()
+            .split(/\s+/)
+            .filter((c) => c && c.length < 40 && !/^(active|hover|focus|open|show|is-|has-)/.test(c) && c.indexOf(':') < 0)
+            .slice(0, 2)
+        : [];
     if (cls.length) s += '.' + cls.map(cssEscape).join('.');
     var parent = el.parentElement;
     if (parent) {
-      var same = Array.prototype.filter.call(parent.children, function (c) { return c.tagName === el.tagName; });
+      var same = Array.prototype.filter.call(parent.children, (c) => c.tagName === el.tagName);
       if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(el) + 1) + ')';
     }
     return { sel: s, anchor: false };
@@ -228,7 +271,10 @@
     var parts = [];
     var cur = el;
     for (var depth = 0; cur && cur.nodeType === 1 && depth < 8; depth++) {
-      if (cur === document.body || cur === document.documentElement) { parts.unshift(cur.tagName.toLowerCase()); break; }
+      if (cur === document.body || cur === document.documentElement) {
+        parts.unshift(cur.tagName.toLowerCase());
+        break;
+      }
       var seg = segment(cur);
       parts.unshift(seg.sel);
       var sel = parts.join(' > ');
@@ -238,22 +284,51 @@
     return parts.join(' > ');
   }
 
-  var STYLE_KEYS = ['display', 'position', 'width', 'height', 'margin', 'padding', 'color', 'background-color', 'background-image',
-    'font-family', 'font-size', 'font-weight', 'line-height', 'text-align', 'border', 'border-radius', 'box-shadow', 'gap',
-    'flex-direction', 'justify-content', 'align-items', 'grid-template-columns', 'opacity', 'z-index', 'transform', 'transition'];
+  var STYLE_KEYS = [
+    'display',
+    'position',
+    'width',
+    'height',
+    'margin',
+    'padding',
+    'color',
+    'background-color',
+    'background-image',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'line-height',
+    'text-align',
+    'border',
+    'border-radius',
+    'box-shadow',
+    'gap',
+    'flex-direction',
+    'justify-content',
+    'align-items',
+    'grid-template-columns',
+    'opacity',
+    'z-index',
+    'transform',
+    'transition',
+  ];
   var BORING = /^(none|normal|auto|0px|rgba\(0, 0, 0, 0\)|0px none rgb\(.*\)|static|visible|start|stretch|1)$/;
 
   function stylesOf(el) {
     var out = {};
     try {
       var cs = getComputedStyle(el);
-      STYLE_KEYS.forEach(function (k) {
+      STYLE_KEYS.forEach((k) => {
         var v = cs.getPropertyValue(k);
         if (!v || BORING.test(v.trim())) return;
-        if (k === 'margin' || k === 'padding') { if (/^(0px ?)+$/.test(v)) return; }
+        if (k === 'margin' || k === 'padding') {
+          if (/^(0px ?)+$/.test(v)) return;
+        }
         out[k] = v.length > 160 ? v.slice(0, 160) + '…' : v;
       });
-    } catch (e) { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return out;
   }
 
@@ -265,7 +340,11 @@
       if (!m) continue;
       var url = m[1];
       if (/node_modules|react-dom|react\.development|jsx-dev-runtime|chunk-/.test(url)) continue;
-      try { url = new URL(url).pathname; } catch (e) { /* ignore */ }
+      try {
+        url = new URL(url).pathname;
+      } catch {
+        /* ignore */
+      }
       // Line numbers here refer to the dev server's transformed output, so only the file is reliable.
       return url.replace(/\?.*$/, '');
     }
@@ -279,27 +358,33 @@
       var n = el;
       for (var d = 0; n && d < 6; d++, n = n.parentElement) {
         var v = n.getAttribute && (n.getAttribute('data-v-inspector') || n.getAttribute('data-loc') || n.getAttribute('data-source'));
-        if (v) { res.source = v; break; }
-        var rp = n.getAttribute && n.getAttribute('data-inspector-relative-path');
-        if (rp) { res.source = rp + ':' + (n.getAttribute('data-inspector-line') || '?'); break; }
+        if (v) {
+          res.source = v;
+          break;
+        }
+        var rp = n.getAttribute?.('data-inspector-relative-path');
+        if (rp) {
+          res.source = rp + ':' + (n.getAttribute('data-inspector-line') || '?');
+          break;
+        }
       }
       // React
-      var key = Object.keys(el).find(function (k) { return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0; });
+      var key = Object.keys(el).find((k) => k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0);
       if (key) {
         var f = el[key];
-        var hostSource = f && f._debugSource;
+        var hostSource = f?._debugSource;
         for (var i = 0; f && i < 40; i++, f = f.return) {
           var t = f.type;
           if (typeof t === 'function' || (t && typeof t === 'object' && (t.render || t.type))) {
-            var fn = typeof t === 'function' ? t : (t.render || t.type);
-            var name = (t.displayName || (fn && (fn.displayName || fn.name))) || '';
+            var fn = typeof t === 'function' ? t : t.render || t.type;
+            var name = t.displayName || (fn && (fn.displayName || fn.name)) || '';
             if (name) {
-              res.component = res.component || ('React: ' + name);
+              res.component = res.component || 'React: ' + name;
               if (!res.source) {
                 var src = hostSource || f._debugSource;
-                if (src && src.fileName) res.source = src.fileName + ':' + src.lineNumber;
+                if (src?.fileName) res.source = src.fileName + ':' + src.lineNumber;
                 else {
-                  var loc = stackLocation(el[key]._debugStack && el[key]._debugStack.stack) || stackLocation(f._debugStack && f._debugStack.stack);
+                  var loc = stackLocation(el[key]._debugStack?.stack) || stackLocation(f._debugStack?.stack);
                   if (loc) res.source = loc;
                 }
               }
@@ -326,7 +411,9 @@
         res.source = l.file + ':' + (l.line + 1);
         res.component = res.component || 'Svelte';
       }
-    } catch (e) { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return res;
   }
 
@@ -343,7 +430,7 @@
       styles: stylesOf(el),
       rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
       source: src.source,
-      component: src.component
+      component: src.component,
     };
   }
 
@@ -353,11 +440,13 @@
   function ensureOverlay() {
     if (overlay) return;
     overlay = document.createElement('div');
-    overlay.setAttribute('data-vibecrew', 'overlay');
-    overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #0a84ff;background:rgba(10,132,255,.12);border-radius:3px;transition:all .06s ease-out;display:none;';
+    overlay.setAttribute('data-crew', 'overlay');
+    overlay.style.cssText =
+      'position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #0a84ff;background:rgba(10,132,255,.12);border-radius:3px;transition:all .06s ease-out;display:none;';
     label = document.createElement('div');
-    label.setAttribute('data-vibecrew', 'label');
-    label.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#0a84ff;color:#fff;font:600 11px/1.6 ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:4px;white-space:nowrap;display:none;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+    label.setAttribute('data-crew', 'label');
+    label.style.cssText =
+      'position:fixed;pointer-events:none;z-index:2147483647;background:#0a84ff;color:#fff;font:600 11px/1.6 ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:4px;white-space:nowrap;display:none;box-shadow:0 2px 8px rgba(0,0,0,.25);';
     document.documentElement.appendChild(overlay);
     document.documentElement.appendChild(label);
   }
@@ -389,7 +478,9 @@
 
   // ---------- element picker ----------
   var picking = false;
-  function isOwn(el) { return el && el.getAttribute && el.getAttribute('data-vibecrew'); }
+  function isOwn(el) {
+    return el?.getAttribute?.('data-crew');
+  }
 
   function onPickMove(ev) {
     var el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -411,7 +502,10 @@
     if (!ev.shiftKey) setPicking(false);
   }
   function onPickKey(ev) {
-    if (ev.key === 'Escape') { swallow(ev); setPicking(false); }
+    if (ev.key === 'Escape') {
+      swallow(ev);
+      setPicking(false);
+    }
   }
   function setPicking(on) {
     if (on === picking) return;
@@ -424,7 +518,10 @@
     document[fn]('pointerdown', swallow, true);
     document[fn]('keydown', onPickKey, true);
     document.documentElement.style.cursor = on ? 'crosshair' : '';
-    if (!on) { hideOverlay(); post({ type: 'pick_end' }); }
+    if (!on) {
+      hideOverlay();
+      post({ type: 'pick_end' });
+    }
   }
 
   // ---------- recorder ----------
@@ -459,7 +556,7 @@
   }
   function onRecInput(ev) {
     var el = ev.target;
-    if (!el || !el.tagName) return;
+    if (!el?.tagName) return;
     var tag = el.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
       if (el.type === 'checkbox' || el.type === 'radio') return;
@@ -469,7 +566,7 @@
   }
   function onRecChange(ev) {
     var el = ev.target;
-    if (!el || !el.tagName) return;
+    if (!el?.tagName) return;
     var tag = el.tagName.toLowerCase();
     if (tag === 'select') record({ type: 'select', selector: selectorFor(el), value: el.value });
     else if (el.type === 'checkbox' || el.type === 'radio') record({ type: 'check', selector: selectorFor(el), value: String(el.checked), text: labelOf(el.closest('label') || el) });
@@ -498,22 +595,23 @@
     if (on) {
       if (!badge) {
         badge = document.createElement('div');
-        badge.setAttribute('data-vibecrew', 'badge');
+        badge.setAttribute('data-crew', 'badge');
         badge.textContent = '● 正在录制演示';
-        badge.style.cssText = 'position:fixed;top:8px;right:8px;z-index:2147483647;background:#ff3b30;color:#fff;font:600 12px/1.8 -apple-system,system-ui,sans-serif;padding:2px 10px;border-radius:999px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.25);';
+        badge.style.cssText =
+          'position:fixed;top:8px;right:8px;z-index:2147483647;background:#ff3b30;color:#fff;font:600 12px/1.8 -apple-system,system-ui,sans-serif;padding:2px 10px;border-radius:999px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.25);';
       }
       document.documentElement.appendChild(badge);
     } else {
       flushFill();
-      if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+      if (badge?.parentNode) badge.parentNode.removeChild(badge);
     }
   }
 
   // ---------- messages from the host ----------
-  window.addEventListener('message', function (ev) {
+  window.addEventListener('message', (ev) => {
     if (ev.source !== window.parent) return;
     var d = ev.data;
-    if (!d || d.__vibecrew_host !== true) return;
+    if (d?.__crew_host !== true) return;
     if (d.type === 'hello') {
       hostOrigin = ev.origin;
       var queued = outbox;
@@ -530,14 +628,21 @@
         var el = document.querySelector(d.selector);
         if (el) {
           el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          setTimeout(function () { showOverlay(el, '#34c759'); setTimeout(hideOverlay, 1500); }, 300);
+          setTimeout(() => {
+            showOverlay(el, '#34c759');
+            setTimeout(hideOverlay, 1500);
+          }, 300);
         }
-      } catch (e) { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   });
 
   announce('ready');
   if (document.readyState !== 'complete') {
-    window.addEventListener('load', function () { announce('nav'); });
+    window.addEventListener('load', () => {
+      announce('nav');
+    });
   }
 })();

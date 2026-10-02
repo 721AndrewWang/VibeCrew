@@ -1,106 +1,187 @@
 /* ---------------------------------------------------------------- tokens */
+/*
+ * Black, white and grey by default: grey neutrals, and an accent that is near-black in light mode
+ * and near-white in dark mode (--on-accent is the text drawn on it). Settings → 外观 can switch the
+ * accent to a cool colour (the [data-accent] presets at the end of this block). Everything else
+ * derives from these variables.
+ */
 :root {
-  --bg: #f4f4f7;
+  --accent: #171717;
+  --accent-2: #404040;
+  --on-accent: #ffffff;
+
+  --bg: #f7f7f7;
   --bg-elev: #ffffff;
-  --bg-sunken: #ebebef;
+  --bg-sunken: #efefef;
   --bg-hover: rgba(0, 0, 0, 0.045);
   --bg-active: rgba(0, 0, 0, 0.08);
-  --sidebar: #efeff3;
-  --border: #e2e2e8;
-  --border-strong: #cfcfd6;
-  --text: #1c1c1f;
-  --text-2: #4d4d55;
-  --text-3: #8b8b94;
-  --accent: #0a84ff;
-  --accent-hover: #0071e3;
-  --accent-soft: rgba(10, 132, 255, 0.12);
-  --accent-text: #0066cc;
-  --green: #28b44b;
-  --green-soft: rgba(48, 209, 88, 0.14);
-  --orange: #f08c00;
-  --orange-soft: rgba(255, 159, 10, 0.15);
-  --red: #e5383b;
-  --red-soft: rgba(255, 69, 58, 0.12);
-  --purple: #8e44d6;
-  --bubble-me: #0a84ff;
-  --bubble-me-text: #ffffff;
+  --sidebar: #f3f3f3;
+  --sidebar-bg: #f3f3f3;
+  --border: #e6e6e6;
+  --border-strong: #d1d1d1;
+  --text: #111111;
+  --text-2: #525252;
+  --text-3: #8c8c8c;
+  --green: #2f7a55;
+  --green-soft: rgba(47, 122, 85, 0.1);
+  --orange: #a8701a;
+  --orange-soft: rgba(168, 112, 26, 0.1);
+  --red: #c43c3c;
+  --red-soft: rgba(196, 60, 60, 0.09);
+  --purple: #5a5a5a;
   --bubble-bot: #ffffff;
-  --bubble-bot-text: #1c1c1f;
-  --code-bg: #f5f5f8;
-  --shadow-1: 0 1px 2px rgba(20, 20, 40, 0.06), 0 1px 3px rgba(20, 20, 40, 0.06);
-  --shadow-2: 0 10px 40px rgba(20, 20, 40, 0.16), 0 2px 8px rgba(20, 20, 40, 0.08);
+  --bubble-bot-text: #111111;
+  --code-bg: #f6f6f6;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 14px 44px rgba(0, 0, 0, 0.14), 0 3px 10px rgba(0, 0, 0, 0.07);
+  /* Colour of soft shadows under accent elements (black here, tinted with a colour accent). */
+  --glow: rgba(0, 0, 0, 0.12);
+  /* Bot avatars and the logo in black / white / grey (see .avatar in this file, <Logo> in ui.tsx). */
+  --avatar-bg: linear-gradient(145deg, #f1f1f1, #e2e2e2);
+  --avatar-fg: #1a1a1a;
+  --avatar-ring: rgba(0, 0, 0, 0.07);
+  --logo-bg: #111111;
+  --logo-fg: #ffffff;
+
+  --accent-hover: color-mix(in oklab, var(--accent) 88%, #000000);
+  --accent-soft: color-mix(in oklab, var(--accent) 10%, transparent);
+  --accent-text: color-mix(in oklab, var(--accent) 85%, #000000);
+  --accent-grad: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  --accent-glow: 0 6px 18px var(--glow);
+  --bubble-me: var(--accent-grad);
+  --bubble-me-text: var(--on-accent);
+  --ambient: none;
+
   --radius-xs: 6px;
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 18px;
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
-  --mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Consolas, 'Noto Sans Mono CJK SC', monospace;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, "Noto Sans Mono CJK SC", monospace;
   --sidebar-w: 288px;
   color-scheme: light;
 }
 
-:root[data-theme='dark'] {
-  --bg: #111114;
-  --bg-elev: #1c1c21;
-  --bg-sunken: #0b0b0d;
+:root[data-theme="dark"] {
+  --accent: #f2f2f2;
+  --accent-2: #c9c9c9;
+  --on-accent: #0a0a0a;
+  --bg: #0a0a0a;
+  --bg-elev: #151515;
+  --bg-sunken: #050505;
   --bg-hover: rgba(255, 255, 255, 0.06);
   --bg-active: rgba(255, 255, 255, 0.1);
-  --sidebar: #16161a;
-  --border: #2b2b32;
-  --border-strong: #3b3b44;
-  --text: #f2f2f6;
-  --text-2: #c2c2ca;
-  --text-3: #85858f;
-  --accent: #0a84ff;
-  --accent-hover: #409cff;
-  --accent-soft: rgba(10, 132, 255, 0.2);
-  --accent-text: #5aa9ff;
-  --green: #32d74b;
-  --green-soft: rgba(50, 215, 75, 0.16);
-  --orange: #ff9f0a;
-  --orange-soft: rgba(255, 159, 10, 0.18);
-  --red: #ff5a52;
-  --red-soft: rgba(255, 69, 58, 0.18);
-  --purple: #bf5af2;
-  --bubble-bot: #26262d;
-  --bubble-bot-text: #f2f2f6;
-  --code-bg: #15151a;
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 12px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --sidebar: #0f0f0f;
+  --sidebar-bg: #0f0f0f;
+  --border: #262626;
+  --border-strong: #383838;
+  --text: #ededed;
+  --text-2: #a3a3a3;
+  --text-3: #6b6b6b;
+  --green: #5bb58a;
+  --green-soft: rgba(91, 181, 138, 0.12);
+  --orange: #d6a24c;
+  --orange-soft: rgba(214, 162, 76, 0.12);
+  --red: #e06464;
+  --red-soft: rgba(224, 100, 100, 0.12);
+  --purple: #a3a3a3;
+  --bubble-bot: #1a1a1a;
+  --bubble-bot-text: #ededed;
+  --code-bg: #0f0f0f;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.7), 0 3px 10px rgba(0, 0, 0, 0.4);
+  --glow: rgba(0, 0, 0, 0.55);
+  --avatar-bg: linear-gradient(145deg, #2b2b2b, #1c1c1c);
+  --avatar-fg: #e8e8e8;
+  --avatar-ring: rgba(255, 255, 255, 0.07);
+  --logo-bg: #f2f2f2;
+  --logo-fg: #0a0a0a;
+  --accent-hover: color-mix(in oklab, var(--accent) 88%, #ffffff);
+  --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+  --accent-text: color-mix(in oklab, var(--accent) 70%, #ffffff);
+  --accent-glow: 0 6px 20px var(--glow);
+  --ambient: none;
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #111114;
-    --bg-elev: #1c1c21;
-    --bg-sunken: #0b0b0d;
+  :root:not([data-theme="light"]) {
+    --accent: #f2f2f2;
+    --accent-2: #c9c9c9;
+    --on-accent: #0a0a0a;
+    --bg: #0a0a0a;
+    --bg-elev: #151515;
+    --bg-sunken: #050505;
     --bg-hover: rgba(255, 255, 255, 0.06);
     --bg-active: rgba(255, 255, 255, 0.1);
-    --sidebar: #16161a;
-    --border: #2b2b32;
-    --border-strong: #3b3b44;
-    --text: #f2f2f6;
-    --text-2: #c2c2ca;
-    --text-3: #85858f;
-    --accent: #0a84ff;
-    --accent-hover: #409cff;
-    --accent-soft: rgba(10, 132, 255, 0.2);
-    --accent-text: #5aa9ff;
-    --green: #32d74b;
-    --green-soft: rgba(50, 215, 75, 0.16);
-    --orange: #ff9f0a;
-    --orange-soft: rgba(255, 159, 10, 0.18);
-    --red: #ff5a52;
-    --red-soft: rgba(255, 69, 58, 0.18);
-    --purple: #bf5af2;
-    --bubble-bot: #26262d;
-    --bubble-bot-text: #f2f2f6;
-    --code-bg: #15151a;
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-2: 0 12px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --sidebar: #0f0f0f;
+    --sidebar-bg: #0f0f0f;
+    --border: #262626;
+    --border-strong: #383838;
+    --text: #ededed;
+    --text-2: #a3a3a3;
+    --text-3: #6b6b6b;
+    --green: #5bb58a;
+    --green-soft: rgba(91, 181, 138, 0.12);
+    --orange: #d6a24c;
+    --orange-soft: rgba(214, 162, 76, 0.12);
+    --red: #e06464;
+    --red-soft: rgba(224, 100, 100, 0.12);
+    --purple: #a3a3a3;
+    --bubble-bot: #1a1a1a;
+    --bubble-bot-text: #ededed;
+    --code-bg: #0f0f0f;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.6);
+    --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.7), 0 3px 10px rgba(0, 0, 0, 0.4);
+    --glow: rgba(0, 0, 0, 0.55);
+    --avatar-bg: linear-gradient(145deg, #2b2b2b, #1c1c1c);
+    --avatar-fg: #e8e8e8;
+    --avatar-ring: rgba(255, 255, 255, 0.07);
+    --logo-bg: #f2f2f2;
+    --logo-fg: #0a0a0a;
+    --accent-hover: color-mix(in oklab, var(--accent) 88%, #ffffff);
+    --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+    --accent-text: color-mix(in oklab, var(--accent) 70%, #ffffff);
+    --accent-glow: 0 6px 20px var(--glow);
+    --ambient: none;
     color-scheme: dark;
   }
+}
+
+/*
+ * Colour accents (Settings → 外观). They come after the theme blocks so they win in both modes;
+ * their glow, logo and a faint ambient light take the accent's colour, and avatars show the bots'
+ * own colours and emoji again.
+ */
+:root[data-accent] {
+  --on-accent: #ffffff;
+  --glow: color-mix(in oklab, var(--accent) 26%, transparent);
+  --logo-bg: var(--accent);
+  --logo-fg: #ffffff;
+  --purple: #6d5dfc;
+  --ambient:
+    radial-gradient(1100px 560px at 100% -8%, color-mix(in oklab, var(--accent-2) 10%, transparent), transparent 62%),
+    radial-gradient(900px 520px at -8% 108%, color-mix(in oklab, var(--accent) 8%, transparent), transparent 60%);
+}
+
+:root[data-accent="glacier"] {
+  --accent: #2f6ff0;
+  --accent-2: #13aee0;
+}
+
+:root[data-accent="ocean"] {
+  --accent: #2d5be3;
+  --accent-2: #5a4ff0;
+}
+
+:root[data-accent="teal"] {
+  --accent: #0c93a3;
+  --accent-2: #22c3b0;
+}
+
+:root[data-accent="indigo"] {
+  --accent: #5b5ff0;
+  --accent-2: #9068f2;
 }
 
 /* ---------------------------------------------------------------- reset */
@@ -120,7 +201,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 var(--font);
+  font: 14px / 1.5 var(--font);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -202,7 +283,13 @@ kbd {
   font-weight: 500;
   font-size: 13px;
   white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, opacity 0.12s;
+  box-shadow: 0 1px 1px rgba(20, 40, 80, 0.04);
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s,
+    opacity 0.12s,
+    filter 0.12s;
   user-select: none;
 }
 
@@ -221,14 +308,26 @@ kbd {
 }
 
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-grad);
+  border-color: transparent;
+  color: var(--on-accent);
+  box-shadow:
+    0 1px 2px var(--glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--accent-grad);
+  border-color: transparent;
+  filter: brightness(1.06) saturate(1.05);
+  box-shadow:
+    var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.btn.primary:active:not(:disabled) {
+  background: var(--accent-grad);
+  filter: brightness(0.96);
 }
 
 .btn.danger {
@@ -244,6 +343,7 @@ kbd {
 .btn.ghost {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
 }
 
 .btn.ghost:hover:not(:disabled) {
@@ -280,7 +380,9 @@ kbd {
   background: transparent;
   color: var(--text-2);
   flex: none;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .icon-btn:hover:not(:disabled) {
@@ -291,6 +393,12 @@ kbd {
 .icon-btn.active {
   background: var(--accent-soft);
   color: var(--accent-text);
+}
+
+.icon-btn:focus-visible,
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
 }
 
 .icon-btn:disabled {
@@ -313,7 +421,9 @@ kbd {
   border-radius: var(--radius-sm);
   padding: 7px 10px;
   outline: none;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
 
 .input:focus,
@@ -338,7 +448,7 @@ kbd {
 .select {
   appearance: none;
   padding-right: 28px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8b94' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8aa0' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
 }
@@ -489,7 +599,7 @@ kbd {
 }
 
 .toggle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   left: 2px;
@@ -502,17 +612,20 @@ kbd {
 }
 
 .toggle.on {
-  background: var(--green);
+  background: var(--accent-grad);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
 }
 
 .toggle.on::after {
   transform: translateX(16px);
+  background: var(--on-accent);
 }
 
 .card {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
 }
 
 .kbd,
@@ -539,8 +652,26 @@ kbd {
   color: var(--text-3);
 }
 
-.empty .big {
-  font-size: 40px;
+.empty .big,
+.stage-overlay .big {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-size: 28px;
+}
+
+/* Emoji drawn as line icons (ui.tsx Glyph); an emoji without one is greyed in the black / white / grey look. */
+.glyph {
+  flex: none;
+}
+
+:root:not([data-accent]) .glyph-emoji {
+  filter: grayscale(1);
 }
 
 .empty h3 {
@@ -586,7 +717,31 @@ kbd {
   border-radius: 50%;
   flex: none;
   color: #fff;
+  background: var(--av);
   user-select: none;
+}
+
+.avatar .av-mono {
+  display: none;
+}
+
+/* Black / white / grey: neutral discs with line icons instead of coloured discs with emoji. */
+:root:not([data-accent]) .avatar {
+  background: var(--avatar-bg);
+  color: var(--avatar-fg);
+  border: 1px solid var(--avatar-ring);
+}
+
+:root:not([data-accent]) .avatar .av-emoji {
+  display: none;
+}
+
+:root:not([data-accent]) .avatar .av-mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .avatar .status {
@@ -616,8 +771,8 @@ kbd {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(10, 10, 20, 0.36);
-  backdrop-filter: blur(3px);
+  background: rgba(8, 20, 45, 0.38);
+  backdrop-filter: blur(6px) saturate(1.1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -713,13 +868,13 @@ kbd {
 
 .menu-item:hover,
 .menu-item.active {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .menu-item:hover .muted,
 .menu-item.active .muted {
-  color: rgba(255, 255, 255, 0.8);
+  color: color-mix(in oklab, var(--accent-text) 70%, var(--text-3));
 }
 
 .menu-item.danger {
@@ -727,8 +882,8 @@ kbd {
 }
 
 .menu-item.danger:hover {
-  background: var(--red);
-  color: #fff;
+  background: var(--red-soft);
+  color: var(--red);
 }
 
 .menu-sep {
@@ -816,7 +971,7 @@ kbd {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--ambient), var(--bg);
 }
 
 .boot {

@@ -26,7 +26,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   </head>
   <body>
     <main class="hero">
-      <p class="eyebrow">VibeCrew</p>
+      <p class="eyebrow">Crew</p>
       <h1>${title}</h1>
       <p class="lead">这是一个空白的起点。在左边告诉你的机器人小队想做什么，它们会在这里把页面做出来。</p>
       <button id="cta" class="btn">点我试试</button>
@@ -143,7 +143,7 @@ btn.addEventListener('click', () => {
   </head>
   <body class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
     <main class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-6 text-center">
-      <span class="rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">VibeCrew</span>
+      <span class="rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">Crew</span>
       <h1 class="mt-6 text-4xl font-bold tracking-tight sm:text-6xl">${title}</h1>
       <p class="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-400">告诉你的机器人小队想做什么，它们会用 Tailwind 把页面做出来。</p>
       <div class="mt-10 flex gap-4">
@@ -163,25 +163,26 @@ btn.addEventListener('click', () => {
     needsInstall: true,
     files: (title) => ({
       '.gitignore': GITIGNORE,
-      'package.json': JSON.stringify(
-        {
-          name: slugify(title) || 'app',
-          private: true,
-          version: '0.0.0',
-          type: 'module',
-          scripts: { dev: 'vite', build: 'tsc -b && vite build', preview: 'vite preview' },
-          dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
-          devDependencies: {
-            '@types/react': '^19.0.0',
-            '@types/react-dom': '^19.0.0',
-            '@vitejs/plugin-react': '^6.0.0',
-            typescript: '^5.9.0',
-            vite: '^8.0.0',
+      'package.json':
+        JSON.stringify(
+          {
+            name: slugify(title) || 'app',
+            private: true,
+            version: '0.0.0',
+            type: 'module',
+            scripts: { dev: 'vite', build: 'tsc -b && vite build', preview: 'vite preview' },
+            dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
+            devDependencies: {
+              '@types/react': '^19.0.0',
+              '@types/react-dom': '^19.0.0',
+              '@vitejs/plugin-react': '^6.0.0',
+              typescript: '^5.9.0',
+              vite: '^8.0.0',
+            },
           },
-        },
-        null,
-        2,
-      ) + '\n',
+          null,
+          2,
+        ) + '\n',
       'vite.config.ts': `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -189,24 +190,25 @@ export default defineConfig({
   plugins: [react()],
 });
 `,
-      'tsconfig.json': JSON.stringify(
-        {
-          compilerOptions: {
-            target: 'ES2022',
-            lib: ['ES2022', 'DOM', 'DOM.Iterable'],
-            module: 'ESNext',
-            moduleResolution: 'bundler',
-            jsx: 'react-jsx',
-            strict: true,
-            noEmit: true,
-            skipLibCheck: true,
-            isolatedModules: true,
+      'tsconfig.json':
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: 'ES2022',
+              lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+              module: 'ESNext',
+              moduleResolution: 'bundler',
+              jsx: 'react-jsx',
+              strict: true,
+              noEmit: true,
+              skipLibCheck: true,
+              isolatedModules: true,
+            },
+            include: ['src'],
           },
-          include: ['src'],
-        },
-        null,
-        2,
-      ) + '\n',
+          null,
+          2,
+        ) + '\n',
       'index.html': `<!doctype html>
 <html lang="zh-CN">
   <head>
@@ -237,7 +239,7 @@ export default function App() {
   const [count, setCount] = useState(0);
   return (
     <main className="hero">
-      <p className="eyebrow">VibeCrew · React</p>
+      <p className="eyebrow">Crew · React</p>
       <h1>${title}</h1>
       <p className="lead">告诉你的机器人小队想做什么，它们会在这里把应用做出来。</p>
       <button className="btn" onClick={() => setCount((c) => c + 1)}>
@@ -319,19 +321,20 @@ h1 {
     needsInstall: true,
     files: (title) => ({
       '.gitignore': GITIGNORE,
-      'package.json': JSON.stringify(
-        {
-          name: slugify(title) || 'app',
-          private: true,
-          version: '0.0.0',
-          type: 'module',
-          scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
-          dependencies: { vue: '^3.5.0' },
-          devDependencies: { '@vitejs/plugin-vue': '^6.0.0', vite: '^8.0.0' },
-        },
-        null,
-        2,
-      ) + '\n',
+      'package.json':
+        JSON.stringify(
+          {
+            name: slugify(title) || 'app',
+            private: true,
+            version: '0.0.0',
+            type: 'module',
+            scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
+            dependencies: { vue: '^3.5.0' },
+            devDependencies: { '@vitejs/plugin-vue': '^6.0.0', vite: '^8.0.0' },
+          },
+          null,
+          2,
+        ) + '\n',
       'vite.config.js': `import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 
@@ -366,7 +369,7 @@ const count = ref(0);
 
 <template>
   <main class="hero">
-    <p class="eyebrow">VibeCrew · Vue</p>
+    <p class="eyebrow">Crew · Vue</p>
     <h1>${title}</h1>
     <p class="lead">告诉你的机器人小队想做什么，它们会在这里把应用做出来。</p>
     <button class="btn" @click="count++">已点击 {{ count }} 次</button>
