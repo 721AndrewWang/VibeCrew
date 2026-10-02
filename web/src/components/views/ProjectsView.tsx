@@ -414,6 +414,20 @@ function FolderBrowser({ listing, loading, onGo }: { listing: FsListing | null; 
           value={typed}
           placeholder="粘贴文件夹路径，例如 ~/code/my-site"
           onChange={(e) => setTyped(e.target.value)}
+          // The box starts out holding the current folder, so typing or pasting a path would append
+          // to it. Clicking in selects it all, and a pasted full path replaces it whatever is selected.
+          onMouseDown={(e) => {
+            if (document.activeElement === e.currentTarget) return;
+            e.preventDefault();
+            e.currentTarget.focus();
+          }}
+          onFocus={(e) => e.currentTarget.select()}
+          onPaste={(e) => {
+            const pasted = e.clipboardData.getData('text').trim();
+            if (!/^(~|\/|[A-Za-z]:[\\/])/.test(pasted)) return;
+            e.preventDefault();
+            setTyped(pasted);
+          }}
           onKeyDown={(e) => e.key === 'Enter' && typed.trim() && onGo(typed.trim())}
         />
         <button className="btn" disabled={!typed.trim() || loading} onClick={() => onGo(typed.trim())}>
