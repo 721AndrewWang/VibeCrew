@@ -44,3 +44,26 @@ test('the sandbox section saves the switch and the domain list, and says when it
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).settings.sandbox.enabled).toBe(false);
   await expect(card.locator('[data-testid="sandbox-unavailable"]')).toHaveCount(0);
 });
+
+test('improvement proposals can be made, accepted and reverted from the bots page', async ({ page, crew }) => {
+  const b = await crew.api('GET', '/bootstrap');
+  const chief = b.bots.find((x: any) => x.name === 'Chief');
+  const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
+  const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '你好' });
+  await expect.poll(async () => (await crew.api('GET', `/chats/${dm.id}/messages?limit=5`)).messages.some((m: any) => m.seq > sent.seq && m.status === 'done'), { timeout: 20_000 }).toBe(true);
+
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="机器人"]').click();
+  const panel = page.locator('.improve-card');
+  await expect(panel.locator('.improve-empty')).toBeVisible();
+  await panel.locator('button', { hasText: '分析最近的表现' }).click();
+  const item = panel.locator('.improve-item').first();
+  await expect(item.locator('.improve-title')).toContainText('Chief 的每轮新会话');
+  await item.locator('button', { hasText: '接受' }).click();
+  await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBe(true);
+
+  await panel.locator('.improve-toggle').click();
+  await panel.locator('.improve-row button', { hasText: '撤回' }).click();
+  await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBeUndefined();
+  await expect(panel.locator('.improve-row .badge')).toHaveText('已撤回');
+});

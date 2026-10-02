@@ -5,6 +5,7 @@ import { api } from '../../api';
 import { dmOf, openChat, openModal, toast, useStore } from '../../store';
 import { cx, PERMISSION_INFO, statusLabel } from '../../utils';
 import { Avatar, confirmDialog, Glyph, MenuButton } from '../ui';
+import { ImprovementsPanel } from './ImprovementsPanel';
 
 /** Shared header for the management pages. */
 export function PageHead({ title, sub, children }: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
@@ -173,15 +174,18 @@ export function BotsView() {
             </button>
           </div>
         ) : (
-          <div className="bot-grid">
-            {list.map((b) => (
-              <BotCard key={b.id} bot={b} />
-            ))}
-            <button className="add-card" onClick={() => openModal({ kind: 'newBot' })}>
-              <Plus size={22} />
-              <span>添加机器人</span>
-            </button>
-          </div>
+          <>
+            <ImprovementsPanel />
+            <div className="bot-grid">
+              {list.map((b) => (
+                <BotCard key={b.id} bot={b} />
+              ))}
+              <button className="add-card" onClick={() => openModal({ kind: 'newBot' })}>
+                <Plus size={22} />
+                <span>添加机器人</span>
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

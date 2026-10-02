@@ -15,6 +15,7 @@ import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
 import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
+import { acceptImprovement, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
 import { ensurePreview, previewInfos, restartPreviews } from './preview';
@@ -36,7 +37,7 @@ import {
 } from './projects';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
 import { cleanDomains, sandboxStatus } from './sandbox';
-import { Approval, BotCreate, BotPatch, body, ChatPatch, GroupCreate, MessageSend, ProjectOpen, ProjectPatch, RoutineSave, SettingsPatch, SkillSave, Upload } from './schemas';
+import { Approval, BotCreate, BotPatch, body, ChatPatch, GroupCreate, ImprovementReject, MessageSend, ProjectOpen, ProjectPatch, RoutineSave, SettingsPatch, SkillSave, Upload } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
@@ -162,6 +163,13 @@ export function apiRouter() {
   });
 
   r.get('/usage', (_req, res) => res.json(usageOf()));
+
+  // ------------------------------------------------------------ improvements
+  r.get('/improvements', (_req, res) => res.json(listImprovements()));
+  r.post('/improvements/run', async (_req, res) => res.json(await proposeImprovements()));
+  r.post('/improvements/:id/accept', (req, res) => res.json(acceptImprovement(req.params.id)));
+  r.post('/improvements/:id/reject', (req, res) => res.json({ improvement: rejectImprovement(req.params.id, body(ImprovementReject, req.body).note) }));
+  r.post('/improvements/:id/revert', (req, res) => res.json(revertImprovement(req.params.id)));
 
   // ------------------------------------------------------------ traces
   r.get('/chats/:id/messages/:mid/trace', (req, res) => {

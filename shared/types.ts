@@ -534,6 +534,35 @@ export interface TraceTotals {
 
 export type TurnTrace = { available: false; reason: string } | { available: true; sessionId: string; file: string; steps: TraceStep[]; totals: TraceTotals };
 
+/** The bot settings an improvement may change: one field of one bot at a time. */
+export type ImprovableField = 'description' | 'model' | 'effort' | 'permission' | 'allowRules' | 'askRules' | 'editScope' | 'freshSession' | 'monthlyBudgetUsd';
+
+/** A proposed change to a bot's setup, backed by evidence from real turns; the user decides. */
+export interface Improvement {
+  id: ID;
+  createdAt: number;
+  botId: ID;
+  botName: string;
+  field: ImprovableField;
+  before: unknown;
+  after: unknown;
+  /** Why, in a few sentences, pointing at what happened. */
+  rationale: string;
+  /** What should get better, so the effect can be checked later. */
+  expected: string;
+  evidence: { chatId: ID; messageId: ID; note: string }[];
+  status: 'pending' | 'accepted' | 'rejected' | 'reverted' | 'stale';
+  decidedAt?: number;
+  /** The user's reason when rejecting. */
+  note?: string;
+}
+
+/** How the bot did before and after an accepted change (same number of turns each side, at most). */
+export interface ImprovementEffect {
+  before: { turns: number; avgCostUsd: number; refuted: number; errors: number };
+  after: { turns: number; avgCostUsd: number; refuted: number; errors: number };
+}
+
 export interface ModelOption {
   id: string;
   label: string;

@@ -8,6 +8,8 @@ import { migrate } from './migrations';
 
 export const APP_VERSION: string = pkg.version;
 export const APP_NAME = 'Crew';
+/** Demo mode: scripted bots instead of a model (CREW_FAKE_AGENT=1). */
+export const FAKE_AGENT = process.env.CREW_FAKE_AGENT === '1';
 
 export const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const WEB_DIST = path.join(ROOT_DIR, 'web', 'dist');
@@ -28,6 +30,8 @@ export const DATA = {
   memory: path.join(HOME_DIR, 'memory'),
   /** Git worktrees of chats that work in an isolated workspace. */
   worktrees: path.join(HOME_DIR, 'worktrees'),
+  /** Proposed changes to bots and what the user decided (the improvement ledger). */
+  improvements: path.join(HOME_DIR, 'improvements.json'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

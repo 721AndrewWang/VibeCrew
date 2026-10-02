@@ -10,6 +10,7 @@ import { TurnStream } from '../agents/stream';
 import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
 import { botModel } from '../claudeAuth';
+import { FAKE_AGENT } from '../config';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
@@ -59,7 +60,7 @@ function throttle(ms: number, fn: () => void) {
   };
 }
 
-const FAKE = process.env.CREW_FAKE_AGENT === '1';
+const FAKE = FAKE_AGENT;
 const IDLE_CLOSE_MS = 15 * 60_000;
 
 interface Job {

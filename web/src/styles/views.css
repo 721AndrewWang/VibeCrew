@@ -1915,3 +1915,90 @@
 .test-ic {
   vertical-align: -2px;
 }
+
+/* ---------------------------------------------------------------- improvements */
+.improve-card {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+.improve-hint {
+  margin: 4px 0 10px;
+}
+.improve-empty {
+  font-size: 13px;
+  padding: 4px 0;
+}
+.improve-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.improve-title {
+  font-size: 14px;
+}
+.improve-why {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.improve-change {
+  font-size: 12.5px;
+}
+.improve-change .del,
+.improve-diff .del {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.improve-diff .del {
+  text-decoration: none;
+}
+.improve-change .add,
+.improve-diff .add {
+  color: var(--text);
+  font-weight: 500;
+}
+.improve-diff {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.improve-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.improve-card .link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.improve-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  text-decoration: none !important;
+}
+.improve-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.improve-effect {
+  font-size: 12px;
+}

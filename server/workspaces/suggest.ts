@@ -1,12 +1,9 @@
-import { spawn } from 'node:child_process';
-import os from 'node:os';
-import { modelEnv } from '../claudeAuth';
-import { cleanEnv, findClaudeExecutable } from '../config';
+import { findClaudeExecutable } from '../config';
+import { oneShot } from '../oneShot';
 import { configOf, gitIn, HttpError } from '../projects';
 import { messages } from '../store';
 import { requireWorkspace, revParse, saveWork } from './common';
 
-const SUGGEST_TIMEOUT_MS = 120_000;
 const MAX_DIFF_CHARS = 60_000;
 
 /**
@@ -46,37 +43,11 @@ export async function doSuggest(chatId: string): Promise<string> {
   ]
     .filter(Boolean)
     .join('\n\n');
-  const out = await new Promise<string>((resolve, reject) => {
-    // In a neutral folder, so the project's own Claude Code hooks do not run for this.
-    const child = spawn(cli, ['-p', '--output-format', 'json', '--max-turns', '1', '--model', 'sonnet'], {
-      cwd: os.tmpdir(),
-      env: cleanEnv(modelEnv()),
-      stdio: ['pipe', 'pipe', 'pipe'],
+  const out = await oneShot(prompt, { model: 'sonnet' })
+    .then((r) => r.text)
+    .catch((e: Error) => {
+      throw new HttpError(502, `没能生成提交说明：${e.message}`);
     });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => child.kill('SIGKILL'), SUGGEST_TIMEOUT_MS);
-    child.stdout.on('data', (d) => (stdout += d));
-    child.stderr.on('data', (d) => (stderr += d));
-    child.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      try {
-        const j = JSON.parse(stdout.trim().split('\n').pop() || '');
-        if (j.is_error || j.subtype !== 'success') return reject(new Error(String(j.result || '模型没有给出结果')));
-        resolve(String(j.result || ''));
-      } catch {
-        reject(new Error(code === null ? '等了 2 分钟没有回应' : stderr.trim().split('\n').slice(-2).join(' ') || `Claude Code 退出码 ${code}`));
-      }
-    });
-    child.stdin.on('error', () => {});
-    child.stdin.end(prompt);
-  }).catch((e: Error) => {
-    throw new HttpError(502, `没能生成提交说明：${e.message}`);
-  });
   const text = out
     .trim()
     .replace(/^```[a-z]*\n?|\n?```$/g, '')
