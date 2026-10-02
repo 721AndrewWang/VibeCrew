@@ -14,6 +14,7 @@ export function DefaultsSection() {
   const [maxHops, setMaxHops] = useState(settings.maxHops);
   const [projectsRoot, setProjectsRoot] = useState(settings.projectsRoot);
   const [denyRules, setDenyRules] = useState((settings.denyRules || []).join('\n'));
+  const [rotateK, setRotateK] = useState(Math.round(settings.rotateAtTokens / 1000));
   const [saving, setSaving] = useState(false);
   const denyList = denyRules
     .split('\n')
@@ -25,7 +26,8 @@ export function DefaultsSection() {
     defaultPermission !== settings.defaultPermission ||
     maxHops !== settings.maxHops ||
     projectsRoot !== settings.projectsRoot ||
-    denyList.join('\n') !== (settings.denyRules || []).join('\n');
+    denyList.join('\n') !== (settings.denyRules || []).join('\n') ||
+    rotateK * 1000 !== settings.rotateAtTokens;
 
   const save = async () => {
     setSaving(true);
@@ -36,6 +38,7 @@ export function DefaultsSection() {
         defaultPermission,
         maxHops: hops,
         denyRules: denyList,
+        rotateAtTokens: Math.max(0, Math.round(rotateK) || 0) * 1000,
         ...(projectsRoot.trim() ? { projectsRoot: projectsRoot.trim() } : {}),
       });
       useStore.setState({ settings: r.settings });
@@ -72,6 +75,11 @@ export function DefaultsSection() {
           <label>自动接力上限</label>
           <input className="input num-input" type="number" min={0} max={30} value={maxHops} onChange={(e) => setMaxHops(Number(e.target.value))} />
           <div className="hint">群聊里机器人之间互相 @ 的最多次数，防止无限循环</div>
+        </div>
+        <div className="field">
+          <label>上下文超过多少换新会话（k token）</label>
+          <input className="input num-input" type="number" min={0} step={10} value={rotateK} onChange={(e) => setRotateK(Number(e.target.value))} />
+          <div className="hint">续上的会话每次调用都要把全部历史重读一遍，越聊越贵。超过这个大小，下一轮换成新会话，带上最近 12 条消息。新会话本身大约 40k。填 0 就不换。</div>
         </div>
         <div className="field">
           <label>项目文件夹</label>

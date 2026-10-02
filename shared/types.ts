@@ -442,6 +442,8 @@ export interface PublicSettings {
   sandbox: SandboxSettings;
   /** Group-chat routing by a cheap model: off, or shadow (decides and records, never acts). */
   routing: { mode: 'off' | 'shadow' };
+  /** A resumed session whose context passes this many tokens starts over with a recap; 0 = never. */
+  rotateAtTokens: number;
 }
 
 /** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */

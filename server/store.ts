@@ -103,6 +103,7 @@ export interface Settings {
   denyRules: string[];
   sandbox: SandboxSettings;
   routing: { mode: 'off' | 'shadow' };
+  rotateAtTokens: number;
   /** Secret for LAN access and API calls. */
   token: string;
   /** Values for ${VAR} placeholders in plugin configs (e.g. GITHUB_TOKEN). */
@@ -127,6 +128,7 @@ const DEFAULT_SETTINGS: Settings = {
   denyRules: [],
   sandbox: { enabled: true, allowedDomains: [...DEFAULT_ALLOWED] },
   routing: { mode: 'shadow' },
+  rotateAtTokens: 60_000,
   token: '',
   pluginSecrets: {},
   initialized: false,
@@ -174,6 +176,7 @@ class SettingsStore {
       denyRules: s.denyRules,
       sandbox: s.sandbox || { enabled: false, allowedDomains: [] },
       routing: s.routing || { mode: 'off' },
+      rotateAtTokens: s.rotateAtTokens ?? 60_000,
     };
   }
 

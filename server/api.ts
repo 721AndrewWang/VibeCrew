@@ -134,6 +134,7 @@ export function apiRouter() {
       patch.denyRules = [...new Set<string>(rules)].slice(0, 100);
     }
     if (b.routing) patch.routing = { mode: b.routing.mode };
+    if (b.rotateAtTokens !== undefined) patch.rotateAtTokens = b.rotateAtTokens;
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }

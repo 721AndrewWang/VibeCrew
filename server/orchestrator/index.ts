@@ -177,6 +177,35 @@ async function recordContext(chatId: string, botId: string, session: AgentSessio
   if (!usage || !chat?.botIds.includes(botId)) return;
   chat.context = { ...chat.context, [botId]: { ...usage, at: Date.now() } };
   emitChat(chat);
+  // Every call re-reads the whole session: past this size its next turn starts over with a recap.
+  const limit = settings.get().rotateAtTokens;
+  if (limit > 0 && usage.used >= limit && !bots.get(botId)?.freshSession) rotateNext.set(sessionKey(chatId, botId), usage.used);
+}
+
+/** Sessions to start over on their next turn, with how many tokens they had grown to. */
+const rotateNext = new Map<string, number>();
+/** Messages a started-over session gets again. */
+const RECAP_MESSAGES = 12;
+
+/**
+ * Starts the bot's session in this chat over: the next turn is a new conversation that gets the
+ * last few messages again (its own included). Returns the size the old session had reached.
+ */
+function rotateSession(chat: Chat, bot: Bot): number | null {
+  const key = sessionKey(chat.id, bot.id);
+  const tokens = rotateNext.get(key);
+  if (tokens === undefined) return null;
+  rotateNext.delete(key);
+  closeSession(key);
+  delete chat.sessions[bot.id];
+  const recent = messages
+    .sorted(chat.id)
+    .filter((m) => !m.uiOnly && m.status !== 'streaming')
+    .slice(-RECAP_MESSAGES);
+  if (recent.length) chat.cursors[bot.id] = recent[0].seq - 1;
+  chats.save();
+  systemMessage(chat, `${bot.name} 的会话上下文到了 ${Math.round(tokens / 1000)}k token，这一轮换成新会话，带上最近 ${recent.length} 条消息。`, { uiOnly: true });
+  return tokens;
 }
 
 /**
@@ -320,8 +349,10 @@ async function runTurn(job: Job) {
     }
   }
 
+  const rotatedFrom = rotateSession(chat, bot);
   const cursor = chat.cursors[bot.id] ?? 0;
-  const unseen = messages.sorted(chat.id).filter((m) => m.seq > cursor && !m.uiOnly && !(m.role === 'bot' && m.botId === bot.id) && m.status !== 'streaming');
+  // After a rotation the bot's own recent replies come back too: the new session has none of them.
+  const unseen = messages.sorted(chat.id).filter((m) => m.seq > cursor && !m.uiOnly && (rotatedFrom !== null || !(m.role === 'bot' && m.botId === bot.id)) && m.status !== 'streaming');
 
   const msg: ChatMessage = {
     id: uid('m_'),
@@ -350,7 +381,17 @@ async function runTurn(job: Job) {
   const review = bot.blindReview && project ? await reviewDiff(project) : undefined;
   /** The prompt for this session: the full context the first time, then only what changed. */
   const contentFor = (s: AgentSession) => {
-    const promptText = buildTurnPrompt({ bot, chat, unseen, names, context: contextDelta(contextSent.get(s), context), trigger: job.trigger, routineName: job.routineName, review });
+    const promptText = buildTurnPrompt({
+      bot,
+      chat,
+      unseen,
+      names,
+      context: contextDelta(contextSent.get(s), context),
+      trigger: job.trigger,
+      routineName: job.routineName,
+      review,
+      recap: rotatedFrom !== null ? { tokens: rotatedFrom } : undefined,
+    });
     contextSent.set(s, context);
     return imgs.length ? [{ type: 'text' as const, text: promptText }, ...imgs] : promptText;
   };

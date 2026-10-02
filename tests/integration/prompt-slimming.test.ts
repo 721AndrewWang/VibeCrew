@@ -112,4 +112,18 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
     await crew.api('PATCH', `/bots/${chief.id}`, { blindReview: false });
     wantHistory = false;
   });
+
+  it('starts an oversized session over: a new conversation carrying the recent messages, its own replies included', async () => {
+    // The mock model reports a handful of tokens per call: any session is over 1.
+    await crew.api('PATCH', '/settings', { rotateAtTokens: 1 });
+    await turn('第六条：会话已经很大了');
+    const sent = await turn('第七条');
+    const main = mock.requests.filter((r) => r.tools.length && lastUserText(r.body).includes('第七条'));
+    const users = main[0].body.messages.filter((m: any) => m.role === 'user');
+    expect(users).toHaveLength(1);
+    expect(sent).toContain('这是新会话');
+    expect(sent).toContain('第六条：会话已经很大了');
+    expect(sent).toMatch(/你自己（@Chief）/);
+    await crew.api('PATCH', '/settings', { rotateAtTokens: 60_000 });
+  });
 });

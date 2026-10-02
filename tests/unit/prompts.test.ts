@@ -54,3 +54,34 @@ describe('buildTurnPrompt in a group', () => {
     expect(p).toContain('【@Lens】\n好的，我看一下。');
   });
 });
+
+describe('the recap after a session starts over', () => {
+  const names = new Map([
+    ['b_pixel', 'Pixel'],
+    ['b_chief', 'Chief'],
+  ]);
+  const long = (head: string) => `${head}\n${'细节。'.repeat(120)}`;
+  const msg = (seq: number, role: 'user' | 'bot', text: string, botId?: string) => ({ id: `m${seq}`, seq, role, text, botId, chatId: 'c', ts: seq }) as any;
+  const prompt = buildTurnPrompt({
+    bot: { id: 'b_pixel', name: 'Pixel' } as any,
+    chat: { kind: 'group', title: 'g' } as any,
+    unseen: [msg(3, 'user', '做一个联系区块'), msg(4, 'bot', long('改好了 index.html 和 styles.css。'), 'b_pixel'), msg(5, 'bot', '@Pixel 把按钮改深一点', 'b_chief')],
+    names,
+    context: [],
+    trigger: { type: 'mention', by: 'b_chief' },
+    recap: { tokens: 62_524 },
+  });
+  it('says why and how big the old session was, and where the rest is', () => {
+    expect(prompt).toContain('这是新会话');
+    expect(prompt).toContain('63k token');
+    expect(prompt).toContain('chat_history');
+  });
+  it("brings back the bot's own replies, labelled as its own, long ones as a line", () => {
+    expect(prompt).toContain('【你自己（@Pixel） · #4】改好了 index.html 和 styles.css。（全文');
+    expect(prompt).not.toContain('细节。细节。');
+  });
+  it('keeps the user and the latest message in full', () => {
+    expect(prompt).toContain('【用户 · #3】\n做一个联系区块');
+    expect(prompt).toContain('【@Chief · #5】\n@Pixel 把按钮改深一点');
+  });
+});

@@ -2,8 +2,8 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    // Generated: built bundles, packaged apps, rendered icons, the lockfile.
-    "includes": ["**", "!**/dist", "!**/dist-server", "!**/release", "!web/public/logos", "!desktop/logos", "!desktop/icons", "!package-lock.json"]
+    // Generated: built bundles, packaged apps, rendered icons, the lockfile, the rendered mind map.
+    "includes": ["**", "!**/dist", "!**/dist-server", "!**/release", "!web/public/logos", "!desktop/logos", "!desktop/icons", "!package-lock.json", "!docs/mindmap.html"]
   },
   "formatter": {
     "enabled": true,

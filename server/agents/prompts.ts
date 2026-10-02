@@ -204,6 +204,30 @@ function blindPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
   return out.join('\n\n');
 }
 
+/**
+ * The first turn after a session was started over: the recent messages, the bot's own included,
+ * long ones as a line each, with where to find the rest.
+ */
+function recapPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
+  const { bot, unseen, names, context, recap } = opts;
+  const out: string[] = [];
+  if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
+  out.push(
+    `（这是新会话：上一个会话的上下文已经有 ${Math.round((recap?.tokens || 0) / 1000)}k token，每次调用都要重读一遍，所以换成了新的。下面是这个对话最近的 ${unseen.length} 条消息；被缩成一行的、或者更早的，需要时用 chat_history 查。文件和页面以现在的状态为准。）`,
+  );
+  const latest = unseen.at(-1);
+  const lines = unseen.map((m) => {
+    if (m.role === 'user') return `【用户 · #${m.seq}】\n${renderUserMessage(m)}`;
+    if (m.role === 'system') return `【系统】${m.text}`;
+    const who = m.botId === bot.id ? `你自己（@${bot.name}）` : `@${names.get(m.botId || '') || '队友'}`;
+    const text = m.text.trim();
+    if (m !== latest && text.length > DIGEST_OVER) return digest(m, who);
+    return `【${who} · #${m.seq}】\n${text || '（没有文字回复）'}`;
+  });
+  out.push(lines.join('\n\n'), `（轮到你了，${bot.name}。）`);
+  return out.join('\n\n');
+}
+
 /** One line for a long teammate message the bot can fetch in full with chat_history. */
 function digest(m: ChatMessage, who: string): string {
   const text = m.text.trim();
@@ -223,9 +247,12 @@ export function buildTurnPrompt(opts: {
   routineName?: string;
   /** For a blind reviewer: the change itself, in place of what teammates said about it. */
   review?: { title: string; diff: string; how: string };
+  /** The first turn of a session started over because the old one grew too big: how big it was. */
+  recap?: { tokens: number };
 }): string {
   const { bot, chat, unseen, names, context, trigger } = opts;
   if (bot.blindReview) return blindPrompt(opts);
+  if (opts.recap) return recapPrompt(opts);
   const out: string[] = [];
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
   if (bot.freshSession) out.push('（你每一轮都从新会话开始，之前几轮的对话和工具结果不在你的上下文里。需要更早的消息就用 chat_history 查，文件和页面直接看当前的状态。）');
