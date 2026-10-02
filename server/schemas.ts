@@ -89,6 +89,7 @@ export const ProjectPatch = z
     askRules: z.array(text(300)).max(50),
     allowedDomains: z.array(text(300)).max(100),
     requireChallenge: z.boolean(),
+    autoChallenge: z.object({ enabled: z.boolean(), paths: z.array(text(200)).max(50), minLines: z.number().int().min(0).max(100_000) }),
   })
   .partial();
 

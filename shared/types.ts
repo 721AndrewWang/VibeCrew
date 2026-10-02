@@ -246,6 +246,8 @@ export interface Project {
   allowedDomains?: string[];
   /** A workspace merges only after an adversarial review that refuted nothing at its current commit. */
   requireChallenge?: boolean;
+  /** Call the adversarial reviewer by itself when a finished change matches these fixed rules. */
+  autoChallenge?: AutoChallenge;
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -273,6 +275,14 @@ export interface WorkspaceInfo {
   mergedAt?: number;
   /** The last adversarial review of this branch. */
   challenge?: ChallengeVerdict;
+}
+
+export interface AutoChallenge {
+  enabled: boolean;
+  /** Changed files matching any of these globs (relative to the project) trigger a review. */
+  paths: string[];
+  /** So do changes of at least this many lines in total (added plus removed); 0 = no size rule. */
+  minLines: number;
 }
 
 export interface ChallengeVerdict {

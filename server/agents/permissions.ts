@@ -24,7 +24,7 @@ function wildcard(spec: string): RegExp {
   return new RegExp(`^${s}$`, 's');
 }
 
-function glob(spec: string): RegExp {
+export function glob(spec: string): RegExp {
   let s = '';
   for (let i = 0; i < spec.length; i++) {
     const c = spec[i];

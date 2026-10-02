@@ -7,6 +7,7 @@ import { buildSystemAppend, buildTurnPrompt, contextDelta } from '../agents/prom
 import { summarize, TurnRecorder } from '../agents/recorder';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import { TurnStream } from '../agents/stream';
+import { autoChallengeReasons, findSkeptic, resetAutoChallenge } from '../autoChallenge';
 import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
 import { botModel } from '../claudeAuth';
@@ -508,6 +509,33 @@ async function runTurn(job: Job) {
       }
     }
   }
+
+  // The chain of turns is over: a change that matches the project's rules gets an adversarial review.
+  if (msg.status === 'done' && project && !bot.blindReview && !queues.get(fresh.id)?.length) await maybeAutoChallenge(fresh, project);
+}
+
+async function maybeAutoChallenge(chat: Chat, project: Project) {
+  const skeptic = findSkeptic(bots.all());
+  if (!skeptic) return;
+  const reasons = await autoChallengeReasons(chat, project, configOf(project).autoChallenge).catch((e) => {
+    log.warn('auto challenge:', e);
+    return null;
+  });
+  if (!reasons) return;
+  // It reviews against what the user asked for: start it from the user's latest request at least.
+  const asked = messages
+    .sorted(chat.id)
+    .filter((m) => m.role === 'user')
+    .at(-1);
+  const from = asked ? asked.seq - 1 : chat.seq;
+  if (!chat.botIds.includes(skeptic.id)) {
+    chat.botIds.push(skeptic.id);
+    invalidateChat(chat.id);
+    systemMessage(chat, `${skeptic.name} 加入了对话`);
+  }
+  chat.cursors[skeptic.id] = Math.min(chat.cursors[skeptic.id] ?? from, from);
+  systemMessage(chat, `这次的改动符合项目的自动对抗审查规则，请 ${skeptic.name} 审一次：\n${reasons.map((r) => `- ${r}`).join('\n')}`);
+  enqueue({ chatId: chat.id, botId: skeptic.id, trigger: { type: 'system' }, hopsLeft: chat.maxHops });
 }
 
 /**
@@ -555,6 +583,7 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
   bus.emit({ t: 'msg', msg });
   setLastMessage(chat, msg);
   chat.unread = 0;
+  resetAutoChallenge(chat.id);
 
   let targets: Bot[] = [];
   const allBots = bots.all();

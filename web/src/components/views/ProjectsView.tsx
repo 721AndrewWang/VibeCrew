@@ -1,5 +1,6 @@
 import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2, FolderOpen, FolderPlus, GitBranch, House, MoreHorizontal, Play, Settings, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { defaultAutoChallenge } from '../../../../shared/challenge';
 import type { DevServerState, Project } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
@@ -54,6 +55,8 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [askRules, setAskRules] = useState((project.askRules || []).join('\n'));
   const [allowedDomains, setAllowedDomains] = useState((project.allowedDomains || []).join('\n'));
   const [requireChallenge, setRequireChallenge] = useState(!!project.requireChallenge);
+  const [auto, setAuto] = useState(project.autoChallenge || { ...defaultAutoChallenge(), enabled: false });
+  const [autoPaths, setAutoPaths] = useState(auto.paths.join('\n'));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -67,7 +70,24 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         .split('\n')
         .map((d) => d.trim())
         .filter(Boolean);
-      await api.updateProject(project.id, { name, devCommand, staticRoot, setupCommand, commitGuide, noAttribution, askRules: rules, allowedDomains: domains, requireChallenge });
+      await api.updateProject(project.id, {
+        name,
+        devCommand,
+        staticRoot,
+        setupCommand,
+        commitGuide,
+        noAttribution,
+        askRules: rules,
+        allowedDomains: domains,
+        requireChallenge,
+        autoChallenge: {
+          ...auto,
+          paths: autoPaths
+            .split('\n')
+            .map((x) => x.trim())
+            .filter(Boolean),
+        },
+      });
       toast('项目设置已保存', undefined, 'success');
       onDone();
     } catch (e) {
@@ -128,6 +148,28 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
             </div>
             <Toggle on={requireChallenge} onChange={setRequireChallenge} />
           </div>
+          <div className="setting-row">
+            <div>
+              <div className="sr-title">按规则自动对抗审查</div>
+              <div className="hint">
+                一串机器人的活干完、改动又碰到下面的文件或者超过行数时，自动请 Skeptic 审一次。每个请求最多两次（审、修、再审），同样的改动不审第二遍。规则是固定的，不让模型判断「有没有风险」。
+              </div>
+            </div>
+            <Toggle on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
+          </div>
+          {auto.enabled && (
+            <div className="form-grid">
+              <div className="field">
+                <label>碰到这些文件就审（每行一个）</label>
+                <textarea className="input mono" rows={5} value={autoPaths} onChange={(e) => setAutoPaths(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>或者改动至少多少行</label>
+                <input className="input num-input" type="number" min={0} step={10} value={auto.minLines} onChange={(e) => setAuto({ ...auto, minLines: Math.max(0, Number(e.target.value) || 0) })} />
+                <div className="hint">加的行和删的行加起来；0 表示不按行数。</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="row">
