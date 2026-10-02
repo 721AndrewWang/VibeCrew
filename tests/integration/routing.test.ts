@@ -95,7 +95,7 @@ describe.skipIf(!claudeCli())('with a model', () => {
     mock.requests.length = 0;
     await crew.api('POST', `/chats/${group.id}/messages`, { text: '首页标题改一下' });
     const r = await waitFor(async () => (await crew.api('GET', '/routing')).recent[0], 60_000);
-    const asks = mock.requests.filter((q) => JSON.stringify(q.body.messages).includes('probabilities'));
+    const asks = mock.requests.filter((q) => JSON.stringify(q.body.messages ?? []).includes('probabilities'));
     expect(asks, JSON.stringify(r)).toHaveLength(2);
     // Bare: no tools offered, Crew's own short system prompt.
     expect(asks.every((q) => q.tools.length === 0)).toBe(true);

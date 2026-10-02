@@ -32,13 +32,15 @@ app.set('trust proxy', false);
 app.use(guard);
 app.use('/api', apiRouter());
 
+// The favicon follows the logo chosen in Settings → 外观; it is drawn here, built UI or not.
+app.get('/icon.svg', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('image/svg+xml').send(appIconSvg(settings.get().logo));
+});
+
 const hasWeb = fs.existsSync(path.join(WEB_DIST, 'index.html'));
 if (hasWeb) {
-  // The favicon and the web app's icons follow the logo chosen in Settings → 外观.
-  app.get('/icon.svg', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-cache');
-    res.type('image/svg+xml').send(appIconSvg(settings.get().logo));
-  });
+  // The web app's PNG icons are rendered at build time.
   app.get(['/icon-192.png', '/icon-512.png'], (req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(`logos/${settings.get().logo}-${req.path.includes('192') ? 192 : 512}.png`, { root: WEB_DIST }, (err) => err && next());

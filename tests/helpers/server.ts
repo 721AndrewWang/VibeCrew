@@ -91,7 +91,11 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !LEAKY.test(k)) env[k] = v;
   Object.assign(env, gitEnv(dir), { CREW_PORT: String(port) });
-  if (opts.isolate !== false) Object.assign(env, { CREW_HOME: path.join(dir, 'home'), CREW_PROJECTS: path.join(dir, 'projects') });
+  if (opts.isolate !== false) {
+    // Claude Code's own config too: a test must never reach the developer's real Claude login.
+    Object.assign(env, { CREW_HOME: path.join(dir, 'home'), CREW_PROJECTS: path.join(dir, 'projects'), CLAUDE_CONFIG_DIR: path.join(dir, 'claude') });
+    fs.mkdirSync(path.join(dir, 'claude'), { recursive: true });
+  }
   if (opts.fakeAgent !== false) env.CREW_FAKE_AGENT = '1';
   for (const [k, v] of Object.entries(opts.env || {})) {
     if (v === undefined) delete env[k];

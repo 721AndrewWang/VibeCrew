@@ -72,7 +72,8 @@ describe.skipIf(!hasCli)('another model provider', () => {
     const models = [...new Set(mock.requests.map((r) => r.model).filter(Boolean))];
     expect(models).toContain('mock-model');
     expect(models.some((m) => /claude/.test(String(m)))).toBe(false);
-    expect(mock.requests.every((r) => r.auth === `Bearer ${TOKEN}` && !r.xApiKey)).toBe(true);
+    const offenders = mock.requests.filter((r) => !(r.auth === `Bearer ${TOKEN}` && !r.xApiKey)).map((r) => ({ url: r.url, auth: r.auth, x: r.xApiKey, model: r.model }));
+    expect(offenders, JSON.stringify(offenders)).toEqual([]);
     // The context ring: Claude Code reports usage after the turn.
     const usage = await waitTurnContext(crew, dm.id, chief.id);
     expect(usage.used).toBeGreaterThan(0);
