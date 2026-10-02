@@ -35,6 +35,7 @@ import {
   updateProject,
   writeProjectFile,
 } from './projects';
+import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
 import { cleanDomains, sandboxStatus } from './sandbox';
 import { Approval, BotCreate, BotPatch, body, ChatPatch, GroupCreate, ImprovementReject, MessageSend, ProjectOpen, ProjectPatch, RoutineSave, SettingsPatch, SkillSave, Upload } from './schemas';
@@ -132,6 +133,7 @@ export function apiRouter() {
       const rules = b.denyRules.map((r: unknown) => (typeof r === 'string' ? r.trim().slice(0, 300) : '')).filter(Boolean);
       patch.denyRules = [...new Set<string>(rules)].slice(0, 100);
     }
+    if (b.routing) patch.routing = { mode: b.routing.mode };
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }
@@ -163,6 +165,7 @@ export function apiRouter() {
   });
 
   r.get('/usage', (_req, res) => res.json(usageOf()));
+  r.get('/routing', (_req, res) => res.json(routingReport()));
 
   // ------------------------------------------------------------ improvements
   r.get('/improvements', (_req, res) => res.json(listImprovements()));

@@ -2002,3 +2002,62 @@
 .improve-effect {
   font-size: 12px;
 }
+
+/* ---------------------------------------------------------------- routing */
+.routing-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.routing-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.routing-totals b {
+  color: var(--text);
+}
+.routing-bins {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.routing-bins th,
+.routing-bins td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+  font-weight: normal;
+}
+.routing-bins th:first-child,
+.routing-bins td:first-child {
+  color: var(--text-3);
+}
+.routing-recent {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+.routing-row {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.routing-row .mono {
+  flex: none;
+  width: 110px;
+}
+.routing-row .muted {
+  flex: none;
+  width: 80px;
+}
+.routing-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

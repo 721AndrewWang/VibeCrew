@@ -156,6 +156,7 @@ export const useStore = create<AppState>(() => ({
     logo: cachedLogo(),
     denyRules: [],
     sandbox: { enabled: false, allowedDomains: [] },
+    routing: { mode: 'off' },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },

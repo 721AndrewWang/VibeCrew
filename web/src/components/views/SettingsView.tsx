@@ -6,6 +6,7 @@ import { DefaultsSection } from './settings/DefaultsSection';
 import { DesktopSection } from './settings/DesktopSection';
 import { LanSection } from './settings/LanSection';
 import { NotificationSection } from './settings/NotificationSection';
+import { RoutingSection } from './settings/RoutingSection';
 import { SandboxSection } from './settings/SandboxSection';
 
 export function SettingsView() {
@@ -16,6 +17,7 @@ export function SettingsView() {
         <ConnectionSection />
         <DefaultsSection />
         <SandboxSection />
+        <RoutingSection />
         <LanSection />
         <AppearanceSection />
         <NotificationSection />

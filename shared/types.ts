@@ -440,6 +440,8 @@ export interface PublicSettings {
   /** Actions no bot may take, in any project or mode, e.g. "Bash(*prod-server*)". */
   denyRules: string[];
   sandbox: SandboxSettings;
+  /** Group-chat routing by a cheap model: off, or shadow (decides and records, never acts). */
+  routing: { mode: 'off' | 'shadow' };
 }
 
 /** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */
@@ -561,6 +563,42 @@ export interface Improvement {
 export interface ImprovementEffect {
   before: { turns: number; avgCostUsd: number; refuted: number; errors: number };
   after: { turns: number; avgCostUsd: number; refuted: number; errors: number };
+}
+
+/** One shadow routing decision: who a cheap router would have picked, and how sure it was. */
+export interface RoutingRecord {
+  id: ID;
+  at: number;
+  chatId: ID;
+  messageId: ID;
+  text: string;
+  candidates: { id: ID; name: string }[];
+  /** The lead the message actually went to. */
+  leadId: ID;
+  backend: string;
+  choice?: ID;
+  /** Largest probability after averaging both candidate orders. */
+  confidence?: number;
+  probs?: Record<ID, number>;
+  costUsd: number;
+  /** The router's answer was unusable; counts as "escalate". */
+  invalid?: string;
+}
+
+export interface RoutingReport {
+  mode: 'off' | 'shadow';
+  /** Records whose outcome is known (the lead answered and handed over to at most one teammate). */
+  labeled: number;
+  agreement: number | null;
+  bins: { lo: number; hi: number; n: number; correct: number }[];
+  /** Local labels still needed before a threshold is suggested. */
+  needed: number;
+  /** The smallest threshold whose accepted decisions are accurate enough, judged by a lower bound. */
+  threshold: { tau: number; coverage: number; accuracy: number; lower: number } | null;
+  /** What the lead's routing-only turns cost on average: what a confident route would save each time. */
+  avgRoutingTurnUsd: number | null;
+  costUsd: number;
+  recent: (RoutingRecord & { label?: ID | 'multi' | null })[];
 }
 
 export interface ModelOption {

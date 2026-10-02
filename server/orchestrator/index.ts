@@ -15,6 +15,7 @@ import { autoCommit, commitSubject, gitError } from '../gitops';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
 import { parseVerdict, reviewDiff } from '../review';
+import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid } from '../store';
@@ -534,6 +535,8 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
     if (!targets.length) {
       const lead = bots.get(chat.leadBotId) && chat.botIds.includes(chat.leadBotId!) ? bots.get(chat.leadBotId)! : members[0];
       if (lead) targets = [lead];
+      // What a cheap router would have picked, recorded on the side; the message still goes to the lead.
+      if (lead) void shadowRoute(chat, msg, members, lead).catch((e) => log.warn('shadow routing:', e));
     }
   }
   emitChat(chat);

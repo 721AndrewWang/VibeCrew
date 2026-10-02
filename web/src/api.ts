@@ -15,6 +15,7 @@ import type {
   PublicSettings,
   RecordedStep,
   Routine,
+  RoutingReport,
   Skill,
   TurnSummary,
   TurnTrace,
@@ -168,6 +169,7 @@ export const api = {
   runRoutine: (id: string) => post<Routine>(`/api/routines/${id}/run`),
 
   upload: (file: { name: string; mime: string; data: string }) => post<UploadResult>('/api/uploads', file),
+  routing: () => get<RoutingReport>('/api/routing'),
   improvements: () => get<{ items: Improvement[]; effects: Record<string, ImprovementEffect> }>('/api/improvements'),
   runImprovements: () => post<{ added: Improvement[]; dropped: string[]; costUsd: number }>('/api/improvements/run'),
   acceptImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/accept`),

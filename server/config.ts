@@ -32,6 +32,8 @@ export const DATA = {
   worktrees: path.join(HOME_DIR, 'worktrees'),
   /** Proposed changes to bots and what the user decided (the improvement ledger). */
   improvements: path.join(HOME_DIR, 'improvements.json'),
+  /** Shadow routing decisions. */
+  routing: path.join(HOME_DIR, 'routing.json'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

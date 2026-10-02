@@ -11,13 +11,21 @@ export interface OneShotResult {
   costUsd: number;
 }
 
-export async function oneShot(prompt: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<OneShotResult> {
+/**
+ * Bare: no tools, a one-line system prompt, no user or project settings, no MCP servers, nothing
+ * saved. Claude Code's own system prompt and tool definitions are ~29k tokens; without them a
+ * small Haiku call costs about $0.001 instead of $0.06.
+ */
+const BARE = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--no-session-persistence'];
+
+export async function oneShot(prompt: string, opts: { model?: string; timeoutMs?: number; system?: string } = {}): Promise<OneShotResult> {
   const cli = findClaudeExecutable();
   if (!cli) throw new Error('没有找到 Claude Code');
   const timeoutMs = opts.timeoutMs ?? 120_000;
   return new Promise<OneShotResult>((resolve, reject) => {
     // In a neutral folder, so no project's own Claude Code hooks or settings run for this.
-    const child = spawn(cli, ['-p', '--output-format', 'json', '--max-turns', '1', '--model', opts.model || 'sonnet'], {
+    const args = ['-p', '--output-format', 'json', '--max-turns', '1', '--model', opts.model || 'sonnet', ...BARE, '--system-prompt', opts.system || '按要求回答，只输出要求的内容。'];
+    const child = spawn(cli, args, {
       cwd: os.tmpdir(),
       env: cleanEnv(modelEnv()),
       stdio: ['pipe', 'pipe', 'pipe'],

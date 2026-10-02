@@ -148,6 +148,7 @@ export const SettingsPatch = z
     logo: text(32),
     denyRules: z.array(z.unknown()).max(200),
     sandbox: z.object({ enabled: z.boolean().optional(), allowedDomains: z.array(text(300)).max(200).optional() }),
+    routing: z.object({ mode: z.enum(['off', 'shadow']) }),
     pluginSecrets: z.record(z.string(), z.unknown()),
     authMode: z.enum(['claude-code', 'api-key', 'provider']),
     apiKey: text(500),
