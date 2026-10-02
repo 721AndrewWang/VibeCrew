@@ -104,7 +104,7 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
     const sent = await turn('审一下第一条');
     expect(sent).toContain('用户的要求');
     expect(sent).toContain('要审查的改动');
-    expect(sent).toContain('结论：未推翻');
+    expect(sent).toContain('按你的角色说明审查');
     expect(sent).not.toContain('收到。'); // the bot's own earlier replies are not replayed
     const history = mock.toolResults.find((t) => t.includes('#1'))!;
     expect(history).toContain('【用户 · #1】');

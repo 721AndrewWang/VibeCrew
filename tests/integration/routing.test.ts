@@ -48,6 +48,9 @@ describe('in demo mode', () => {
     expect(report.agreement).toBe(0.5);
     expect(report.needed).toBe(98);
     expect(report.threshold).toBeNull();
+    // The handover was guessed at 0.95 and wrong, the solo turn at 0.55 and right: confidence points the wrong way.
+    expect(report.auroc).toBe(0);
+    expect(report.confident).toEqual({ n: 1, wrong: 1 });
   });
 
   it('records nothing for @-mentions, direct chats, or when switched off', async () => {

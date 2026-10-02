@@ -593,6 +593,13 @@ export interface RoutingReport {
   bins: { lo: number; hi: number; n: number; correct: number }[];
   /** Local labels still needed before a threshold is suggested. */
   needed: number;
+  /**
+   * How well confidence separates right from wrong guesses: the chance a random right guess was more
+   * confident than a random wrong one. 0.5 is no better than chance. Null until both kinds exist.
+   */
+  auroc: number | null;
+  /** Guesses at confidence >= 0.9 and how many of them were wrong: what a gate would let through wrongly. */
+  confident: { n: number; wrong: number };
   /** The smallest threshold whose accepted decisions are accurate enough, judged by a lower bound. */
   threshold: { tau: number; coverage: number; accuracy: number; lower: number } | null;
   /** What the lead's routing-only turns cost on average: what a confident route would save each time. */

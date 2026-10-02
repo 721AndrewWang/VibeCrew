@@ -131,6 +131,16 @@ export function outcome(rec: RoutingRecord): { label: string | 'multi' | null; l
   return { label: handed.length === 0 ? rec.leadId : handed.length === 1 ? handed[0].id : 'multi', leadReply: reply };
 }
 
+/** Mann-Whitney AUROC of confidence against correctness (ties count half); null without both classes. */
+export function auroc(scored: { q: number; ok: boolean }[]): number | null {
+  const right = scored.filter((s) => s.ok).map((s) => s.q);
+  const wrong = scored.filter((s) => !s.ok).map((s) => s.q);
+  if (!right.length || !wrong.length) return null;
+  let wins = 0;
+  for (const r of right) for (const w of wrong) wins += r > w ? 1 : r === w ? 0.5 : 0;
+  return wins / (right.length * wrong.length);
+}
+
 /** Lower bound of the Wilson score interval (95%). */
 export function wilsonLower(correct: number, n: number, z = 1.96): number {
   if (!n) return 0;
@@ -174,6 +184,8 @@ export function routingReport(): RoutingReport {
     agreement: scored.length ? scored.filter((s) => s.ok).length / scored.length : null,
     bins,
     needed: Math.max(0, LABELS_NEEDED - usable.length),
+    auroc: auroc(scored),
+    confident: { n: scored.filter((s) => s.q >= 0.9).length, wrong: scored.filter((s) => s.q >= 0.9 && !s.ok).length },
     threshold,
     avgRoutingTurnUsd: routingTurns.length ? routingTurns.reduce((a, b) => a + b, 0) / routingTurns.length : null,
     costUsd: recs.reduce((s, r) => s + r.costUsd, 0),

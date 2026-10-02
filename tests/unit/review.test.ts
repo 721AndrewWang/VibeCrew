@@ -44,7 +44,9 @@ describe("the blind reviewer's prompt", () => {
   it("has the user's words and the diff", () => {
     expect(prompt).toContain('加一个联系区块，邮件按钮要能用');
     expect(prompt).toContain('+<a href="mailto:x">');
-    expect(prompt).toContain('结论：未推翻');
+    expect(prompt).toContain('按你的角色说明审查');
+    // The verdict format is Skeptic's own, in its description; a blind Lens does not get it.
+    expect(prompt).not.toContain('结论：未推翻');
   });
   it('hides what teammates said, only counting it', () => {
     expect(prompt).not.toContain('暗色模式没问题');

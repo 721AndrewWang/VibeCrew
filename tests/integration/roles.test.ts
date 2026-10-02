@@ -24,7 +24,7 @@ describe('templates', () => {
     const by = (name: string) => b.bots.find((x: any) => x.name === name);
     expect(by('Chief').effort).toBe('high');
     expect([by('Pixel').model, by('Pixel').effort, by('Pixel').permission]).toEqual(['claude-sonnet-5', 'medium', 'edits']);
-    expect([by('Lens').model, by('Lens').effort, by('Lens').permission]).toEqual(['claude-sonnet-5', 'low', 'plan']);
+    expect([by('Lens').model, by('Lens').effort, by('Lens').permission, by('Lens').blindReview]).toEqual(['claude-sonnet-5', 'low', 'plan', true]);
     expect(by('Probe').editScope).toContain('tests/**');
     expect(by('Chief').editScope).toBeUndefined();
     expect([by('Probe').freshSession, by('Lens').freshSession, by('Chief').freshSession, by('Pixel').freshSession]).toEqual([true, true, undefined, undefined]);

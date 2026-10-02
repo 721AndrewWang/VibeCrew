@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combine, parseProbs, wilsonLower } from '../../server/router';
+import { auroc, combine, parseProbs, wilsonLower } from '../../server/router';
 
 const order = [
   { id: 'b1', name: 'Chief', title: '' },
@@ -26,6 +26,19 @@ describe('combine', () => {
     expect(c.probs.b2).toBeCloseTo(0.4, 9);
     expect(c.choice).toBe('b1');
     expect(c.confidence).toBeCloseTo(0.6, 9);
+  });
+});
+
+describe('auroc', () => {
+  const s = (q: number, ok: boolean) => ({ q, ok });
+  it('is 1 when every right guess is surer than every wrong one, 0.5 when confidence says nothing', () => {
+    expect(auroc([s(0.9, true), s(0.8, true), s(0.6, false), s(0.5, false)])).toBe(1);
+    expect(auroc([s(0.7, true), s(0.7, false)])).toBe(0.5);
+    expect(auroc([s(0.9, true), s(0.6, true), s(0.8, false), s(0.5, false)])).toBe(0.75);
+  });
+  it('is unknown until there are both right and wrong guesses', () => {
+    expect(auroc([s(0.9, true)])).toBeNull();
+    expect(auroc([])).toBeNull();
   });
 });
 

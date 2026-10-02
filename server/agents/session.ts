@@ -358,7 +358,7 @@ export class FakeSession implements AgentSession {
     };
 
     try {
-      if (prompt.includes('按你的流程证伪')) {
+      if (prompt.includes('## 要审查的改动')) {
         // A blind review: a table and the verdict line. REFUTE_ME in the change makes it refute one claim.
         const refute = prompt.includes('REFUTE_ME');
         await streamText(

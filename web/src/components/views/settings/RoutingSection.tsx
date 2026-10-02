@@ -52,6 +52,15 @@ export function RoutingSection() {
             <span>花费 {fmtUsd(report.costUsd)}</span>
             {report.avgRoutingTurnUsd !== null && <span>负责人只派活的一轮平均 {fmtUsd(report.avgRoutingTurnUsd)}</span>}
           </div>
+          <div className="routing-totals">
+            <span title="把握高低和对错的对应程度：随机拿一个猜对的和一个猜错的，猜对的那个把握更高的概率。0.5 等于瞎猜，把握完全没用；论文里能当第一关的大约 0.75 以上。">
+              把握的区分度（AUROC） <b>{report.auroc === null ? '—' : report.auroc.toFixed(2)}</b>
+              {report.auroc !== null && report.auroc < 0.65 ? '（接近瞎猜，把握不可信）' : ''}
+            </span>
+            <span title="把握 ≥ 0.9 的猜测里错了几次：真放行之后会直接派错人的那部分。">
+              有把握却错了 <b>{report.confident.n ? `${report.confident.wrong}/${report.confident.n}` : '—'}</b>
+            </span>
+          </div>
           <table className="routing-bins">
             <thead>
               <tr>

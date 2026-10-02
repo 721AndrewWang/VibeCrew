@@ -200,7 +200,7 @@ function blindPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
   out.push(`用户的要求：\n\n${users.map(renderUserMessage).join('\n\n---\n\n') || '（这一轮没有新的用户消息；按之前的要求审查当前改动）'}`);
   if (hidden) out.push(`（队友这期间发了 ${hidden} 条消息，按规则对你隐藏。）`);
   if (review) out.push(`## 要审查的改动：${review.title}\n\n\`\`\`diff\n${review.diff.trim() || '（没有改动）'}\n\`\`\``);
-  out.push('按你的流程证伪，最后一行写「结论：未推翻」或「结论：推翻 N 条」。');
+  out.push('按你的角色说明审查：只根据用户的要求和改动本身下结论，自己去看、去量，不要假设。');
   return out.join('\n\n');
 }
 
