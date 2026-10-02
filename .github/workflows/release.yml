@@ -22,6 +22,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: git config --global user.name ci && git config --global user.email ci@example.com
       - name: Check that the tag matches package.json
         run: |
           v="v$(node -p "require('./package.json').version")"
