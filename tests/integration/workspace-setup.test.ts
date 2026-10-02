@@ -45,7 +45,7 @@ afterAll(() => crew?.stop());
 describe('project settings', () => {
   it('saves the setup command, commit rules and must-ask rules, cleaning the rules up', async () => {
     const p = await crew.api('PATCH', `/projects/${projectId}`, {
-      setupCommand: 'sleep 2 && mkdir -p frontend/node_modules && echo ready > frontend/node_modules/.setup-done',
+      setupCommand: 'sleep 5 && mkdir -p frontend/node_modules && echo ready > frontend/node_modules/.setup-done',
       commitGuide: 'English, imperative mood, subject under 72 characters',
       noAttribution: true,
       askRules: ['Bash(ssh:*)', '  ', 'Bash(ssh:*)', 'Bash(docker compose down:*)'],

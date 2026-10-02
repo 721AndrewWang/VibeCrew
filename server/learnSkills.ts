@@ -23,6 +23,22 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
 const toolCalls = (m: ChatMessage) => (m.parts || []).filter((p) => p.type === 'tool');
 
+/**
+ * What the turn was asked to do: the teammate's handover when it was handed one (the user's last
+ * message may have been addressed to someone else), else the user's last message before it.
+ */
+function taskOf(list: ChatMessage[], turn: ChatMessage): string {
+  const before = list.filter((m) => m.seq < turn.seq);
+  const user = before.filter((m) => m.role === 'user').at(-1);
+  const userText = user?.prompt || user?.text || '';
+  if (turn.trigger?.type === 'mention' && turn.trigger.by) {
+    const handover = before.filter((m) => m.role === 'bot' && m.botId === turn.trigger!.by).at(-1);
+    const by = bots.get(turn.trigger.by)?.name || '队友';
+    if (handover) return `${by} 交代的任务：${handover.text.trim()}${userText ? `\n（用户最近说的：${userText}）` : ''}`;
+  }
+  return userText;
+}
+
 /** Recent turns worth learning from, newest first: done, complex, not refuted afterwards, not drafted yet. */
 export function skillCandidates(now = Date.now()): SkillCandidate[] {
   const drafted = new Set(
@@ -40,11 +56,7 @@ export function skillCandidates(now = Date.now()): SkillCandidate[] {
       if (!bot || bot.blindReview || toolCalls(m).length < COMPLEX_TURN_TOOLS) return;
       // Refuted by a later review in the same chat: not a procedure to repeat.
       if (list.slice(i + 1).some((x) => (x.meta?.verdict?.refuted || 0) > 0)) return;
-      const ask = list
-        .slice(0, i)
-        .filter((x) => x.role === 'user')
-        .at(-1);
-      out.push({ chatId: chat.id, messageId: m.id, chatTitle: chat.title, botName: bot.name, ask: (ask?.prompt || ask?.text || '').slice(0, 300), tools: toolCalls(m).length, at: m.ts });
+      out.push({ chatId: chat.id, messageId: m.id, chatTitle: chat.title, botName: bot.name, ask: taskOf(list, m).slice(0, 300), tools: toolCalls(m).length, at: m.ts });
     });
   }
   return out.sort((a, b) => b.at - a.at).slice(0, MAX_CANDIDATES);
@@ -103,7 +115,7 @@ function draftPrompt(ask: string, turn: ChatMessage, existing: string[]): string
     '',
     '只回复 JSON：{"name": "kebab-case 英文名，最多 40 个字符", "title": "中文标题", "description": "一句话说明什么时候用", "argsHint": "参数提示", "body": "技能内容"}',
     '',
-    `## 用户的要求\n${ask || '（没有记录）'}`,
+    `## 这一轮的任务\n${ask || '（没有记录）'}`,
     `## 这一轮调用的工具\n${steps}`,
     `## 机器人最后的回复\n${(turn.text || '').slice(0, 1500)}`,
   ].join('\n');
@@ -115,9 +127,7 @@ export async function draftSkill(chatId: string, messageId: string): Promise<{ i
   const turn = messages.get(chatId, messageId);
   if (!chat || !turn || turn.role !== 'bot' || !turn.botId) throw new HttpError(404, '没有这一轮');
   if (!skillCandidates().some((c) => c.messageId === messageId)) throw new HttpError(409, '这一轮不能（或者已经）用来起草技能');
-  const list = messages.sorted(chatId);
-  const askMsg = list.filter((m) => m.role === 'user' && m.seq < turn.seq).at(-1);
-  const ask = askMsg?.prompt || askMsg?.text || '';
+  const ask = taskOf(messages.sorted(chatId), turn);
   const existing = skills.list().map((s) => s.name);
 
   let raw: unknown;

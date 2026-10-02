@@ -46,6 +46,21 @@ describe('in demo mode', () => {
     expect((await crew.api('GET', '/bootstrap')).skills.some((s: any) => s.name === 'demo-page')).toBe(false);
   });
 
+  it("takes a teammate's handover as the task of a handed-over turn", async () => {
+    const b = await crew.api('GET', '/bootstrap');
+    const group = b.chats.find((c: any) => c.kind === 'group').id;
+    const sent = await crew.api('POST', `/chats/${group}/messages`, { text: '把这个复杂任务拆分一下交给队友' });
+    await waitTurn(crew.api, group, sent.seq); // Chief hands over to Pixel
+    let pixel: any;
+    for (let i = 0; i < 80 && !pixel; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      pixel = (await crew.api('GET', '/skills/candidates')).items.find((c: any) => c.botName === 'Pixel');
+    }
+    expect(pixel.ask).toMatch(/^Chief 交代的任务：/);
+    expect(pixel.ask).toContain('我把任务拆一下：@Pixel');
+    expect(pixel.ask).toContain('用户最近说的：把这个复杂任务拆分一下交给队友');
+  });
+
   it('refuses turns that are not candidates', async () => {
     const r = await crew.api('POST', '/skills/draft', { chatId: dm, messageId: 'm_nope' });
     expect(r.status).toBe(404);
