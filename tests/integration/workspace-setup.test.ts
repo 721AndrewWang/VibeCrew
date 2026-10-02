@@ -45,7 +45,7 @@ afterAll(() => crew?.stop());
 describe('project settings', () => {
   it('saves the setup command, commit rules and must-ask rules, cleaning the rules up', async () => {
     const p = await crew.api('PATCH', `/projects/${projectId}`, {
-      setupCommand: 'sleep 5 && mkdir -p frontend/node_modules && echo ready > frontend/node_modules/.setup-done',
+      setupCommand: 'sleep 2 && mkdir -p frontend/node_modules && echo ready > frontend/node_modules/.setup-done',
       commitGuide: 'English, imperative mood, subject under 72 characters',
       noAttribution: true,
       askRules: ['Bash(ssh:*)', '  ', 'Bash(ssh:*)', 'Bash(docker compose down:*)'],
@@ -105,7 +105,8 @@ describe('a new workspace', () => {
     const ready = messages.find((m: any) => m.text?.includes('工作区准备好了'));
     const reply = messages.filter((m: any) => m.role === 'bot').at(-1);
     expect(ready).toBeTruthy();
-    expect(reply.ts).toBeGreaterThan(ready.ts);
+    // By sequence: under load both can share a millisecond.
+    expect(reply.seq).toBeGreaterThan(ready.seq);
   });
 
   it('needs a written message to merge when the project has commit rules, and uses it as is', async () => {

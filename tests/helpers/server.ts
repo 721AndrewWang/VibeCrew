@@ -132,7 +132,7 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
       }
       await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
     }
-    if (owned && !process.env.CREW_TEST_KEEP) fs.rmSync(dir, { recursive: true, force: true });
+    if (owned && !process.env.CREW_TEST_KEEP) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   };
 
   for (let i = 0; ; i++) {

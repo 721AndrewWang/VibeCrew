@@ -72,7 +72,10 @@ describe.skipIf(!hasCli)('another model provider', () => {
     const models = [...new Set(mock.requests.map((r) => r.model).filter(Boolean))];
     expect(models).toContain('mock-model');
     expect(models.some((m) => /claude/.test(String(m)))).toBe(false);
-    const offenders = mock.requests.filter((r) => !(r.auth === `Bearer ${TOKEN}` && !r.xApiKey)).map((r) => ({ url: r.url, auth: r.auth, x: r.xApiKey, model: r.model }));
+    // Model calls carry the token as a Bearer; nothing ever sends it (or anything) as x-api-key. Claude
+    // Code may also probe the base URL with no credentials at all (GET /api/hello), which leaks nothing.
+    const leaks = (r: (typeof mock.requests)[number]) => !!r.xApiKey || (r.auth !== '' && r.auth !== `Bearer ${TOKEN}`) || (r.url.startsWith('/v1/') && r.auth !== `Bearer ${TOKEN}`);
+    const offenders = mock.requests.filter(leaks).map((r) => ({ url: r.url, auth: r.auth, x: r.xApiKey, model: r.model }));
     expect(offenders, JSON.stringify(offenders)).toEqual([]);
     // The context ring: Claude Code reports usage after the turn.
     const usage = await waitTurnContext(crew, dm.id, chief.id);
