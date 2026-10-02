@@ -109,8 +109,10 @@ export function evidencePack(): string {
     .slice(-20);
   if (decided.length) {
     lines.push('', '## 以前的建议和用户的决定（不要重复被拒绝的）');
-    for (const i of decided)
-      lines.push(`- ${i.botName} 的 ${FIELD_LABEL[i.field]} → ${clip(JSON.stringify(i.after), 160)}：${i.status}${i.original ? '（用户改过再接受）' : ''}${i.note ? `（用户说：${i.note}）` : ''}`);
+    for (const i of decided) {
+      const edited = i.original !== undefined ? `（模型提的是 ${clip(JSON.stringify(i.original), 120)}，用户改成了上面这样再决定）` : '';
+      lines.push(`- ${i.botName} 的 ${FIELD_LABEL[i.field]} → ${clip(JSON.stringify(i.after), 160)}：${i.status}${edited}${i.note ? `（用户说：${i.note}）` : ''}`);
+    }
   }
   return lines.join('\n');
 }
@@ -287,6 +289,27 @@ export function acceptImprovement(id: string): { improvement: Improvement; bot?:
   i.decidedAt = Date.now();
   improvements.set(i);
   return { improvement: i, bot: updated };
+}
+
+/**
+ * The user's own value for a pending change to a bot's setting. It must pass the same checks as
+ * the bot's settings page and still change something; the model's value is kept as `original`.
+ */
+export function editSettingProposal(id: string, value: unknown): Improvement {
+  const i = requireImprovement(id);
+  if (i.field === 'skill') throw new HttpError(400, '技能草稿请用技能的修改');
+  if (i.status !== 'pending') throw new HttpError(409, '这条建议已经处理过了');
+  const check = BotPatch.shape[i.field].safeParse(value);
+  if (!check.success) throw new HttpError(400, `${FIELD_LABEL[i.field]}的值不合法：${check.error.issues[0]?.message}`);
+  const after = typeof check.data === 'string' ? check.data.trim() : Array.isArray(check.data) ? [...new Set(check.data.map((x) => String(x).trim()).filter(Boolean))] : check.data;
+  // An unset switch is off: turning it "off" is no change.
+  const unchanged = typeof after === 'boolean' ? !!i.before === after : same(i.before, after);
+  if (unchanged) throw new HttpError(400, '改成和现在一样了，那就直接拒绝这条建议吧');
+  if (i.original === undefined) i.original = i.after;
+  i.after = after;
+  i.editedAt = Date.now();
+  improvements.set(i);
+  return i;
 }
 
 export function rejectImprovement(id: string, note?: string): Improvement {

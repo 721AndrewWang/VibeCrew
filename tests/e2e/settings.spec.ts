@@ -93,3 +93,27 @@ test('a skill draft can be edited in the panel before it is accepted', async ({ 
   await item.locator('button', { hasText: '接受' }).click();
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).skills.find((s: any) => s.name === 'my-page')?.body).toBe('1. 看结构\n2. 按 {{args}} 写页面\n3. 截图确认');
 });
+
+test('a proposed setting change can be edited before it is accepted', async ({ page, crew }) => {
+  const b = await crew.api('GET', '/bootstrap');
+  const chief = b.bots.find((x: any) => x.name === 'Chief');
+  const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
+  for (const text of ['你好', '再说一句']) {
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text });
+    await expect.poll(async () => (await crew.api('GET', `/chats/${dm.id}/messages?limit=8`)).messages.some((m: any) => m.seq > sent.seq && m.status === 'done'), { timeout: 20_000 }).toBe(true);
+  }
+  // The demo analysis proposes turning on Chief's fresh session.
+  await crew.api('POST', '/improvements/run');
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="机器人"]').click();
+  const item = page.locator('.improve-item').first();
+  await expect(item.locator('.improve-title')).toContainText('Chief 的每轮新会话');
+  await item.locator('button', { hasText: '修改' }).click();
+  // Switching it back off would be no change at all: the editor says so and will not save it.
+  await item.locator('.improve-editor .toggle').click();
+  await expect(item.locator('.improve-editor .hint', { hasText: '和现在一样' })).toBeVisible();
+  await expect(item.locator('button', { hasText: '保存修改' })).toBeDisabled();
+  await item.locator('button', { hasText: '取消' }).click();
+  await item.locator('button', { hasText: '接受' }).click();
+  await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBe(true);
+});

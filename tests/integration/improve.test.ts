@@ -166,6 +166,28 @@ describe.skipIf(!claudeCli())('with a model', () => {
     expect(text).toContain('### Probe');
   });
 
+  it('lets the user edit a proposed setting before deciding, checked like the settings page', async () => {
+    const pending = (await crew.api('GET', '/improvements')).items.find((i: any) => i.status === 'pending' && i.botName === 'Pixel' && i.field === 'effort');
+    const edit = (value: unknown) => crew.api('PATCH', `/improvements/${pending.id}`, { value });
+    expect((await edit('ultra')).status).toBe(400);
+    const same = await edit('medium'); // what Pixel has now
+    expect(same.status).toBe(400);
+    expect(same.error).toContain('和现在一样');
+    const r = (await edit('high')).improvement;
+    expect([r.after, r.original]).toEqual(['high', 'low']);
+    expect((await edit('max')).improvement.original).toBe('low'); // the model's value is kept once
+    expect((await crew.api('POST', `/improvements/${pending.id}/accept`)).improvement.status).toBe('accepted');
+    expect((await crew.api('GET', '/bootstrap')).bots.find((b: any) => b.name === 'Pixel').effort).toBe('max');
+    expect((await edit('low')).status).toBe(409);
+
+    // The next analysis sees both what the model proposed and what the user made of it.
+    answer = '[]';
+    mock.requests.length = 0;
+    await crew.api('POST', '/improvements/run');
+    const sent = JSON.stringify(mock.requests.find((q) => JSON.stringify(q.body).includes('只回复 JSON 数组'))!.body);
+    expect(sent).toContain('模型提的是 \\"low\\"');
+  });
+
   it('says so when the model answers out of format', async () => {
     answer = '我觉得都挺好的';
     const r = await crew.api('POST', '/improvements/run');

@@ -1,10 +1,12 @@
 import { Check, ChevronRight, Lightbulb, Pencil, RotateCcw, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import type { ImprovableField, Improvement, ImprovementEffect, SkillCandidate, SkillDraft } from '../../../../shared/types';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import type { Effort, ImprovableField, Improvement, ImprovementEffect, PermissionLevel, SkillCandidate, SkillDraft } from '../../../../shared/types';
 import { api } from '../../api';
 import { openChat, toast } from '../../store';
-import { cx, fmtWhen } from '../../utils';
+import { cx, EFFORT_OPTIONS, fmtWhen, PERMISSION_INFO } from '../../utils';
+import { Toggle } from '../ui';
 import { fmtUsd } from './BotsView';
+import { ModelPicker } from './bot-editor/ModelPicker';
 
 const FIELD_LABEL: Record<ImprovableField, string> = {
   description: '角色说明',
@@ -160,7 +162,22 @@ function ProposalCard({ item, onDone }: { item: Improvement; onDone: () => void 
       <div className="improve-title">
         <b>{item.botName}</b> 的{FIELD_LABEL[item.field]}
       </div>
-      {editing && item.field === 'skill' ? (
+      {editing && item.field !== 'skill' ? (
+        <SettingEditor
+          item={item}
+          onCancel={() => setEditing(false)}
+          onSave={async (value) => {
+            try {
+              await api.editImprovement(item.id, { value });
+              toast('建议已修改', '看过再接受', 'success');
+              setEditing(false);
+              onDone();
+            } catch (e) {
+              toast('没能保存修改', (e as Error).message, 'error');
+            }
+          }}
+        />
+      ) : editing && item.field === 'skill' ? (
         <SkillEditor
           draft={item.after as SkillDraft}
           onCancel={() => setEditing(false)}
@@ -178,7 +195,11 @@ function ProposalCard({ item, onDone }: { item: Improvement; onDone: () => void 
       ) : (
         <Change item={item} />
       )}
-      {item.original !== undefined && <div className="hint">这份草稿你改过；接受后，下次起草技能会参考你改掉的地方。</div>}
+      {item.original !== undefined && (
+        <div className="hint">
+          {item.field === 'skill' ? '这份草稿你改过；接受后，下次起草技能会参考你改掉的地方。' : `你改过这条建议（模型原来提的是 ${show(item.original)}）；下次分析会参考你的改法。`}
+        </div>
+      )}
       <div className="improve-why">{item.rationale}</div>
       {item.expected && <div className="hint">期望：{item.expected}</div>}
       <div className="improve-evidence">
@@ -206,7 +227,7 @@ function ProposalCard({ item, onDone }: { item: Improvement; onDone: () => void 
           <button className="btn sm" disabled={busy} onClick={() => setRejecting(true)}>
             <X size={13} /> 拒绝
           </button>
-          {item.field === 'skill' && !editing && (
+          {!editing && (
             <button className="btn sm" disabled={busy} onClick={() => setEditing(true)}>
               <Pencil size={13} /> 修改
             </button>
@@ -338,6 +359,94 @@ function SkillEditor({ draft, onSave, onCancel }: { draft: SkillDraft; onSave: (
           onClick={async () => {
             setSaving(true);
             await onSave(d);
+            setSaving(false);
+          }}
+        >
+          {saving ? <span className="spinner tiny" /> : null} 保存修改
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const lines = (v: unknown) => (Array.isArray(v) ? v.join('\n') : '');
+
+/** Editing a proposed change to a bot's setting: the same kind of control the bot's settings use. */
+function SettingEditor({ item, onSave, onCancel }: { item: Improvement; onSave: (value: unknown) => Promise<void>; onCancel: () => void }) {
+  const field = item.field;
+  const [value, setValue] = useState<unknown>(item.after);
+  const [text, setText] = useState(lines(item.after));
+  const [saving, setSaving] = useState(false);
+  const isList = field === 'allowRules' || field === 'askRules' || field === 'editScope';
+  const next = isList
+    ? text
+        .split('\n')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : value;
+  // Same as the bot has now (an unset switch is off): nothing to accept, so nothing to save.
+  const unchanged = typeof next === 'boolean' ? !!item.before === next : JSON.stringify(next ?? null) === JSON.stringify(item.before ?? null);
+  let control: ReactNode;
+  if (field === 'description') control = <textarea className="textarea tall" value={String(value ?? '')} onChange={(e) => setValue(e.target.value)} />;
+  else if (field === 'model') control = <ModelPicker value={String(value ?? '')} onChange={setValue} />;
+  else if (field === 'effort')
+    control = (
+      <select className="select" value={String(value ?? '')} onChange={(e) => setValue(e.target.value as Effort)}>
+        {EFFORT_OPTIONS.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  else if (field === 'permission')
+    control = (
+      <select className="select" value={String(value)} onChange={(e) => setValue(e.target.value as PermissionLevel)}>
+        {(Object.keys(PERMISSION_INFO) as PermissionLevel[]).map((k) => (
+          <option key={k} value={k}>
+            {PERMISSION_INFO[k].label}
+          </option>
+        ))}
+      </select>
+    );
+  else if (isList) control = <textarea className="textarea mono" rows={5} value={text} placeholder="每行一条" onChange={(e) => setText(e.target.value)} />;
+  else if (field === 'freshSession')
+    control = (
+      <div className="setting-row">
+        <span>每轮从新会话开始</span>
+        <Toggle on={!!value} onChange={setValue} />
+      </div>
+    );
+  else
+    control = (
+      <input
+        className="input num-input"
+        type="number"
+        min={0}
+        step={1}
+        value={value === null || value === undefined ? '' : String(value)}
+        placeholder="不限"
+        onChange={(e) => setValue(e.target.value === '' ? null : Math.max(0, Number(e.target.value)))}
+      />
+    );
+  return (
+    <div className="improve-editor">
+      <div className="field">
+        <label>改成</label>
+        {control}
+      </div>
+      {unchanged && <div className="hint">这样就和现在一样了；不想改的话，直接拒绝这条建议就行。</div>}
+      <div className="row">
+        <span className="spacer" />
+        <button className="btn sm" onClick={onCancel}>
+          取消
+        </button>
+        <button
+          className="btn sm primary"
+          disabled={saving || unchanged}
+          onClick={async () => {
+            setSaving(true);
+            await onSave(next);
             setSaving(false);
           }}
         >

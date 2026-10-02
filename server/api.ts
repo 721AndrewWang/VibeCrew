@@ -15,7 +15,7 @@ import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
 import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
-import { acceptImprovement, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
+import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
@@ -53,13 +53,14 @@ import {
   ProjectOpen,
   ProjectPatch,
   RoutineSave,
+  SettingEdit,
   SettingsPatch,
   SkillDraftRequest,
   SkillSave,
   Upload,
 } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
-import { bots, chats, messages, projects, routines, type Settings, settings } from './store';
+import { bots, chats, improvements, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
@@ -197,7 +198,13 @@ export function apiRouter() {
     const b = body(SkillDraftRequest, req.body);
     res.json(await draftSkill(b.chatId, b.messageId));
   });
-  r.patch('/improvements/:id', (req, res) => res.json({ improvement: editSkillDraft(req.params.id, body(DraftEdit, req.body)) }));
+  // A skill draft is edited field by field; a change to a bot's setting gets a new value.
+  r.patch('/improvements/:id', (req, res) => {
+    const i = improvements.get(req.params.id);
+    if (!i) throw new HttpError(404, '没有这条建议');
+    if (i.field === 'skill') res.json({ improvement: editSkillDraft(i.id, body(DraftEdit, req.body)) });
+    else res.json({ improvement: editSettingProposal(i.id, body(SettingEdit, req.body).value) });
+  });
   r.post('/improvements/:id/revert', (req, res) => res.json(revertImprovement(req.params.id)));
 
   // ------------------------------------------------------------ traces

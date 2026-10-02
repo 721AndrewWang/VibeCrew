@@ -164,6 +164,9 @@ export const ImprovementReject = z.object({ note: text(500).optional() });
 
 export const SkillDraftRequest = z.object({ chatId: id, messageId: id });
 
+/** A new value for a proposed change to a bot's setting; checked against that field's own schema. */
+export const SettingEdit = z.object({ value: z.unknown() });
+
 export const Upload = z.object({ mime: text(100), data: z.string().max(30_000_000), name: text(200).optional() });
 
 /** Parses a request body with the schema; a mismatch is a 400 that names the field. */
