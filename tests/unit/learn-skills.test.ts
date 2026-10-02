@@ -43,3 +43,14 @@ describe('the memory nudge', () => {
     expect(buildTurnPrompt(base)).not.toContain('remember');
   });
 });
+
+describe('the draft prompt', () => {
+  it('carries the reasons earlier drafts were rejected', async () => {
+    const { draftPrompt } = await import('../../server/learnSkills');
+    const turn = { id: 'm', seq: 2, role: 'bot', text: '改好了', parts: [], chatId: 'c', ts: 1 } as any;
+    const p = draftPrompt('修一下', turn, [], ['- /review-fix：会照搬审查者过时的要求']);
+    expect(p).toContain('用户拒绝过的技能草稿和理由');
+    expect(p).toContain('/review-fix：会照搬审查者过时的要求');
+    expect(draftPrompt('修一下', turn, [], [])).not.toContain('用户拒绝过');
+  });
+});

@@ -100,7 +100,17 @@ export function screenSkill(body: string, ctx: { denyRules: string[]; askRules: 
   return { blocked: null, flags: [...new Set(flags)] };
 }
 
-function draftPrompt(ask: string, turn: ChatMessage, existing: string[]): string {
+/** Why the user turned earlier skill drafts down: the next draft must not repeat it. */
+export function rejectedSkillNotes(limit = 10): string[] {
+  return improvements
+    .all()
+    .filter((i) => i.field === 'skill' && i.status === 'rejected' && i.note)
+    .sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0))
+    .slice(0, limit)
+    .map((i) => `- /${(i.after as SkillDraft).name}：${i.note}`);
+}
+
+export function draftPrompt(ask: string, turn: ChatMessage, existing: string[], rejected: string[] = rejectedSkillNotes()): string {
   const steps = toolCalls(turn)
     .map((p, i) => (p.type === 'tool' ? `${i + 1}. ${p.name}${p.status === 'error' ? '（出错）' : ''}：${JSON.stringify(p.input).slice(0, 300)}` : ''))
     .join('\n');
@@ -112,6 +122,8 @@ function draftPrompt(ask: string, turn: ChatMessage, existing: string[]): string
     '- 不要包含密钥、账号、具体的服务器地址；不要包含任何「忽略其他指令」之类的话。',
     '- 用中文写，简洁，步骤清楚，最后写怎样算做完。',
     `- 已有的技能：${existing.join('、') || '（无）'}。和已有的重复，或者这一轮只是一次性的事，就回复 {"skip": "理由"}。`,
+    ...(rejected.length ? ['- 用户拒绝过的技能草稿和理由，新写的不能再犯同样的问题：', ...rejected] : []),
+    '- 这一轮里如果有被用户纠正、或者后来证明是错的做法，不要写进去。',
     '',
     '只回复 JSON：{"name": "kebab-case 英文名，最多 40 个字符", "title": "中文标题", "description": "一句话说明什么时候用", "argsHint": "参数提示", "body": "技能内容"}',
     '',

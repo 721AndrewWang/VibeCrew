@@ -61,6 +61,18 @@ describe('in demo mode', () => {
     expect(pixel.ask).toContain('用户最近说的：把这个复杂任务拆分一下交给队友');
   });
 
+  it('remembers why a draft was rejected, for the next draft', async () => {
+    await turn('再帮我做一个复杂的页面');
+    const [c] = (await crew.api('GET', '/skills/candidates')).items;
+    const r = await crew.api('POST', '/skills/draft', { chatId: c.chatId, messageId: c.messageId });
+    const rejected = (await crew.api('POST', `/improvements/${r.improvement.id}/reject`, { note: '步骤太笼统' })).improvement;
+    expect([rejected.status, rejected.note]).toEqual(['rejected', '步骤太笼统']);
+    const { rejectedSkillNotes } = await import('../../server/learnSkills');
+    expect(rejectedSkillNotes).toBeTypeOf('function');
+    // The turn is not offered again once drafted.
+    expect((await crew.api('GET', '/skills/candidates')).items.some((x: any) => x.messageId === c.messageId)).toBe(false);
+  });
+
   it('refuses turns that are not candidates', async () => {
     const r = await crew.api('POST', '/skills/draft', { chatId: dm, messageId: 'm_nope' });
     expect(r.status).toBe(404);
