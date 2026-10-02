@@ -37,6 +37,10 @@ function fmtLogs(logs: ConsoleEntry[], limit = 40): string {
 }
 
 const device = z.enum(['desktop', 'tablet', 'mobile']).optional().describe('设备尺寸：desktop 1280×800、tablet 820×1180、mobile 390×844，默认 desktop');
+const colorScheme = z
+  .enum(['light', 'dark'])
+  .optional()
+  .describe('配色：dark 模拟系统的暗色模式（prefers-color-scheme: dark），页面有暗色主题时会切过去；默认 light。检查暗色模式一定要用它实际看，不要只读 CSS 推断');
 
 export function crewServer(ctx: CrewContext) {
   const projectId = () => {
@@ -74,10 +78,11 @@ export function crewServer(ctx: CrewContext) {
           device,
           fullPage: z.boolean().optional().describe('截取整页（最多 3 屏高）'),
           selector: z.string().optional().describe('只截取匹配这个 CSS 选择器的元素'),
+          colorScheme,
         },
         async (args) => {
           try {
-            const r = await screenshot({ projectId: projectId(), path: pagePath(args.path), device: args.device, fullPage: args.fullPage, selector: args.selector });
+            const r = await screenshot({ projectId: projectId(), path: pagePath(args.path), device: args.device, fullPage: args.fullPage, selector: args.selector, colorScheme: args.colorScheme });
             const issues = r.logs.filter((l) => l.level === 'error' || l.level === 'warn');
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             return {
@@ -85,7 +90,7 @@ export function crewServer(ctx: CrewContext) {
                 { type: 'image' as const, data: r.png.toString('base64'), mimeType: 'image/png' },
                 {
                   type: 'text' as const,
-                  text: `页面 ${where}（${r.title || '无标题'}），${args.device || 'desktop'}${r.truncated ? '，页面较长只截取了前 3 屏' : ''}。\n${issues.length ? `控制台问题：\n${fmtLogs(issues)}` : '控制台没有错误或警告。'}`,
+                  text: `页面 ${where}（${r.title || '无标题'}），${args.device || 'desktop'}${args.colorScheme === 'dark' ? '，暗色模式' : ''}${r.truncated ? '，页面较长只截取了前 3 屏' : ''}。\n${issues.length ? `控制台问题：\n${fmtLogs(issues)}` : '控制台没有错误或警告。'}`,
                 },
               ],
             };
@@ -101,10 +106,11 @@ export function crewServer(ctx: CrewContext) {
         {
           path: z.string().optional().describe('页面路径，不填则是用户当前正在看的页面'),
           waitMs: z.number().optional().describe('页面加载后再等待多少毫秒收集日志，默认 1500'),
+          colorScheme,
         },
         async (args) => {
           try {
-            const r = await consoleCheck({ projectId: projectId(), path: pagePath(args.path), waitMs: args.waitMs });
+            const r = await consoleCheck({ projectId: projectId(), path: pagePath(args.path), waitMs: args.waitMs, colorScheme: args.colorScheme });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             if (!r.logs.length) return text(`页面 ${where}（HTTP ${r.status}，${r.title || '无标题'}）：控制台干净，没有日志。`);
             return text(`页面 ${where}（HTTP ${r.status}，${r.title || '无标题'}）共 ${r.logs.length} 条日志：\n${fmtLogs(r.logs, 60)}`);
@@ -133,6 +139,7 @@ export function crewServer(ctx: CrewContext) {
             .describe('按顺序执行的操作'),
           screenshot: z.boolean().optional().describe('操作结束后附带截图'),
           device,
+          colorScheme,
         },
         async (args) => {
           try {
@@ -143,6 +150,7 @@ export function crewServer(ctx: CrewContext) {
               steps: args.steps,
               screenshot: args.screenshot,
               device: args.device,
+              colorScheme: args.colorScheme,
             });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             const summary = [...r.lines, '', `当前页面：${where}（${r.title || '无标题'}）`, r.logs.length ? `期间的控制台日志：\n${fmtLogs(r.logs)}` : '期间没有控制台日志。'].join('\n');

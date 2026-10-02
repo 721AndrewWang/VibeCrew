@@ -86,9 +86,9 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   lines.push(
     '- 你修改文件后，用户的预览会自动刷新（静态页面热刷新，框架项目由开发服务器热更新）。',
     '- Crew 提供的工具（mcp__crew__*）：',
-    '  - preview_screenshot：用真实浏览器截图查看页面效果（可选 desktop/tablet/mobile、整页、某个元素）。改完界面一定要看一眼。',
+    '  - preview_screenshot：用真实浏览器截图查看页面效果（可选 desktop/tablet/mobile、整页、某个元素，colorScheme: dark 看暗色模式）。改完界面一定要看一眼；页面有暗色主题时，两种配色都要看。',
     '  - preview_console：打开页面收集控制台报错和失败的网络请求。',
-    '  - browser_act：像用户一样操作页面（点击、输入、按键、跳转、断言文字），页面状态在多次调用间保留。',
+    '  - browser_act：像用户一样操作页面（点击、输入、按键、跳转、断言文字），页面状态在多次调用间保留；也能用 colorScheme: dark 切到暗色模式，用 eval 读真实的计算样式（比如 getComputedStyle 的颜色）。',
     '  - dev_server：启动 / 停止 / 重启开发服务器、查看日志。预览依赖它。',
     '  - remember：把值得长期记住的事（用户偏好、项目约定、踩过的坑）写进你的长期记忆。',
     '  - notify_user：给用户发一条通知（例如定时任务里发现了问题）。',

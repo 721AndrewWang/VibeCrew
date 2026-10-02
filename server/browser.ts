@@ -19,10 +19,14 @@ let browser: Browser | null = null;
 let launching: Promise<Browser> | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
 
+/** Emulated `prefers-color-scheme`: pages with a dark theme switch to it. */
+export type ColorScheme = 'light' | 'dark';
+
 interface Session {
   ctx: BrowserContext;
   page: Page;
   device: Device;
+  colorScheme: ColorScheme;
   logs: ConsoleEntry[];
   projectId: string;
 }
@@ -59,10 +63,11 @@ function touch() {
   idleTimer = setTimeout(() => void closeBrowser(), 10 * 60_000);
 }
 
-async function newContext(device: Device): Promise<BrowserContext> {
+async function newContext(device: Device, colorScheme: ColorScheme = 'light'): Promise<BrowserContext> {
   const b = await getBrowser();
   const d = DEVICES[device];
   return b.newContext({
+    colorScheme,
     viewport: { width: d.width, height: d.height },
     deviceScaleFactor: 1,
     isMobile: d.mobile,
@@ -136,10 +141,10 @@ export interface ShotResult {
   truncated?: boolean;
 }
 
-export async function screenshot(opts: { projectId: string; path?: string; device?: Device; fullPage?: boolean; selector?: string }): Promise<ShotResult> {
+export async function screenshot(opts: { projectId: string; path?: string; device?: Device; fullPage?: boolean; selector?: string; colorScheme?: ColorScheme }): Promise<ShotResult> {
   const device = opts.device || 'desktop';
   const url = await resolveUrl(opts.projectId, opts.path);
-  const ctx = await newContext(device);
+  const ctx = await newContext(device, opts.colorScheme);
   touch();
   const logs: ConsoleEntry[] = [];
   try {
@@ -167,9 +172,9 @@ export async function screenshot(opts: { projectId: string; path?: string; devic
   }
 }
 
-export async function consoleCheck(opts: { projectId: string; path?: string; waitMs?: number }) {
+export async function consoleCheck(opts: { projectId: string; path?: string; waitMs?: number; colorScheme?: ColorScheme }) {
   const url = await resolveUrl(opts.projectId, opts.path);
-  const ctx = await newContext('desktop');
+  const ctx = await newContext('desktop', opts.colorScheme);
   touch();
   const logs: ConsoleEntry[] = [];
   try {
@@ -230,7 +235,7 @@ function describe(s: ActStep): string {
   }
 }
 
-export async function act(opts: { key: string; projectId: string; path?: string; steps: ActStep[]; screenshot?: boolean; device?: Device }) {
+export async function act(opts: { key: string; projectId: string; path?: string; steps: ActStep[]; screenshot?: boolean; device?: Device; colorScheme?: ColorScheme }) {
   const device = opts.device || 'desktop';
   let sess = sessions.get(opts.key);
   if (sess && (sess.device !== device || sess.projectId !== opts.projectId || sess.page.isClosed())) {
@@ -239,12 +244,16 @@ export async function act(opts: { key: string; projectId: string; path?: string;
     sess = undefined;
   }
   if (!sess) {
-    const ctx = await newContext(device);
+    const ctx = await newContext(device, opts.colorScheme);
     const page = await ctx.newPage();
     const logs: ConsoleEntry[] = [];
     collect(page, logs);
-    sess = { ctx, page, device, logs, projectId: opts.projectId };
+    sess = { ctx, page, device, colorScheme: opts.colorScheme || 'light', logs, projectId: opts.projectId };
     sessions.set(opts.key, sess);
+  } else if (opts.colorScheme && opts.colorScheme !== sess.colorScheme) {
+    // Switched in place, so the page, its state and any login are kept.
+    await sess.page.emulateMedia({ colorScheme: opts.colorScheme });
+    sess.colorScheme = opts.colorScheme;
   }
   touch();
   const { page } = sess;
