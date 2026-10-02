@@ -6,7 +6,8 @@ import path from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { freePort, ROOT, tempDir } from '../helpers/server';
 
-const EXE = path.join(ROOT, 'release/linux-unpacked/crew');
+// The local build by default; CREW_DESKTOP_EXE points at another one, e.g. a downloaded release.
+const EXE = process.env.CREW_DESKTOP_EXE || path.join(ROOT, 'release/linux-unpacked/crew');
 const SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
 
 test.skip(!fs.existsSync(EXE), 'run `npm run desktop:pack` first');
