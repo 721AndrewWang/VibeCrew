@@ -75,3 +75,4 @@ tests/
 2. `npm version <patch|minor|major> --no-git-tag-version`，提交，再打 `v<版本号>` 标签并推送。
 3. 推送标签后，GitHub Actions 的 Release 流程会构建 AppImage、挂到 GitHub Release 上，发布说明取自 CHANGELOG 里对应的那一节（标签必须和 package.json 的版本一致）。
 4. 本机要用新版的话 `npm run desktop:install`。
+5. 发布后可以验证 GitHub 打的包：下载 `Crew-<版本>.AppImage`，`--appimage-extract` 解包，然后 `CREW_DESKTOP_EXE=<解包目录>/squashfs-root/crew npx playwright test -c tests/desktop/playwright.config.ts`。
