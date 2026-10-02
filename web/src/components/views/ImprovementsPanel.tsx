@@ -1,6 +1,6 @@
 import { Check, ChevronRight, Lightbulb, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import type { ImprovableField, Improvement, ImprovementEffect } from '../../../../shared/types';
+import type { ImprovableField, Improvement, ImprovementEffect, SkillCandidate, SkillDraft } from '../../../../shared/types';
 import { api } from '../../api';
 import { openChat, toast } from '../../store';
 import { cx, fmtWhen } from '../../utils';
@@ -16,6 +16,7 @@ const FIELD_LABEL: Record<ImprovableField, string> = {
   editScope: '只能修改的路径',
   freshSession: '每轮新会话',
   monthlyBudgetUsd: '每月预算',
+  skill: '新技能',
 };
 
 const STATUS_LABEL: Record<Improvement['status'], string> = { pending: '待定', accepted: '已接受', rejected: '已拒绝', reverted: '已撤回', stale: '已作废' };
@@ -73,6 +74,7 @@ export function ImprovementsPanel() {
         <ProposalCard key={i.id} item={i} onDone={load} />
       ))}
       {items && !pending.length && <div className="muted improve-empty">现在没有待定的建议。</div>}
+      <SkillCandidates onDrafted={load} />
       {done.length > 0 && (
         <>
           <button className="link-btn improve-toggle" onClick={() => setShowDone(!showDone)}>
@@ -86,6 +88,25 @@ export function ImprovementsPanel() {
 }
 
 function Change({ item }: { item: Improvement }) {
+  if (item.field === 'skill') {
+    const d = item.after as SkillDraft;
+    return (
+      <div className="improve-skill">
+        <div className="mono">
+          /{d.name} · {d.title}
+        </div>
+        <div className="hint">{d.description}</div>
+        {d.flags.length > 0 && (
+          <div className="improve-flags">
+            {d.flags.map((f) => (
+              <div key={f}>注意：{f}</div>
+            ))}
+          </div>
+        )}
+        <pre className="improve-diff">{d.body}</pre>
+      </div>
+    );
+  }
   if (item.field === 'description') {
     const before = String(item.before || '').split('\n');
     const after = String(item.after || '').split('\n');
@@ -203,6 +224,52 @@ function DecidedRow({ item, effect, onDone }: { item: Improvement; effect?: Impr
           <RotateCcw size={12} /> 撤回
         </button>
       )}
+    </div>
+  );
+}
+
+/** Turns worth learning from: drafting one into a skill costs a small Sonnet call, so it is on request. */
+function SkillCandidates({ onDrafted }: { onDrafted: () => void }) {
+  const [list, setList] = useState<SkillCandidate[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(() => {
+    api
+      .skillCandidates()
+      .then(setList)
+      .catch(() => {});
+  }, []);
+  useEffect(load, [load]);
+  if (!list.length) return null;
+  const draft = async (c: SkillCandidate) => {
+    setBusy(c.messageId);
+    try {
+      const r = await api.draftSkill(c.chatId, c.messageId);
+      const cost = r.costUsd ? `（花了 ${fmtUsd(r.costUsd)}）` : '';
+      if ('skipped' in r) toast(`没有起草${cost}`, r.skipped, 'info');
+      else toast(`起草好了${cost}`, '在上面的建议里，看过再决定要不要', 'success');
+      onDrafted();
+    } catch (e) {
+      toast('起草失败', (e as Error).message, 'error');
+    } finally {
+      setBusy(null);
+      load();
+    }
+  };
+  return (
+    <div className="improve-candidates">
+      <div className="hint">这些轮次做了不少事、顺利完成、之后也没被对抗审查推翻，可以把做法写成技能（每次大约 $0.02～0.05，写好后要你接受才会保存）：</div>
+      {list.map((c) => (
+        <div key={c.messageId} className="improve-row">
+          <span>
+            {c.botName} 在「{c.chatTitle}」：{c.ask || '（没有记录要求）'}
+          </span>
+          <span className="spacer" />
+          <span className="muted">{c.tools} 次工具</span>
+          <button className="btn sm" disabled={!!busy} onClick={() => draft(c)}>
+            {busy === c.messageId ? <span className="spinner tiny" /> : null} 起草技能
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

@@ -184,6 +184,11 @@ async function recordContext(chatId: string, botId: string, session: AgentSessio
   if (limit > 0 && usage.used >= limit && !bots.get(botId)?.freshSession) rotateNext.set(sessionKey(chatId, botId), usage.used);
 }
 
+/** Bots whose last turn here was complex: their next turn is reminded to keep what it learned. */
+const nudgeNext = new Set<string>();
+/** Tool calls that make a turn "complex" (Hermes uses five). */
+export const COMPLEX_TURN_TOOLS = 5;
+
 /** Sessions to start over on their next turn, with how many tokens they had grown to. */
 const rotateNext = new Map<string, number>();
 /** Messages a started-over session gets again. */
@@ -397,6 +402,7 @@ async function runTurn(job: Job) {
       routineName: job.routineName,
       review,
       recap: rotatedFrom !== null ? { tokens: rotatedFrom } : undefined,
+      nudge: rotatedFrom === null && nudgeNext.delete(sessionKey(chat.id, bot.id)),
     });
     contextSent.set(s, context);
     return imgs.length ? [{ type: 'text' as const, text: promptText }, ...imgs] : promptText;
@@ -480,6 +486,9 @@ async function runTurn(job: Job) {
     }
   }
   if (bot.blindReview && msg.status === 'done') await recordVerdict(msg, project);
+  // A complex turn: the bot's next turn here (same session) is nudged to keep what it learned.
+  const toolCalls = (msg.parts || []).filter((p) => p.type === 'tool').length;
+  if (msg.status === 'done' && toolCalls >= COMPLEX_TURN_TOOLS && !bot.freshSession && !bot.blindReview) nudgeNext.add(sessionKey(chat.id, bot.id));
   messages.put(msg);
   bus.emit({ t: 'msg', msg });
   bus.emit({ t: 'usage', usage: usageOf() });

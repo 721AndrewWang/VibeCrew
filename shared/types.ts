@@ -551,7 +551,30 @@ export interface TraceTotals {
 export type TurnTrace = { available: false; reason: string } | { available: true; sessionId: string; file: string; steps: TraceStep[]; totals: TraceTotals };
 
 /** The bot settings an improvement may change: one field of one bot at a time. */
-export type ImprovableField = 'description' | 'model' | 'effort' | 'permission' | 'allowRules' | 'askRules' | 'editScope' | 'freshSession' | 'monthlyBudgetUsd';
+export type ImprovableField = 'description' | 'model' | 'effort' | 'permission' | 'allowRules' | 'askRules' | 'editScope' | 'freshSession' | 'monthlyBudgetUsd' | 'skill';
+
+/** A skill learned from a turn, waiting for the user: the skill and what the safety screen found. */
+export interface SkillDraft {
+  name: string;
+  title: string;
+  description: string;
+  icon: string;
+  argsHint: string;
+  body: string;
+  /** Things the user should look at before accepting (must-ask commands, hosts outside the sandbox). */
+  flags: string[];
+}
+
+/** A turn worth learning from: it finished, took real work, and was not refuted. */
+export interface SkillCandidate {
+  chatId: ID;
+  messageId: ID;
+  chatTitle: string;
+  botName: string;
+  ask: string;
+  tools: number;
+  at: number;
+}
 
 /** A proposed change to a bot's setup, backed by evidence from real turns; the user decides. */
 export interface Improvement {

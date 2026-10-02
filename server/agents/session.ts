@@ -380,6 +380,10 @@ export class FakeSession implements AgentSession {
             return '(空)';
           }
         });
+        if (/复杂/.test(prompt)) {
+          // A complex request: a few more looks around, enough to count as real work.
+          for (const pattern of ['*.html', '*.css', '*.js', '*.md']) await runTool('Glob', { pattern }, () => '(演示)');
+        }
         if (/改|写|做|创建|add|create|make|build/i.test(prompt) && !this.stopped) {
           const file = path.join(this.cfg.cwd, 'crew-demo.md');
           await runTool('Bash', { command: 'ls -la', description: '列出项目文件' }, () => 'total 8\n(演示输出)');

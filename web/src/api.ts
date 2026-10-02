@@ -17,6 +17,7 @@ import type {
   Routine,
   RoutingReport,
   Skill,
+  SkillCandidate,
   TurnSummary,
   TurnTrace,
   WorkspaceMergeResult,
@@ -170,6 +171,8 @@ export const api = {
 
   upload: (file: { name: string; mime: string; data: string }) => post<UploadResult>('/api/uploads', file),
   routing: () => get<RoutingReport>('/api/routing'),
+  skillCandidates: () => get<SkillCandidate[]>('/api/skills/candidates'),
+  draftSkill: (chatId: string, messageId: string) => post<{ improvement: Improvement; costUsd: number } | { skipped: string; costUsd: number }>('/api/skills/draft', { chatId, messageId }),
   improvements: () => get<{ items: Improvement[]; effects: Record<string, ImprovementEffect> }>('/api/improvements'),
   runImprovements: () => post<{ added: Improvement[]; dropped: string[]; costUsd: number }>('/api/improvements/run'),
   acceptImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/accept`),

@@ -7,13 +7,14 @@
 // time, one field each, each tied to turns that really happened; prefer proposing nothing.
 
 import { z } from 'zod';
-import type { Bot, ChatMessage, ImprovableField, Improvement, ImprovementEffect } from '../shared/types';
+import type { Bot, ChatMessage, ImprovableField, Improvement, ImprovementEffect, SkillDraft } from '../shared/types';
 import { FAKE_AGENT } from './config';
 import { updateBot } from './entities';
 import { logger } from './log';
 import { oneShot } from './oneShot';
 import { HttpError } from './projects';
 import { BotPatch } from './schemas';
+import { skills } from './skills';
 import { bots, chats, improvements, messages, uid } from './store';
 
 const log = logger('improve');
@@ -29,7 +30,8 @@ const EFFECT_WINDOW = 20;
 /** Evidence must come from at least this many separate user requests: one incident is not a pattern. */
 export const MIN_REQUESTS = 2;
 
-const FIELDS: ImprovableField[] = ['description', 'model', 'effort', 'permission', 'allowRules', 'askRules', 'editScope', 'freshSession', 'monthlyBudgetUsd'];
+/** What the analysis may propose; skills come from learnSkills.ts, one turn at a time. */
+const FIELDS: Exclude<ImprovableField, 'skill'>[] = ['description', 'model', 'effort', 'permission', 'allowRules', 'askRules', 'editScope', 'freshSession', 'monthlyBudgetUsd'];
 const FIELD_LABEL: Record<ImprovableField, string> = {
   description: '角色说明',
   model: '模型',
@@ -40,6 +42,7 @@ const FIELD_LABEL: Record<ImprovableField, string> = {
   editScope: '只能修改的路径',
   freshSession: '每轮新会话',
   monthlyBudgetUsd: '每月预算',
+  skill: '新技能',
 };
 
 const clip = (s: string, n: number) => {
@@ -113,7 +116,7 @@ export function evidencePack(): string {
 
 const PROPOSAL = z.object({
   bot: z.string(),
-  field: z.enum(FIELDS as [ImprovableField, ...ImprovableField[]]),
+  field: z.enum(FIELDS as [Exclude<ImprovableField, 'skill'>, ...Exclude<ImprovableField, 'skill'>[]]),
   after: z.unknown(),
   rationale: z.string().min(1).max(1500),
   expected: z.string().max(500).default(''),
@@ -252,9 +255,23 @@ function requireImprovement(id: string): Improvement {
   return i;
 }
 
-export function acceptImprovement(id: string): { improvement: Improvement; bot: Bot } {
+export function acceptImprovement(id: string): { improvement: Improvement; bot?: Bot } {
   const i = requireImprovement(id);
   if (i.status !== 'pending') throw new HttpError(409, '这条建议已经处理过了');
+  if (i.field === 'skill') {
+    const draft = i.after as SkillDraft;
+    if (skills.get(draft.name)) {
+      i.status = 'stale';
+      i.decidedAt = Date.now();
+      improvements.set(i);
+      throw new HttpError(409, `已经有叫 ${draft.name} 的技能了，这条建议作废。`);
+    }
+    skills.save({ name: draft.name, title: draft.title, description: draft.description, icon: draft.icon, argsHint: draft.argsHint, body: draft.body });
+    i.status = 'accepted';
+    i.decidedAt = Date.now();
+    improvements.set(i);
+    return { improvement: i };
+  }
   const bot = bots.get(i.botId);
   if (!bot) throw new HttpError(404, '机器人已经不在了');
   // Changed by hand since the proposal: applying it would overwrite that.
@@ -281,9 +298,15 @@ export function rejectImprovement(id: string, note?: string): Improvement {
   return i;
 }
 
-export function revertImprovement(id: string): { improvement: Improvement; bot: Bot } {
+export function revertImprovement(id: string): { improvement: Improvement; bot?: Bot } {
   const i = requireImprovement(id);
   if (i.status !== 'accepted') throw new HttpError(409, '只有接受过的建议能撤回');
+  if (i.field === 'skill') {
+    skills.remove((i.after as SkillDraft).name);
+    i.status = 'reverted';
+    improvements.set(i);
+    return { improvement: i };
+  }
   const bot = bots.get(i.botId);
   if (!bot) throw new HttpError(404, '机器人已经不在了');
   const updated = updateBot(bot.id, { [i.field]: i.before ?? (Array.isArray(i.after) ? [] : null) } as never);
@@ -294,7 +317,7 @@ export function revertImprovement(id: string): { improvement: Improvement; bot: 
 
 /** Before and after an accepted change: the bot's turns on each side, same count at most. */
 export function effectOf(i: Improvement): ImprovementEffect | null {
-  if (i.status !== 'accepted' || !i.decidedAt) return null;
+  if (i.status !== 'accepted' || !i.decidedAt || i.field === 'skill') return null;
   const turns = recentTurns(Number.MAX_SAFE_INTEGER).filter((t) => t.msg.botId === i.botId);
   const stats = (list: Turn[]) => ({
     turns: list.length,
