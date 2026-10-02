@@ -49,8 +49,34 @@ describe('the draft prompt', () => {
     const { draftPrompt } = await import('../../server/learnSkills');
     const turn = { id: 'm', seq: 2, role: 'bot', text: '改好了', parts: [], chatId: 'c', ts: 1 } as any;
     const p = draftPrompt('修一下', turn, [], ['- /review-fix：会照搬审查者过时的要求']);
-    expect(p).toContain('用户拒绝过的技能草稿和理由');
+    expect(p).toContain('用户以前对技能草稿的决定');
     expect(p).toContain('/review-fix：会照搬审查者过时的要求');
-    expect(draftPrompt('修一下', turn, [], [])).not.toContain('用户拒绝过');
+    expect(draftPrompt('修一下', turn, [], [])).not.toContain('用户以前对技能草稿的决定');
+  });
+});
+
+describe('lessons from decided drafts', () => {
+  it('include what the user changed before accepting', async () => {
+    const { improvements } = await import('../../server/store');
+    const { rejectedSkillNotes } = await import('../../server/learnSkills');
+    improvements.set({
+      id: 'i_edited',
+      createdAt: 1,
+      decidedAt: 2,
+      botId: 'b',
+      botName: 'Pixel',
+      field: 'skill',
+      before: null,
+      original: { name: 'review-fix', body: '1. 读意见\n2. 审查者让改什么就直接改\n3. 验证', flags: [] },
+      after: { name: 'review-fix', body: '1. 读意见\n2. 先核对用户最新的要求，冲突时先问用户\n3. 验证', flags: [] },
+      rationale: '',
+      expected: '',
+      evidence: [],
+      status: 'accepted',
+    } as any);
+    const notes = rejectedSkillNotes();
+    expect(notes[0]).toContain('/review-fix 用户改过再接受');
+    expect(notes[0]).toContain('删掉「2. 审查者让改什么就直接改」');
+    expect(notes[0]).toContain('改成「2. 先核对用户最新的要求，冲突时先问用户」');
   });
 });

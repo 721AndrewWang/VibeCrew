@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Lightbulb, RotateCcw, X } from 'lucide-react';
+import { Check, ChevronRight, Lightbulb, Pencil, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { ImprovableField, Improvement, ImprovementEffect, SkillCandidate, SkillDraft } from '../../../../shared/types';
 import { api } from '../../api';
@@ -142,6 +142,7 @@ function ProposalCard({ item, onDone }: { item: Improvement; onDone: () => void 
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
+  const [editing, setEditing] = useState(false);
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
     try {
@@ -159,7 +160,25 @@ function ProposalCard({ item, onDone }: { item: Improvement; onDone: () => void 
       <div className="improve-title">
         <b>{item.botName}</b> 的{FIELD_LABEL[item.field]}
       </div>
-      <Change item={item} />
+      {editing && item.field === 'skill' ? (
+        <SkillEditor
+          draft={item.after as SkillDraft}
+          onCancel={() => setEditing(false)}
+          onSave={async (d) => {
+            try {
+              await api.editImprovement(item.id, d);
+              toast('草稿已修改', '安全检查重新过了一遍，看过再接受', 'success');
+              setEditing(false);
+              onDone();
+            } catch (e) {
+              toast('没能保存修改', (e as Error).message, 'error');
+            }
+          }}
+        />
+      ) : (
+        <Change item={item} />
+      )}
+      {item.original !== undefined && <div className="hint">这份草稿你改过；接受后，下次起草技能会参考你改掉的地方。</div>}
       <div className="improve-why">{item.rationale}</div>
       {item.expected && <div className="hint">期望：{item.expected}</div>}
       <div className="improve-evidence">
@@ -187,6 +206,11 @@ function ProposalCard({ item, onDone }: { item: Improvement; onDone: () => void 
           <button className="btn sm" disabled={busy} onClick={() => setRejecting(true)}>
             <X size={13} /> 拒绝
           </button>
+          {item.field === 'skill' && !editing && (
+            <button className="btn sm" disabled={busy} onClick={() => setEditing(true)}>
+              <Pencil size={13} /> 修改
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -270,6 +294,56 @@ function SkillCandidates({ onDrafted }: { onDrafted: () => void }) {
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Editing a skill draft before accepting it: the fields the skill will be saved with. */
+function SkillEditor({ draft, onSave, onCancel }: { draft: SkillDraft; onSave: (d: Omit<SkillDraft, 'flags' | 'icon'>) => Promise<void>; onCancel: () => void }) {
+  const [d, setD] = useState({ name: draft.name, title: draft.title, description: draft.description, argsHint: draft.argsHint, body: draft.body });
+  const [saving, setSaving] = useState(false);
+  const set = (k: keyof typeof d) => (e: { target: { value: string } }) => setD({ ...d, [k]: e.target.value });
+  return (
+    <div className="improve-editor">
+      <div className="form-grid">
+        <div className="field">
+          <label>名字（用 /名字 调用）</label>
+          <input className="input mono" value={d.name} onChange={set('name')} />
+        </div>
+        <div className="field">
+          <label>标题</label>
+          <input className="input" value={d.title} onChange={set('title')} />
+        </div>
+      </div>
+      <div className="field">
+        <label>什么时候用</label>
+        <input className="input" value={d.description} onChange={set('description')} />
+      </div>
+      <div className="field">
+        <label>参数提示</label>
+        <input className="input" value={d.argsHint} onChange={set('argsHint')} />
+      </div>
+      <div className="field">
+        <label>技能内容（用 {'{{args}}'} 表示调用时给的参数）</label>
+        <textarea className="textarea tall mono" value={d.body} onChange={set('body')} />
+      </div>
+      <div className="row">
+        <span className="spacer" />
+        <button className="btn sm" onClick={onCancel}>
+          取消
+        </button>
+        <button
+          className="btn sm primary"
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            await onSave(d);
+            setSaving(false);
+          }}
+        >
+          {saving ? <span className="spinner tiny" /> : null} 保存修改
+        </button>
+      </div>
     </div>
   );
 }

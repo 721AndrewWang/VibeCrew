@@ -70,3 +70,26 @@ test('improvement proposals can be made, accepted and reverted from the bots pag
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBeUndefined();
   await expect(panel.locator('.improve-row .badge')).toHaveText('已撤回');
 });
+
+test('a skill draft can be edited in the panel before it is accepted', async ({ page, crew }) => {
+  const b = await crew.api('GET', '/bootstrap');
+  const chief = b.bots.find((x: any) => x.name === 'Chief');
+  const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
+  const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '帮我做一个复杂的页面' });
+  await expect.poll(async () => (await crew.api('GET', `/chats/${dm.id}/messages?limit=8`)).messages.some((m: any) => m.seq > sent.seq && m.status === 'done'), { timeout: 20_000 }).toBe(true);
+
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="机器人"]').click();
+  const panel = page.locator('.improve-card');
+  await panel.locator('.improve-candidates button', { hasText: '起草技能' }).click();
+  const item = panel.locator('.improve-item').first();
+  await expect(item.locator('.improve-title')).toContainText('新技能');
+  await item.locator('button', { hasText: '修改' }).click();
+  await item.locator('.improve-editor input').first().fill('my-page');
+  await item.locator('.improve-editor textarea').fill('1. 看结构\n2. 按 {{args}} 写页面\n3. 截图确认');
+  await item.locator('button', { hasText: '保存修改' }).click();
+  await expect(item.locator('.hint', { hasText: '这份草稿你改过' })).toBeVisible();
+  await expect(item.locator('.improve-skill .mono')).toContainText('/my-page');
+  await item.locator('button', { hasText: '接受' }).click();
+  await expect.poll(async () => (await crew.api('GET', '/bootstrap')).skills.find((s: any) => s.name === 'my-page')?.body).toBe('1. 看结构\n2. 按 {{args}} 写页面\n3. 截图确认');
+});

@@ -591,6 +591,9 @@ export interface Improvement {
   expected: string;
   evidence: { chatId: ID; messageId: ID; note: string }[];
   status: 'pending' | 'accepted' | 'rejected' | 'reverted' | 'stale';
+  /** The proposal as the model wrote it, when the user edited it before deciding. */
+  original?: unknown;
+  editedAt?: number;
   decidedAt?: number;
   /** The user's reason when rejecting. */
   note?: string;

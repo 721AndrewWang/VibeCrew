@@ -176,6 +176,7 @@ export const api = {
   improvements: () => get<{ items: Improvement[]; effects: Record<string, ImprovementEffect> }>('/api/improvements'),
   runImprovements: () => post<{ added: Improvement[]; dropped: string[]; costUsd: number }>('/api/improvements/run'),
   acceptImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/accept`),
+  editImprovement: (id: string, d: Record<string, string>) => patch<{ improvement: Improvement }>(`/api/improvements/${id}`, d),
   rejectImprovement: (id: string, note?: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/reject`, { note }),
   revertImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/revert`),
 };

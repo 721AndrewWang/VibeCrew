@@ -2079,3 +2079,10 @@
   flex-direction: column;
   margin-top: 10px;
 }
+
+.improve-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}

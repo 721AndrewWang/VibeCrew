@@ -73,6 +73,40 @@ describe('in demo mode', () => {
     expect((await crew.api('GET', '/skills/candidates')).items.some((x: any) => x.messageId === c.messageId)).toBe(false);
   });
 
+  it('lets the user edit a draft before accepting it, screening the edit again', async () => {
+    await crew.api('PATCH', '/settings', { denyRules: ['Bash(*prod-server*)'] });
+    await turn('第三个复杂的页面');
+    const [c] = (await crew.api('GET', '/skills/candidates')).items;
+    const { improvement } = await crew.api('POST', '/skills/draft', { chatId: c.chatId, messageId: c.messageId });
+    const edit = (over: object) =>
+      crew.api('PATCH', `/improvements/${improvement.id}`, { name: 'my-page', title: '做页面', description: '做一个页面时', argsHint: '主题', body: '1. 看结构\n2. 按 {{args}} 写页面', ...over });
+
+    // A blocked edit is refused and changes nothing.
+    const blocked = await edit({ body: '先 `ssh prod-server ls`' });
+    expect(blocked.status).toBe(400);
+    expect(blocked.error).toContain('安全检查没通过');
+    expect((await edit({ name: 'Bad Name' })).status).toBe(400);
+
+    // A good one replaces the draft, keeps the model's version, and recomputes the flags.
+    const r = (await edit({ body: '1. 看结构\n2. 按 {{args}} 写页面\n3. 确认后 `git push`' })).improvement;
+    expect(r.after).toMatchObject({ name: 'my-page', title: '做页面', flags: ['包含需要确认的命令：git push'] });
+    expect(r.original.name).toBe('demo-page');
+
+    expect((await crew.api('POST', `/improvements/${improvement.id}/accept`)).improvement.status).toBe('accepted');
+    expect((await crew.api('GET', '/bootstrap')).skills.find((s: any) => s.name === 'my-page').body).toContain('3. 确认后 `git push`');
+    expect((await edit({})).status).toBe(409); // decided already
+
+    // The next draft learns what the user changed.
+    const { rejectedSkillNotes } = await import('../../server/learnSkills');
+    expect(typeof rejectedSkillNotes).toBe('function');
+    await crew.api('PATCH', '/settings', { denyRules: [] });
+  });
+
+  it('only lets skill drafts be edited', async () => {
+    const r = await crew.api('PATCH', '/improvements/i_nope', { name: 'x', title: 'x', description: '', argsHint: '', body: 'x' });
+    expect(r.status).toBe(404);
+  });
+
   it('refuses turns that are not candidates', async () => {
     const r = await crew.api('POST', '/skills/draft', { chatId: dm, messageId: 'm_nope' });
     expect(r.status).toBe(404);

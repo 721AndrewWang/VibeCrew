@@ -109,7 +109,8 @@ export function evidencePack(): string {
     .slice(-20);
   if (decided.length) {
     lines.push('', '## 以前的建议和用户的决定（不要重复被拒绝的）');
-    for (const i of decided) lines.push(`- ${i.botName} 的 ${FIELD_LABEL[i.field]} → ${clip(JSON.stringify(i.after), 160)}：${i.status}${i.note ? `（用户说：${i.note}）` : ''}`);
+    for (const i of decided)
+      lines.push(`- ${i.botName} 的 ${FIELD_LABEL[i.field]} → ${clip(JSON.stringify(i.after), 160)}：${i.status}${i.original ? '（用户改过再接受）' : ''}${i.note ? `（用户说：${i.note}）` : ''}`);
   }
   return lines.join('\n');
 }

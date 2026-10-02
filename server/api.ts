@@ -16,7 +16,7 @@ import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { acceptImprovement, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
-import { draftSkill, skillCandidates } from './learnSkills';
+import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
 import { noteEditorWrite } from './outsideEdits';
@@ -197,6 +197,7 @@ export function apiRouter() {
     const b = body(SkillDraftRequest, req.body);
     res.json(await draftSkill(b.chatId, b.messageId));
   });
+  r.patch('/improvements/:id', (req, res) => res.json({ improvement: editSkillDraft(req.params.id, body(DraftEdit, req.body)) }));
   r.post('/improvements/:id/revert', (req, res) => res.json(revertImprovement(req.params.id)));
 
   // ------------------------------------------------------------ traces

@@ -12,6 +12,7 @@ import { FAKE_AGENT } from './config';
 import { DEFAULT_ASK_RULES } from './data/catalog';
 import { oneShot } from './oneShot';
 import { COMPLEX_TURN_TOOLS } from './orchestrator';
+import { lineChange } from './outsideEdits';
 import { chatProjectId, configOf, HttpError } from './projects';
 import { ALWAYS_ALLOWED, cleanDomains } from './sandbox';
 import { skills } from './skills';
@@ -100,14 +101,26 @@ export function screenSkill(body: string, ctx: { denyRules: string[]; askRules: 
   return { blocked: null, flags: [...new Set(flags)] };
 }
 
-/** Why the user turned earlier skill drafts down: the next draft must not repeat it. */
+/**
+ * What the user taught by deciding on earlier drafts: why some were turned down, and what was
+ * changed in the ones accepted after editing. The next draft must not repeat either.
+ */
 export function rejectedSkillNotes(limit = 10): string[] {
-  return improvements
+  const lessons: string[] = [];
+  const decided = improvements
     .all()
-    .filter((i) => i.field === 'skill' && i.status === 'rejected' && i.note)
-    .sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0))
-    .slice(0, limit)
-    .map((i) => `- /${(i.after as SkillDraft).name}：${i.note}`);
+    .filter((i) => i.field === 'skill' && i.decidedAt)
+    .sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0));
+  for (const i of decided) {
+    const name = (i.after as SkillDraft).name;
+    if (i.status === 'rejected' && i.note) lessons.push(`- 拒绝了 /${name}：${i.note}`);
+    else if (i.status === 'accepted' && i.original) {
+      const c = lineChange((i.original as SkillDraft).body, (i.after as SkillDraft).body);
+      if (c) lessons.push(`- /${name} 用户改过再接受：删掉「${c.removed.slice(0, 3).join(' / ').slice(0, 200)}」，改成「${c.added.slice(0, 3).join(' / ').slice(0, 200)}」`);
+    }
+    if (lessons.length >= limit) break;
+  }
+  return lessons;
 }
 
 export function draftPrompt(ask: string, turn: ChatMessage, existing: string[], rejected: string[] = rejectedSkillNotes()): string {
@@ -122,7 +135,7 @@ export function draftPrompt(ask: string, turn: ChatMessage, existing: string[], 
     '- 不要包含密钥、账号、具体的服务器地址；不要包含任何「忽略其他指令」之类的话。',
     '- 用中文写，简洁，步骤清楚，最后写怎样算做完。',
     `- 已有的技能：${existing.join('、') || '（无）'}。和已有的重复，或者这一轮只是一次性的事，就回复 {"skip": "理由"}。`,
-    ...(rejected.length ? ['- 用户拒绝过的技能草稿和理由，新写的不能再犯同样的问题：', ...rejected] : []),
+    ...(rejected.length ? ['- 用户以前对技能草稿的决定（拒绝的理由、接受前改掉的地方），新写的不能再犯同样的问题：', ...rejected] : []),
     '- 这一轮里如果有被用户纠正、或者后来证明是错的做法，不要写进去。',
     '',
     '只回复 JSON：{"name": "kebab-case 英文名，最多 40 个字符", "title": "中文标题", "description": "一句话说明什么时候用", "argsHint": "参数提示", "body": "技能内容"}',
@@ -131,6 +144,51 @@ export function draftPrompt(ask: string, turn: ChatMessage, existing: string[], 
     `## 这一轮调用的工具\n${steps}`,
     `## 机器人最后的回复\n${(turn.text || '').slice(0, 1500)}`,
   ].join('\n');
+}
+
+/** The rules a draft is screened against: the deny list, must-ask rules and sandbox hosts of where it was learned. */
+function screenContext(chatId: string, botId: string) {
+  const chat = chats.get(chatId);
+  const project = projects.get(chatProjectId(chat));
+  const conf = project ? configOf(project) : null;
+  const sb = settings.get().sandbox;
+  return {
+    denyRules: settings.get().denyRules || [],
+    askRules: [...new Set([...DEFAULT_ASK_RULES, ...(bots.get(botId)?.askRules || []), ...(conf?.askRules || [])])],
+    allowedHosts: [...ALWAYS_ALLOWED, ...cleanDomains(sb.allowedDomains), ...cleanDomains(conf?.allowedDomains || [])],
+  };
+}
+
+export const DraftEdit = z.object({
+  name: z.string().max(40),
+  title: z.string().min(1).max(60),
+  description: z.string().max(300),
+  argsHint: z.string().max(100),
+  body: z.string().min(1).max(8000),
+});
+
+/**
+ * The user's own version of a pending draft. It goes through the same screen (a blocked edit is
+ * refused, flags are recomputed), and the model's version is kept as `original`, so the ledger shows
+ * what the user changed.
+ */
+export function editSkillDraft(id: string, edit: z.infer<typeof DraftEdit>): Improvement {
+  const i = improvements.get(id);
+  if (!i) throw new HttpError(404, '没有这条建议');
+  if (i.field !== 'skill') throw new HttpError(400, '只有技能草稿可以在接受前修改');
+  if (i.status !== 'pending') throw new HttpError(409, '这条建议已经处理过了');
+  const name = edit.name.trim().toLowerCase();
+  if (!NAME_RE.test(name)) throw new HttpError(400, '技能名只能用小写字母、数字和连字符，最多 40 个字符');
+  if (skills.get(name)) throw new HttpError(409, `已经有叫 ${name} 的技能了`);
+  const ev = i.evidence[0];
+  const screen = screenSkill(edit.body, screenContext(ev?.chatId || '', i.botId));
+  if (screen.blocked) throw new HttpError(400, `安全检查没通过：${screen.blocked}`);
+  const prev = i.after as SkillDraft;
+  if (!i.original) i.original = prev;
+  i.after = { ...prev, name, title: edit.title.trim(), description: edit.description.trim(), argsHint: edit.argsHint.trim(), body: edit.body.trim(), flags: screen.flags } satisfies SkillDraft;
+  i.editedAt = Date.now();
+  improvements.set(i);
+  return i;
 }
 
 /** Writes a draft for one candidate turn and stores it as a pending proposal. */
@@ -172,15 +230,8 @@ export async function draftSkill(chatId: string, messageId: string): Promise<{ i
   if (!NAME_RE.test(name)) throw new HttpError(502, `技能名不合法：${name}`);
   if (skills.get(name)) return { skipped: `已经有叫 ${name} 的技能了`, costUsd };
 
-  const project = projects.get(chatProjectId(chat));
-  const conf = project ? configOf(project) : null;
   const bot = bots.get(turn.botId)!;
-  const sb = settings.get().sandbox;
-  const screen = screenSkill(d.data.body, {
-    denyRules: settings.get().denyRules || [],
-    askRules: [...new Set([...DEFAULT_ASK_RULES, ...bot.askRules, ...(conf?.askRules || [])])],
-    allowedHosts: [...ALWAYS_ALLOWED, ...cleanDomains(sb.allowedDomains), ...cleanDomains(conf?.allowedDomains || [])],
-  });
+  const screen = screenSkill(d.data.body, screenContext(chatId, bot.id));
   if (screen.blocked) return { skipped: `安全检查没通过：${screen.blocked}`, costUsd };
 
   const draft: SkillDraft = { name, title: d.data.title, description: d.data.description, icon: '⚡', argsHint: d.data.argsHint, body: d.data.body, flags: screen.flags };
