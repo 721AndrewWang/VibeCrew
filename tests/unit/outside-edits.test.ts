@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { buildTurnPrompt } from '../../server/agents/prompts';
-import { lineChange } from '../../server/outsideEdits';
+import { lineChange, notAnEdit } from '../../server/outsideEdits';
+
+describe('notAnEdit', () => {
+  it("skips the sandbox's placeholders and atomic-write temporaries, wherever they are", () => {
+    for (const p of ['.claude/settings.json', '.claude/hooks', 'tests/challenge/.claude/skills', '.claude', '.mcp.json', '.bashrc', 'app/.gitconfig', 'src/a.ts.tmp.3499639.42f01dde87a4']) {
+      expect(notAnEdit(p), p).toBe(true);
+    }
+  });
+  it('keeps real files, including ones that look alike', () => {
+    for (const p of ['index.html', 'docs/claude.md', 'my.claude/x.txt', 'mcp.json', 'config/.env.example', 'notes.tmp', 'a.tmp.txt', '.gitignore']) {
+      expect(notAnEdit(p), p).toBe(false);
+    }
+  });
+});
 
 describe('lineChange', () => {
   it('finds the changed region between the common start and end', () => {

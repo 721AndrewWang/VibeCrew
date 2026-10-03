@@ -55,6 +55,25 @@ describe('files changed outside the chat', () => {
     expect(n.text).toContain('+ 改过的第二行');
   });
 
+  it("leave out the sandbox's placeholders and atomic-write temporaries", async () => {
+    const before = (await notes(groupId)).length;
+    // What a sandboxed command does in the folder it runs in, and what a Write tool does.
+    const placeholders = ['.claude/settings.json', '.claude/hooks', 'sub/.claude/skills', '.mcp.json', '.bashrc', 'notes.txt.tmp.4242.9f3c1a'];
+    for (const p of placeholders) {
+      fs.mkdirSync(path.dirname(file(p)), { recursive: true });
+      fs.writeFileSync(file(p), '');
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    for (const p of placeholders) fs.rmSync(file(p));
+    fs.writeFileSync(file('notes.txt'), '第一行\n真的改了\n');
+    const n = await waitFor(async () => {
+      const list = await notes(groupId);
+      return list.length > before ? list.at(-1) : null;
+    }, 15_000);
+    expect(n.text).toContain('notes.txt 第 2 行起');
+    for (const p of placeholders) expect(n.text).not.toContain(p);
+  });
+
   it("are not raised for the bots' own edits, or for undoing a turn", async () => {
     const before = (await notes(chiefDm)).length;
     const sent = await crew.api('POST', `/chats/${chiefDm}/messages`, { text: '帮我做一个页面' }); // the demo bot writes crew-demo.md
