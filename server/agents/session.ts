@@ -395,7 +395,15 @@ export class FakeSession implements AgentSession {
         }
         const others = this.mentionables.filter((n) => n !== this.botName);
         const shouldHandoff = others.length > 0 && /交给|分派|拆分|handoff/i.test(prompt) && !/【@/.test(prompt);
-        await streamText(shouldHandoff ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。` : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。');
+        // "分两步": the first turn asks for another with the continue line; the second one finishes.
+        const twoSteps = /分两步/.test(prompt) && !/接着给它一轮/.test(prompt);
+        await streamText(
+          shouldHandoff
+            ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。`
+            : twoSteps
+              ? '第一步做完了，下一步我自己接着做。\n【继续】'
+              : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。',
+        );
       }
       const result = {
         type: 'result',

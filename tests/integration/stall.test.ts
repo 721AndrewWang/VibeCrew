@@ -44,6 +44,19 @@ describe('a chain that stops without a handoff', () => {
     expect(woken[0].trigger).toEqual({ type: 'mention', by: teammate.botId });
   });
 
+  it('gives the lead the next turn when it ends with the continue line, once', async () => {
+    const lead = names.get(group.leadBotId)!;
+    const after = await say(`@${lead} 分两步做`); // the demo lead asks to continue, then finishes
+    const notes = after.filter((m: any) => m.notice === 'stall');
+    expect(notes).toHaveLength(1);
+    expect(notes[0].text).toContain(`${lead} 说下一步还要自己接着做`);
+    const turns = after.filter((m: any) => m.role === 'bot');
+    expect(turns.map((m: any) => names.get(m.botId))).toEqual([lead, lead]);
+    expect(turns[0].text).toContain('【继续】');
+    expect(turns[1].trigger).toEqual({ type: 'system' });
+    expect(turns[1].text).not.toContain('【继续】');
+  });
+
   it('does not wake anyone when the user only asked a teammate, or the lead answered last', async () => {
     const lead = names.get(group.leadBotId)!;
     const teammate = group.botIds.map((id: string) => names.get(id)).find((n: string) => n !== lead);
