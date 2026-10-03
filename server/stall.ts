@@ -7,8 +7,33 @@ import type { Bot, Chat, ChatMessage } from '../shared/types';
 /** Lead turns started this way between two user messages. */
 export const MAX_STALL_NUDGES = 3;
 
+/**
+ * The lead ends a reply with this line when its next step is its own (commit now, dispatch next):
+ * it gets another turn straight away instead of waiting for the user.
+ */
+export const CONTINUE_MARK = '【继续】';
+
 export function stallNote(teammate: string, lead: string): string {
   return `${teammate} 交回了结果，但没有交给下一个人，接力停在这里了。@${lead} 请看一下这一批是不是都完成了：没完成就继续派活，完成了就给用户汇总；需要用户决定的事，列出来问用户。`;
+}
+
+export function continueNote(lead: string): string {
+  return `${lead} 说下一步还要自己接着做，接着给它一轮。`;
+}
+
+/** Nudges (stall or continue) already used since the latest user message. */
+function nudgesSinceUser(history: ChatMessage[]): number {
+  const lastUser = history.filter((m) => m.role === 'user').at(-1);
+  const since = lastUser ? history.filter((m) => m.seq > lastUser.seq) : history;
+  return since.filter((m) => m.role === 'system' && m.notice === 'stall').length;
+}
+
+/** The lead asked for another turn with the continue line, handed on to no one, and has budget left. */
+export function leadContinues(opts: { chat: Chat; bot: Bot; msg: ChatMessage; mentioned: Bot[]; history: ChatMessage[] }): boolean {
+  const { chat, bot, msg, mentioned, history } = opts;
+  if (chat.kind !== 'group' || chat.leadBotId !== bot.id || msg.status !== 'done' || mentioned.length) return false;
+  if (!msg.text.split('\n').some((l) => l.trim() === CONTINUE_MARK)) return false;
+  return nudgesSinceUser(history) < MAX_STALL_NUDGES;
 }
 
 /**
@@ -28,7 +53,6 @@ export function stalledLead(opts: { chat: Chat; bot: Bot; msg: ChatMessage; ment
   // An automatic review that refuted nothing settles the chain; one that refuted something needs
   // the lead to get it fixed.
   if (trigger?.type === 'system' && msg.meta?.verdict && msg.meta.verdict.refuted === 0) return null;
-  const since = lastUser ? history.filter((m) => m.seq > lastUser.seq) : history;
-  if (since.filter((m) => m.role === 'system' && m.notice === 'stall').length >= MAX_STALL_NUDGES) return null;
+  if (nudgesSinceUser(history) >= MAX_STALL_NUDGES) return null;
   return lead;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_STALL_NUDGES, stalledLead, stallNote } from '../../server/stall';
+import { buildSystemAppend } from '../../server/agents/prompts';
+import { CONTINUE_MARK, continueNote, leadContinues, MAX_STALL_NUDGES, stalledLead, stallNote } from '../../server/stall';
 
 const chief = { id: 'b_chief', name: 'Chief' } as any;
 const lens = { id: 'b_lens', name: 'Lens' } as any;
@@ -56,5 +57,42 @@ describe('stalledLead', () => {
     const nudges = Array.from({ length: MAX_STALL_NUDGES }, () => m('system', stallNote('Lens', 'Chief'), { notice: 'stall' }));
     expect(ask({ history: [asked, ...nudges] })).toBeNull();
     expect(ask({ history: [asked, ...nudges, m('user', '继续')] })).toBe(chief);
+  });
+});
+
+describe('leadContinues', () => {
+  const lead = (text: string, extra: object = {}) => m('bot', text, { botId: 'b_chief', ...extra });
+  const go = (msg: any, history: any[], opts: { bot?: any; mentioned?: any[]; chat?: any } = {}) =>
+    leadContinues({ chat: opts.chat ?? chat, bot: opts.bot ?? chief, msg, mentioned: opts.mentioned ?? [], history: [...history, msg] });
+
+  it('gives the lead another turn when it ends with the continue line on its own', () => {
+    expect(go(lead(`已提交。下一轮派 Lens。\n${CONTINUE_MARK}`), [m('user', '收尾')])).toBe(true);
+    expect(go(lead(`已提交。\n  ${CONTINUE_MARK}  `), [m('user', '收尾')])).toBe(true);
+  });
+
+  it('not for the mark inside a sentence, a teammate, a handoff, or a group without that lead', () => {
+    const history = [m('user', '收尾')];
+    expect(go(lead(`写了${CONTINUE_MARK}就会继续`), history)).toBe(false);
+    expect(go(m('bot', CONTINUE_MARK, { botId: 'b_lens' }), history, { bot: lens })).toBe(false);
+    expect(go(lead(`@Lens 审一下\n${CONTINUE_MARK}`), history, { mentioned: [lens] })).toBe(false);
+    expect(go(lead(CONTINUE_MARK), history, { chat: { kind: 'group', leadBotId: 'b_lens' } })).toBe(false);
+  });
+
+  it('shares the per-request budget with stall nudges', () => {
+    const asked = m('user', '收尾');
+    const used = Array.from({ length: MAX_STALL_NUDGES }, () => m('system', continueNote('Chief'), { notice: 'stall' }));
+    expect(go(lead(CONTINUE_MARK), [asked, ...used])).toBe(false);
+  });
+});
+
+describe('the lead is told about the continue line', () => {
+  const team = [
+    { id: 'b_chief', name: 'Chief', title: '负责人', description: 'x', permission: 'edits' },
+    { id: 'b_lens', name: 'Lens', title: '审查', description: 'x', permission: 'plan' },
+  ] as any[];
+  const group = { kind: 'group', title: 'g', botIds: ['b_chief', 'b_lens'], leadBotId: 'b_chief' } as any;
+  it('only in its own system prompt', () => {
+    expect(buildSystemAppend({ bot: team[0], chat: group, project: null, team, skills: [] })).toContain(CONTINUE_MARK);
+    expect(buildSystemAppend({ bot: team[1], chat: group, project: null, team, skills: [] })).not.toContain(CONTINUE_MARK);
   });
 });

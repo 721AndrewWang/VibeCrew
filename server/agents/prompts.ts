@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Attachment, Bot, Chat, ChatMessage, Project, Skill } from '../../shared/types';
 import { DATA } from '../config';
 import { MODEL_OPTIONS } from '../data/catalog';
+import { CONTINUE_MARK } from '../stall';
 
 export function memoryFile(botId: string) {
   return path.join(DATA.memory, `${botId}.md`);
@@ -59,6 +60,11 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
       '- 需要队友接手时，在回复里写「@名字」并说清楚要做什么、改哪里、怎样算完成；系统会把消息转给对方。只在真正需要时 @，不要客套地 @ 人，也不要 @ 你自己。',
       '- 队友完成的工作不要重复做；有分歧时说明理由，必要时请用户决定。',
     );
+    if (chat.leadBotId === bot.id) {
+      lines.push(
+        `- 你是这个群的负责人。这一轮做完了，但下一步还要你自己接着做（比如先提交，再派人审）时，在回复最后单独一行写「${CONTINUE_MARK}」，系统会马上再给你一轮，不用等用户。在等用户决定、或者这一批已经完成时不要写；也不要用它空转。`,
+      );
+    }
   } else {
     lines.push('', '## 当前对话', '这是你和用户的单聊，其他队友看不到这里的消息。如果需要多人协作，可以建议用户建一个群聊。');
     const others = team.filter((b) => b.id !== bot.id);

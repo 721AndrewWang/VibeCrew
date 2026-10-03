@@ -20,7 +20,7 @@ import { parseVerdict, reviewDiff } from '../review';
 import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
-import { stalledLead, stallNote } from '../stall';
+import { continueNote, leadContinues, stalledLead, stallNote } from '../stall';
 import { bots, chats, messages, projects, settings, uid } from '../store';
 import { monthSpend, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
@@ -539,6 +539,10 @@ async function runTurn(job: Job) {
       systemMessage(fresh, stallNote(bot.name, lead.name), { notice: 'stall' });
       // As a handoff from the teammate, so the lead reads its report in full.
       enqueue({ chatId: fresh.id, botId: lead.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: fresh.maxHops });
+    } else if (leadContinues({ chat: fresh, bot, msg, mentioned, history: messages.sorted(fresh.id) })) {
+      // The lead said its next step is its own: give it that turn now.
+      systemMessage(fresh, continueNote(bot.name), { notice: 'stall' });
+      enqueue({ chatId: fresh.id, botId: bot.id, trigger: { type: 'system' }, hopsLeft: fresh.maxHops });
     }
   }
 }
