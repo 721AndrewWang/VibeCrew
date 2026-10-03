@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTurnPrompt } from '../../server/agents/prompts';
+import { buildTurnPrompt, taskFor } from '../../server/agents/prompts';
 import { challengeBlocker, parseVerdict } from '../../server/review';
 
 describe('parseVerdict', () => {
@@ -44,13 +44,65 @@ describe("the blind reviewer's prompt", () => {
   it("has the user's words and the diff", () => {
     expect(prompt).toContain('加一个联系区块，邮件按钮要能用');
     expect(prompt).toContain('+<a href="mailto:x">');
-    expect(prompt).toContain('按你的角色说明审查');
+    expect(prompt).toContain('自己去看、去量');
     // The verdict format is Skeptic's own, in its description; a blind Lens does not get it.
     expect(prompt).not.toContain('结论：未推翻');
   });
-  it('hides what teammates said, only counting it', () => {
+  it('hides what teammates said, only counting it, but shows the task it was handed', () => {
     expect(prompt).not.toContain('暗色模式没问题');
-    expect(prompt).not.toContain('请审');
-    expect(prompt).toContain('2 条消息，按规则对你隐藏');
+    expect(prompt).toContain('1 条消息，按规则对你隐藏');
+    expect(prompt).toContain('Chief 交给你的任务');
+    expect(prompt).toContain('@Skeptic 请审');
+    expect(prompt).toContain('按上面交给你的任务做');
+  });
+
+  it('takes only its own part of a handover to several teammates', () => {
+    const handover = [
+      '我先说一下判断：上次的改动没问题，放心。',
+      '',
+      '@Lens 审查 4 个已有提交，用 git show 自己看。',
+      '重点看 claim 的 SQL。',
+      '',
+      '@Skeptic 写 worker 的失败测试，只写 tests/challenge/worker-*.test.ts。',
+      '覆盖菱形依赖。',
+    ].join('\n');
+    const p = buildTurnPrompt({
+      bot: { name: 'Skeptic', blindReview: true } as any,
+      chat: { kind: 'group', title: 'g' } as any,
+      unseen: [msg(1, 'user', '补齐第 1 批'), msg(2, 'bot', handover, 'b_chief')],
+      names: new Map([...names, ['b_lens', 'Lens'], ['b_skeptic', 'Skeptic']]),
+      context: [],
+      trigger: { type: 'mention', by: 'b_chief' },
+      review: { title: '还没提交的改动', diff: '+x', how: 'git diff HEAD' },
+    });
+    expect(p).toContain('@Skeptic 写 worker 的失败测试');
+    expect(p).toContain('覆盖菱形依赖');
+    expect(p).not.toContain('claim 的 SQL');
+    expect(p).not.toContain('放心');
+    expect(p).not.toContain('按规则对你隐藏');
+  });
+
+  it('shows no task when it was not mentioned, or the mention came from the user', () => {
+    const p = buildTurnPrompt({
+      bot: { name: 'Lens', blindReview: true } as any,
+      chat: { kind: 'group', title: 'g' } as any,
+      unseen: [msg(1, 'user', '@Lens 看看'), msg(2, 'bot', '@Skeptic 你来', 'b_chief')],
+      names,
+      context: [],
+      trigger: { type: 'user' },
+      review: { title: '还没提交的改动', diff: '+x', how: 'git diff HEAD' },
+    });
+    expect(p).not.toContain('交给你的任务');
+    expect(p).not.toContain('你来');
+    expect(p).toContain('1 条消息，按规则对你隐藏');
+    expect(p).toContain('按你的角色说明审查');
+  });
+});
+
+describe('taskFor', () => {
+  it('cuts at the next teammate addressed at the start of a line, not at a mention inside the text', () => {
+    const text = '@Lens 看 db.ts，和 @Skeptic 的测试对一下。\n- @Skeptic 写测试';
+    expect(taskFor('Lens', text, ['Lens', 'Skeptic'])).toBe('@Lens 看 db.ts，和 @Skeptic 的测试对一下。');
+    expect(taskFor('Skeptic', '@Lens 只看', ['Lens', 'Skeptic'])).toBeNull();
   });
 });

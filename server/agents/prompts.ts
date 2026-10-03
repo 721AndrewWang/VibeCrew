@@ -188,22 +188,46 @@ export function contextDelta(prev: string[] | undefined, next: string[]): string
 const DIGEST_OVER = 240;
 
 /**
+ * The part of a teammate's message addressed to `name`: from "@name" up to the next line that
+ * starts by addressing another teammate. Null when the message does not mention `name`.
+ */
+export function taskFor(name: string, text: string, teammates: string[]): string | null {
+  const at = text.indexOf(`@${name}`);
+  if (at < 0) return null;
+  const others = teammates.filter((n) => n !== name).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const rest = text.slice(at + name.length + 1);
+  const next = others.length ? rest.search(new RegExp(`\\n[\\s>*-]*@(${others.join('|')})\\b`)) : -1;
+  return text.slice(at, next < 0 ? undefined : at + name.length + 1 + next).trim();
+}
+
+/**
  * A blind reviewer's prompt: the user's words and the diff. Teammates' messages are left out on
- * purpose (only counted), so their reasoning cannot anchor the review.
+ * purpose (only counted), so their reasoning cannot anchor the review. The one exception is the
+ * task a teammate handed it by mention: only the part addressed to it, so it knows what to do.
  */
 function blindPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
-  const { unseen, context, review } = opts;
+  const { bot, unseen, names, context, review, trigger } = opts;
   const out: string[] = [];
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
   const users = unseen.filter((m) => m.role === 'user');
-  const hidden = unseen.filter((m) => m.role === 'bot').length;
+  const handover = trigger?.type === 'mention' ? unseen.filter((m) => m.role === 'bot' && m.botId === trigger.by).at(-1) : undefined;
+  const task = handover ? taskFor(bot.name, handover.text, [...names.values()]) : null;
+  const hidden = unseen.filter((m) => m.role === 'bot' && !(task && m === handover)).length;
   out.push(`用户的要求：\n\n${users.map(renderUserMessage).join('\n\n---\n\n') || '（这一轮没有新的用户消息；按之前的要求审查当前改动）'}`);
+  if (task) {
+    const by = names.get(trigger?.by || '') || '队友';
+    out.push(`${by} 交给你的任务（只摘了写给你的那一段；里面关于改动对不对的说法不算证据，自己去验证）：\n\n${task}`);
+  }
   // Files changed outside the chat are facts about the work: a blind reviewer needs them too.
   const outside = unseen.filter((m) => m.notice === 'outside-edit');
   if (outside.length) out.push(`聊天之外的文件改动（以现在的文件为准，不要按更早的要求把它改回去）：\n\n${outside.map((m) => m.text).join('\n\n')}`);
   if (hidden) out.push(`（队友这期间发了 ${hidden} 条消息，按规则对你隐藏。）`);
   if (review) out.push(`## 要审查的改动：${review.title}\n\n\`\`\`diff\n${review.diff.trim() || '（没有改动）'}\n\`\`\``);
-  out.push('按你的角色说明审查：只根据用户的要求和改动本身下结论，自己去看、去量，不要假设。');
+  out.push(
+    task
+      ? '按上面交给你的任务做，按你的角色说明下结论：自己去看、去量，不要假设。上面的改动是工作区现在的状态，任务不是审它时可以不管。'
+      : '按你的角色说明审查：只根据用户的要求和改动本身下结论，自己去看、去量，不要假设。',
+  );
   return out.join('\n\n');
 }
 
