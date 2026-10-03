@@ -25,6 +25,9 @@ export function stalledLead(opts: { chat: Chat; bot: Bot; msg: ChatMessage; ment
   // A teammate the user addressed directly answers the user; unless the user also asked the lead
   // to follow up, its reply is where the user wants the chain to stop.
   if (trigger?.type === 'user' && !(lastUser && lastUser.text.includes(`@${lead.name}`))) return null;
+  // An automatic review that refuted nothing settles the chain; one that refuted something needs
+  // the lead to get it fixed.
+  if (trigger?.type === 'system' && msg.meta?.verdict && msg.meta.verdict.refuted === 0) return null;
   const since = lastUser ? history.filter((m) => m.seq > lastUser.seq) : history;
   if (since.filter((m) => m.role === 'system' && m.notice === 'stall').length >= MAX_STALL_NUDGES) return null;
   return lead;

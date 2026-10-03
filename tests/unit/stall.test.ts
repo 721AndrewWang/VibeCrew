@@ -33,6 +33,13 @@ describe('stalledLead', () => {
     expect(ask({ history, msg: m('bot', '', { botId: 'b_lens', status: 'error' }) })).toBeNull();
   });
 
+  it('lets an automatic review that refuted nothing end the chain, and wakes the lead for one that refuted something', () => {
+    const history = [m('user', '做一个页面')];
+    const review = (refuted: number) => m('bot', `结论：${refuted ? `推翻 ${refuted} 条` : '未推翻'}`, { botId: 'b_lens', meta: { verdict: { refuted } } });
+    expect(ask({ history, trigger: { type: 'system' }, msg: review(0) })).toBeNull();
+    expect(ask({ history, trigger: { type: 'system' }, msg: review(2) })).toBe(chief);
+  });
+
   it('needs a group with a lead', () => {
     const history = [m('user', '看看')];
     expect(ask({ history, chat: { kind: 'dm' } })).toBeNull();
