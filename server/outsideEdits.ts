@@ -27,6 +27,24 @@ interface Pending {
   files: Map<string, { before: string | null; editor: boolean }>;
 }
 
+/**
+ * Paths that change without anyone editing them:
+ * - Claude Code's sandbox mounts placeholders over protected paths (.claude/ settings, hooks and
+ *   skills, .mcp.json, shell and git dotfiles) for each sandboxed command and removes them after,
+ *   in whatever folder the command runs in.
+ * - Atomic writes go through a temporary "<file>.tmp.<pid>.<hex>" that is renamed over the file.
+ */
+const NOT_EDITS = [
+  /(^|\/)\.claude(\/|$)/,
+  /(^|\/)\.mcp\.json$/,
+  /(^|\/)\.(bashrc|bash_profile|bash_login|bash_logout|profile|zshrc|zshenv|zprofile|zlogin|gitconfig|gitmodules|ripgreprc)$/,
+  /\.tmp\.\d+\.[0-9a-f]+$/,
+];
+
+export function notAnEdit(rel: string): boolean {
+  return NOT_EDITS.some((re) => re.test(rel));
+}
+
 /** Last content seen per project and path, so an outside edit can be shown as a change. */
 const seen = new Map<string, Map<string, string>>();
 const pending = new Map<string, Pending>();
@@ -117,6 +135,7 @@ function onFiles(projectId: string, paths: string[]) {
   // Bots at work, Crew's own writes and dependency installs are not outside edits: just keep up.
   const crewWriting = projectBusy(projectId) || isQuiet(projectId) || devServer(projectId).state.status === 'installing';
   for (const rel of paths) {
+    if (notAnEdit(rel)) continue;
     const abs = path.join(root, rel);
     // Folders come and go with their files; the files are what the note is about.
     if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) continue;
