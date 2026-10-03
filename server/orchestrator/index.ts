@@ -20,6 +20,7 @@ import { parseVerdict, reviewDiff } from '../review';
 import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
+import { stalledLead, stallNote } from '../stall';
 import { bots, chats, messages, projects, settings, uid } from '../store';
 import { monthSpend, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
@@ -507,9 +508,10 @@ async function runTurn(job: Job) {
   else if (msg.status === 'done') notify(`${bot.name} 完成了`, preview(msg.text).slice(0, 100) || '任务完成', { chatId: chat.id, level: 'success' });
 
   // Bot-to-bot handoffs.
+  let mentioned: Bot[] = [];
   if (msg.status === 'done' && fresh.kind === 'group') {
     const members = bots.all().filter((b) => fresh.botIds.includes(b.id) && b.id !== bot.id);
-    const mentioned = ALL_RE.test(msg.text) ? members : parseMentions(msg.text, members);
+    mentioned = ALL_RE.test(msg.text) ? members : parseMentions(msg.text, members);
     if (mentioned.length) {
       if (job.hopsLeft > 0) {
         for (const m of mentioned) enqueue({ chatId: fresh.id, botId: m.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: job.hopsLeft - 1 });
@@ -521,6 +523,24 @@ async function runTurn(job: Job) {
 
   // The chain of turns is over: a change that matches the project's rules gets an adversarial review.
   if (msg.status === 'done' && project && !bot.blindReview && !queues.get(fresh.id)?.length) await maybeAutoChallenge(fresh, project);
+
+  // Still nothing queued: a teammate reported back without handing on. Wake the lead.
+  if (!queues.get(fresh.id)?.length) {
+    const lead = stalledLead({
+      chat: fresh,
+      bot,
+      msg,
+      mentioned,
+      history: messages.sorted(fresh.id),
+      trigger: job.trigger,
+      members: bots.all().filter((b) => fresh.botIds.includes(b.id)),
+    });
+    if (lead) {
+      systemMessage(fresh, stallNote(bot.name, lead.name), { notice: 'stall' });
+      // As a handoff from the teammate, so the lead reads its report in full.
+      enqueue({ chatId: fresh.id, botId: lead.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: fresh.maxHops });
+    }
+  }
 }
 
 async function maybeAutoChallenge(chat: Chat, project: Project) {
