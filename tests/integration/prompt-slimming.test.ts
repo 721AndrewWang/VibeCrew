@@ -2,7 +2,7 @@
 // the full environment once per session, then only what changed; chat_history returns full text.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
-import { type CrewServer, claudeCli, startServer, waitTurn } from '../helpers/server';
+import { type CrewServer, claudeCli, startServer, waitFor, waitTurn } from '../helpers/server';
 
 const TOKEN = 'mock-secret-token';
 
@@ -116,7 +116,14 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
   it('starts an oversized session over: a new conversation carrying the recent messages, its own replies included', async () => {
     // The mock model reports a handful of tokens per call: any session is over 1.
     await crew.api('PATCH', '/settings', { rotateAtTokens: 1 });
+    const chief = (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.name === 'Chief');
+    const before = Date.now();
     await turn('第六条：会话已经很大了');
+    // The size is recorded after the turn, in the background; the next turn decides from it.
+    await waitFor(async () => {
+      const chat = (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.id === chatId);
+      return (chat.context?.[chief.id]?.at ?? 0) >= before;
+    }, 15_000);
     const sent = await turn('第七条');
     const main = mock.requests.filter((r) => r.tools.length && lastUserText(r.body).includes('第七条'));
     const users = main[0].body.messages.filter((m: any) => m.role === 'user');
