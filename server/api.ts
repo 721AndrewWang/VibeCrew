@@ -37,6 +37,7 @@ import {
   updateProject,
   writeProjectFile,
 } from './projects';
+import { barkUrlOk, sendBark } from './push';
 import { quietly } from './quietWrites';
 import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
@@ -139,6 +140,16 @@ export function apiRouter() {
   // ------------------------------------------------------------ auth & settings
   r.get('/auth', async (req, res) => res.json(await checkAuth(req.query.refresh === '1')));
 
+  r.post('/settings/push-test', async (_req, res) => {
+    const url = settings.get().push?.barkUrl;
+    if (!url) throw new HttpError(400, '还没有填 Bark 地址');
+    try {
+      await sendBark(url, 'Crew', '手机推送已接通：机器人等你确认太久时会推到这里。');
+    } catch (e) {
+      throw new HttpError(502, `推送没有发出去：${(e as Error).message}`);
+    }
+    res.json({ ok: true });
+  });
   r.patch('/settings', async (req, res) => {
     const b = body(SettingsPatch, req.body);
     const cur = settings.get();
@@ -155,6 +166,12 @@ export function apiRouter() {
     }
     if (b.routing) patch.routing = { mode: b.routing.mode };
     if (b.rotateAtTokens !== undefined) patch.rotateAtTokens = b.rotateAtTokens;
+    if (b.push) {
+      const prev = cur.push || { barkUrl: '', afterMinutes: 10 };
+      const barkUrl = b.push.barkUrl === undefined ? prev.barkUrl : b.push.barkUrl.trim();
+      if (barkUrl && !barkUrlOk(barkUrl)) throw new HttpError(400, 'Bark 地址的格式不对，应该像 https://api.day.app/你的key');
+      patch.push = { barkUrl, afterMinutes: b.push.afterMinutes ?? prev.afterMinutes };
+    }
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }
