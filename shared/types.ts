@@ -459,6 +459,8 @@ export interface PublicSettings {
   routing: { mode: 'off' | 'shadow' };
   /** A resumed session whose context passes this many tokens starts over with a recap; 0 = never. */
   rotateAtTokens: number;
+  /** Phone push through Bark for approvals left open; the URL itself stays on the server. */
+  push: { configured: boolean; afterMinutes: number };
 }
 
 /** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */

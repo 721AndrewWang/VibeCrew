@@ -108,6 +108,8 @@ export interface Settings {
   token: string;
   /** Values for ${VAR} placeholders in plugin configs (e.g. GITHUB_TOKEN). */
   pluginSecrets: Record<string, string>;
+  /** Phone push (Bark) when an approval stays open this many minutes; the URL holds the device key. */
+  push: { barkUrl: string; afterMinutes: number };
   initialized: boolean;
 }
 
@@ -131,6 +133,7 @@ const DEFAULT_SETTINGS: Settings = {
   rotateAtTokens: 60_000,
   token: '',
   pluginSecrets: {},
+  push: { barkUrl: '', afterMinutes: 10 },
   initialized: false,
 };
 
@@ -177,6 +180,7 @@ class SettingsStore {
       sandbox: s.sandbox || { enabled: false, allowedDomains: [] },
       routing: s.routing || { mode: 'off' },
       rotateAtTokens: s.rotateAtTokens ?? 60_000,
+      push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
     };
   }
 

@@ -74,3 +74,31 @@ describe('context usage', () => {
     expect(after.context).toEqual({});
   });
 });
+
+describe('phone push (Bark)', () => {
+  const KEY = 'https://api.day.app/SecretKey123';
+  it('is off by default, and testing it without an address says so', async () => {
+    expect((await crew.api('GET', '/bootstrap')).settings.push).toEqual({ configured: false, afterMinutes: 10 });
+    const r = await crew.api('POST', '/settings/push-test');
+    expect(r.status).toBe(400);
+  });
+
+  it('refuses an address that is not a Bark URL', async () => {
+    for (const barkUrl of ['http://api.day.app/K', 'https://api.day.app/K/title/body', 'not a url']) {
+      expect((await crew.api('PATCH', '/settings', { push: { barkUrl } })).status, barkUrl).toBe(400);
+    }
+    expect((await crew.api('PATCH', '/settings', { push: { afterMinutes: 0 } })).status).toBe(400);
+  });
+
+  it('keeps the address on the server: the app only learns that one is set', async () => {
+    const r = await crew.api('PATCH', '/settings', { push: { barkUrl: KEY, afterMinutes: 15 } });
+    expect(r.settings.push).toEqual({ configured: true, afterMinutes: 15 });
+    expect(JSON.stringify(await crew.api('GET', '/bootstrap'))).not.toContain('SecretKey123');
+    const file = path.join(crew.home, 'settings.json');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).push).toEqual({ barkUrl: KEY, afterMinutes: 15 });
+    expect(fs.statSync(file).mode & 0o077).toBe(0);
+    // Changing the delay alone keeps the address; an empty address turns it off.
+    expect((await crew.api('PATCH', '/settings', { push: { afterMinutes: 5 } })).settings.push).toEqual({ configured: true, afterMinutes: 5 });
+    expect((await crew.api('PATCH', '/settings', { push: { barkUrl: '' } })).settings.push).toEqual({ configured: false, afterMinutes: 5 });
+  });
+});

@@ -7,6 +7,7 @@ import type { TurnStream } from '../agents/stream';
 import { bus, notify } from '../bus';
 import { logger } from '../log';
 import { configOf } from '../projects';
+import { remindLater } from '../push';
 import { bots, chats, settings, uid } from '../store';
 import { setStatus } from './botStatus';
 import { effectiveBot } from './turnContext';
@@ -66,10 +67,13 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     stream.addPart(part);
     setStatus(bot.id, { state: 'waiting', detail: desc.title, chatId: chat.id });
     notify(`${bot.name} 需要你的确认`, desc.title, { chatId: chat.id, level: 'warn' });
+    // Still open after a few minutes: a push to the phone (Bark), if one is set up.
+    const cancelPush = remindLater(bot.name, chat.title || bot.name, desc.title);
     const decision = await new Promise<{ allow: boolean; always?: boolean; message?: string; expired?: boolean }>((resolve) => {
       approvals.set(part.id, { chatId: chat.id, botId: bot.id, part, stream, resolve });
       opts.signal?.addEventListener('abort', () => resolve({ allow: false, expired: true }), { once: true });
     });
+    cancelPush();
     approvals.delete(part.id);
     part.status = decision.allow ? 'allowed' : decision.expired ? 'expired' : 'denied';
     stream.updatePart(part);
