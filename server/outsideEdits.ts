@@ -30,13 +30,14 @@ interface Pending {
 /**
  * Paths that change without anyone editing them:
  * - Claude Code's sandbox mounts placeholders over protected paths (.claude/ settings, hooks and
- *   skills, .mcp.json, shell and git dotfiles) for each sandboxed command and removes them after,
- *   in whatever folder the command runs in.
+ *   skills, .mcp.json, shell and git dotfiles, the .vscode and .idea editor folders) for each
+ *   sandboxed command and removes them after, in whatever folder the command runs in.
  * - Atomic writes go through a temporary "<file>.tmp.<pid>.<hex>" that is renamed over the file.
  */
 const NOT_EDITS = [
   /(^|\/)\.claude(\/|$)/,
   /(^|\/)\.mcp\.json$/,
+  /(^|\/)\.(vscode|idea)(\/|$)/,
   /(^|\/)\.(bashrc|bash_profile|bash_login|bash_logout|profile|zshrc|zshenv|zprofile|zlogin|gitconfig|gitmodules|ripgreprc)$/,
   /\.tmp\.\d+\.[0-9a-f]+$/,
 ];

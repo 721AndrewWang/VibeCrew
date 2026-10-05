@@ -4,8 +4,11 @@
 
 import type { Bot, Chat, ChatMessage } from '../shared/types';
 
-/** Lead turns started this way between two user messages. */
-export const MAX_STALL_NUDGES = 3;
+/**
+ * Lead turns started this way between two user messages. A batch that goes write → review →
+ * refute → fix → recheck uses several; the chat's hop limit still bounds a runaway chain.
+ */
+export const MAX_STALL_NUDGES = 8;
 
 /**
  * The lead ends a reply with this line when its next step is its own (commit now, dispatch next):

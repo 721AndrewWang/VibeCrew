@@ -58,7 +58,7 @@ describe('files changed outside the chat', () => {
   it("leave out the sandbox's placeholders and atomic-write temporaries", async () => {
     const before = (await notes(groupId)).length;
     // What a sandboxed command does in the folder it runs in, and what a Write tool does.
-    const placeholders = ['.claude/settings.json', '.claude/hooks', 'sub/.claude/skills', '.mcp.json', '.bashrc', 'notes.txt.tmp.4242.9f3c1a'];
+    const placeholders = ['.claude/settings.json', '.claude/hooks', 'sub/.claude/skills', '.mcp.json', '.bashrc', '.vscode/settings.json', '.idea/workspace.xml', 'notes.txt.tmp.4242.9f3c1a'];
     for (const p of placeholders) {
       fs.mkdirSync(path.dirname(file(p)), { recursive: true });
       fs.writeFileSync(file(p), '');
