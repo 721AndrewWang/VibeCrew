@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { askRuleFor, decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, splitCommand, suggestRules } from '../../server/agents/permissions';
+import { askRuleFor, decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, ruleText, splitCommand, suggestRules } from '../../server/agents/permissions';
 
 const cwd = '/home/u/site';
 const bot = (over: Record<string, unknown> = {}) => ({ askRules: ['Bash(git push:*)'], allowRules: [], ...over }) as any;
@@ -89,7 +89,7 @@ describe('decide', () => {
       'Bash(*.env.local*)',
     ];
     const b = bot({ askRules: defaults });
-    const run = (cmd: string, matchedAskRule?: string) => decide(b, 'auto', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule });
+    const run = (cmd: string, matchedAskRule?: unknown) => decide(b, 'auto', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule });
 
     it('reading or searching deploy files no longer asks, even when Claude Code matched the rule', () => {
       for (const cmd of [
@@ -98,7 +98,8 @@ describe('decide', () => {
         'grep -n NODE_ENV Dockerfile.web server/deploy/docker-compose.yml; ls deploy',
         'grep -rn ssh docs/ | wc -l',
       ]) {
-        expect(run(cmd, 'Bash(*deploy*)').behavior, cmd).toBe('allow');
+        // Claude Code reports the rule it matched on the raw text, if any.
+        expect(run(cmd, cmd.includes('deploy') ? 'Bash(*deploy*)' : undefined).behavior, cmd).toBe('allow');
       }
     });
 
@@ -129,6 +130,23 @@ describe('decide', () => {
       expect(own('Bash(grep:*)', 'grep -rn TODO .')).toBe('ask');
       // …but not one whose word only shows up in an argument.
       expect(own('Bash(*ls*)', 'grep -n tools README.md')).toBe('allow');
+    });
+
+    it("Claude Code's own match of one of these rules defers to the check above, even with git log in the command", () => {
+      // Approval #295 on 2026-10-07, which asked with "ask 规则 [object Object]".
+      const cmd =
+        'cd /home/ubuntu24/apellespell && grep -n "450fc09\\|orphan" docs/m4-deploy-checklist.md | cut -c1-200; grep -n "47\\|48" docs/m4-pr.md | cut -c1-160; git log --oneline main..HEAD | wc -l';
+      expect(run(cmd, { toolName: 'Bash', ruleContent: '*deploy*' } as any).behavior).toBe('allow');
+      // In 自动改文件 a command outside the read-only list still asks, for the mode's reason.
+      expect(decide(b, 'edits', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule: { toolName: 'Bash', ruleContent: '*deploy*' } }).because).toBe('权限是「自动改文件」，运行命令要先问');
+    });
+
+    it('a rule Claude Code matched from somewhere else still asks, and is named readably', () => {
+      const d = run('make release', { toolName: 'Bash', ruleContent: 'make release*' } as any);
+      expect(d.behavior).toBe('ask');
+      expect(d.because).toBe('Claude Code 设置里的 ask 规则 Bash(make release*)');
+      expect(ruleText('Bash(x)')).toBe('Bash(x)');
+      expect(ruleText({ toolName: 'WebFetch' })).toBe('WebFetch');
     });
 
     it('askRuleFor keeps matchingRule for other tools', () => {
