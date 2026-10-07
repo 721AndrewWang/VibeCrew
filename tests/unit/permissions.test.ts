@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, splitCommand, suggestRules } from '../../server/agents/permissions';
+import { askRuleFor, decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, splitCommand, suggestRules } from '../../server/agents/permissions';
 
 const cwd = '/home/u/site';
 const bot = (over: Record<string, unknown> = {}) => ({ askRules: ['Bash(git push:*)'], allowRules: [], ...over }) as any;
@@ -72,6 +72,71 @@ describe('decide', () => {
     expect(decide(b, 'auto', 'Bash', bash('cd /tmp && scp report.md prod-server:/tmp/'), cwd, {}).behavior).toBe('ask');
     expect(decide(b, 'auto', 'Bash', bash("ssh test-server 'uptime'"), cwd, {}).behavior).toBe('allow');
   });
+  describe('a command that only reads is held only to the rules about files', () => {
+    // The bots' default rules and the apellespell project's rules, as they were on 2026-10-07.
+    const defaults = ['Bash(git push*)', 'Bash(sudo *)', 'Bash(rm -rf *)', 'Bash(npm publish*)', 'Bash(*deploy*)'];
+    const project = [
+      'Bash(bash server/deploy.sh:*)',
+      'Bash(ssh:*)',
+      'Bash(./server/deploy.sh:*)',
+      'Bash(sh server/deploy.sh:*)',
+      'Read(**/.env)',
+      'Read(**/.env.local)',
+      'Edit(**/.env)',
+      'Edit(**/.env.local)',
+      'Bash(*.env)',
+      'Bash(*.env *)',
+      'Bash(*.env.local*)',
+    ];
+    const b = bot({ askRules: defaults });
+    const run = (cmd: string, matchedAskRule?: string) => decide(b, 'auto', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule });
+
+    it('reading or searching deploy files no longer asks, even when Claude Code matched the rule', () => {
+      for (const cmd of [
+        'cd /home/u/site && grep -n "ports:" -A3 server/deploy/docker-compose.yml',
+        'cat server/deploy.sh | head -40',
+        'grep -n NODE_ENV Dockerfile.web server/deploy/docker-compose.yml; ls deploy',
+        'grep -rn ssh docs/ | wc -l',
+      ]) {
+        expect(run(cmd, 'Bash(*deploy*)').behavior, cmd).toBe('allow');
+      }
+    });
+
+    it('running a deploy, ssh, a push or rm -rf still asks', () => {
+      expect(run('bash server/deploy.sh').because).toContain('Bash(*deploy*)');
+      expect(run('cd app && ./server/deploy.sh --prod').behavior).toBe('ask');
+      expect(run('ssh andrew@host uptime').because).toContain('Bash(ssh:*)');
+      expect(run('git status && git push origin main').behavior).toBe('ask');
+      expect(run('rm -rf .tsxtmp && ls').behavior).toBe('ask');
+      // Read-only tools, but written to a file: not harmless, so the plain rules apply.
+      expect(run('grep deploy README.md > notes.txt').behavior).toBe('ask');
+    });
+
+    it('reading a protected file still asks, through the Read rules or the plain rules', () => {
+      expect(run('cat app/apps/web/.env.local').because).toContain('Read(**/.env.local)');
+      expect(run("grep AUTH 'app/apps/web/.env.local' | head").behavior).toBe('ask');
+      expect(run('cd app && head -3 .env').because).toContain('Read(**/.env)');
+      // A wildcard argument is not expanded: the plain rules decide, as before.
+      expect(run('grep DATABASE_URL apps/web/.env.local*').behavior).toBe('ask');
+      // Not protected: the example file.
+      expect(run('cat app/.env.example').behavior).toBe('allow');
+    });
+
+    it('a rule about the reading command itself still applies', () => {
+      const own = (rule: string, cmd: string) => decide(bot({ askRules: [rule] }), 'auto', 'Bash', bash(cmd), cwd, {}).behavior;
+      expect(own('Bash(ls*)', 'ls -la')).toBe('ask');
+      expect(own('Bash(cat *)', 'cd src && cat a.ts')).toBe('ask');
+      expect(own('Bash(grep:*)', 'grep -rn TODO .')).toBe('ask');
+      // …but not one whose word only shows up in an argument.
+      expect(own('Bash(*ls*)', 'grep -n tools README.md')).toBe('allow');
+    });
+
+    it('askRuleFor keeps matchingRule for other tools', () => {
+      expect(askRuleFor(project, 'Read', { file_path: 'app/apps/web/.env.local' }, cwd)).toBe('Read(**/.env.local)');
+      expect(askRuleFor(project, 'Read', { file_path: 'app/README.md' }, cwd)).toBeNull();
+    });
+  });
+
   it('a read-only bot cannot leave plan mode', () => {
     expect(decide(bot(), 'plan', 'ExitPlanMode', {}, cwd, {}).behavior).toBe('deny');
   });
