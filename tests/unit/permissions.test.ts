@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { askRuleFor, decide, harmless, matchingRule, permissionModeFor, rulesAllow, rulesTouch, ruleText, splitCommand, suggestRules } from '../../server/agents/permissions';
+import { DEFAULT_ASK_RULES } from '../../server/data/catalog';
 
 const cwd = '/home/u/site';
 const bot = (over: Record<string, unknown> = {}) => ({ askRules: ['Bash(git push:*)'], allowRules: [], ...over }) as any;
@@ -218,5 +219,35 @@ describe('permissionModeFor', () => {
     expect(permissionModeFor('review')).toBe('auto');
     expect(permissionModeFor('plan')).toBe('plan');
     expect(permissionModeFor('ask')).toBe('default');
+  });
+});
+
+describe('the default must-ask rules', () => {
+  const b = bot({ askRules: DEFAULT_ASK_RULES });
+  const run = (cmd: string) => decide(b, 'auto', 'Bash', bash(cmd), cwd, {});
+  it('ask before deploy commands, wherever they sit in a chain', () => {
+    for (const cmd of [
+      'npm run deploy',
+      'cd web && pnpm deploy --prod',
+      'vercel --prod',
+      'npm test && fly deploy',
+      'wrangler deploy',
+      'firebase deploy --only hosting',
+      'kubectl apply -f k8s/',
+      'terraform apply -auto-approve',
+      'git push origin main',
+    ]) {
+      expect(run(cmd).behavior, cmd).toBe('ask');
+    }
+  });
+  it('do not ask because a command mentions deploying', () => {
+    for (const cmd of [
+      'grep -n ports: server/deploy/docker-compose.yml',
+      `python3 -c "print('Deploy fix and PR docs')"`,
+      'git commit -m "docs: deploy checklist"',
+      'node scripts/check-deploy-docs.mjs',
+    ]) {
+      expect(run(cmd).behavior, cmd).toBe('allow');
+    }
   });
 });

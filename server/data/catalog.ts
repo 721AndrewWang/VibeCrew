@@ -241,4 +241,27 @@ export const DEFAULT_ALLOW_RULES = [
   'Bash(find *)',
 ];
 
-export const DEFAULT_ASK_RULES = ['Bash(git push*)', 'Bash(sudo *)', 'Bash(rm -rf *)', 'Bash(npm publish*)', 'Bash(*deploy*)'];
+/**
+ * Must-ask rules every new bot starts with. Deploys are matched by the command that runs them, not by
+ * the word anywhere in a command: Bash(*deploy*) also caught `grep x deploy.sh` and any script that
+ * merely wrote about deploying. A project's own deploy script belongs in that project's rules.
+ */
+export const DEFAULT_ASK_RULES = [
+  'Bash(git push*)',
+  'Bash(sudo *)',
+  'Bash(rm -rf *)',
+  'Bash(npm publish*)',
+  'Bash(npm run deploy*)',
+  'Bash(pnpm deploy*)',
+  'Bash(pnpm run deploy*)',
+  'Bash(yarn deploy*)',
+  'Bash(vercel*)',
+  'Bash(netlify deploy*)',
+  'Bash(fly deploy*)',
+  'Bash(flyctl deploy*)',
+  'Bash(wrangler deploy*)',
+  'Bash(firebase deploy*)',
+  'Bash(kubectl apply*)',
+  'Bash(helm upgrade*)',
+  'Bash(terraform apply*)',
+];
