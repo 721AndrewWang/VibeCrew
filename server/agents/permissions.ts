@@ -189,10 +189,14 @@ export function askRuleFor(rules: string[], toolName: string, input: any, cwd: s
   return null;
 }
 
-/** Every part of the command only reads and prints, and reads no file a Read/Edit rule protects. */
-function readOnlyCommand(rules: string[], input: any, cwd: string): boolean {
-  const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
-  return segs.length > 0 && segs.every((seg) => harmless(seg) && !readOnlySegmentRule(rules, seg, cwd));
+/** A rule as Claude Code reports it: a string, or { toolName, ruleContent }. */
+export function ruleText(rule: unknown): string {
+  if (typeof rule === 'string') return rule;
+  if (rule && typeof rule === 'object') {
+    const r = rule as { toolName?: unknown; ruleContent?: unknown };
+    if (typeof r.toolName === 'string') return typeof r.ruleContent === 'string' && r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName;
+  }
+  return JSON.stringify(rule) ?? String(rule);
 }
 
 /** True when any rule matches any part of the action. */
@@ -241,10 +245,13 @@ export function decide(bot: Bot, level: PermissionLevel, toolName: string, input
   if (botRule) return { behavior: 'ask', because: `机器人的「必须确认」规则 ${botRule}` };
   const projectRule = opts.projectRules?.length ? askRuleFor(opts.projectRules, toolName, input, cwd) : null;
   if (projectRule) return { behavior: 'ask', because: `项目的「必须确认」规则 ${projectRule}` };
-  // Claude Code matched one of these same rules on the raw text (`grep x deploy.sh` hits *deploy*);
-  // a command that only reads and prints, and no protected file, is not what the rule is about.
-  const readOnly = toolName === 'Bash' && readOnlyCommand([...bot.askRules, ...(opts.projectRules || [])], input, cwd);
-  if (opts.matchedAskRule && !readOnly) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${String(opts.matchedAskRule)}` };
+  // Claude Code's ask list is these same bot and project rules, matched on the raw text
+  // (`grep x deploy.sh` hits *deploy*). When its match is one of them, the checks above already
+  // decided, part by part; only a rule from elsewhere (settings files) still asks here.
+  if (opts.matchedAskRule) {
+    const ours = toolName === 'Bash' && matchingRule([...bot.askRules, ...(opts.projectRules || [])], toolName, input, cwd) !== null;
+    if (!ours) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${ruleText(opts.matchedAskRule)}` };
+  }
   // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
   if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
     const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
