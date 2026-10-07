@@ -142,6 +142,59 @@ export function matchingRule(rules: string[], toolName: string, input: any, cwd:
   return rules.find((r) => matchOne(r, toolName, input, cwd)) ?? null;
 }
 
+/** The words of a shell segment after the command, unquoted, without options. */
+function segmentArgs(seg: string): string[] {
+  const words = seg.trim().match(/"[^"]*"|'[^']*'|\S+/g) || [];
+  return words
+    .slice(1)
+    .map((w) => w.replace(/^["']|["']$/g, ''))
+    .filter((w) => w && !w.startsWith('-'));
+}
+
+/**
+ * A must-ask rule names an action (deploy, ssh, rm -rf) or a file (.env). A segment that only reads
+ * and prints (harmless) cannot take the action, so the action rules do not apply to it; the
+ * Read/Edit rules still do, checked against the files it names. A file argument with a wildcard is
+ * not expanded here, so such a segment falls back to the plain rules.
+ * Returns the rule the segment must ask under, or null.
+ */
+function readOnlySegmentRule(rules: string[], seg: string, cwd: string): string | null {
+  const args = segmentArgs(seg);
+  if (args.some((a) => /[*?[]/.test(a))) return rules.find((r) => matchOne(r, 'Bash', { command: seg }, cwd, seg)) ?? null;
+  // A rule about the reading command itself (Bash(ls*), Bash(cat *)) still applies; one that only
+  // matched an argument (Bash(*deploy*) on `grep x deploy.sh`) does not.
+  const cmd = seg.trim().split(/\s+/)[0];
+  const aboutCommand = rules.find((r) => [cmd, `${cmd} `].some((c) => matchOne(r, 'Bash', { command: c }, cwd, c)));
+  if (aboutCommand) return aboutCommand;
+  for (const r of rules) {
+    const { tool } = parseRule(r);
+    if (tool !== 'Read' && tool !== 'Edit') continue;
+    if (args.some((a) => matchOne(r, tool, { file_path: a }, cwd))) return r;
+  }
+  return null;
+}
+
+/**
+ * The must-ask rule this action falls under, or null. Like matchingRule, except that a part of a
+ * shell command that only reads and prints is held only to the rules about files it reads.
+ */
+export function askRuleFor(rules: string[], toolName: string, input: any, cwd: string): string | null {
+  if (!rules.length) return null;
+  if (toolName !== 'Bash') return matchingRule(rules, toolName, input, cwd);
+  for (const seg of splitCommand(String(input?.command || ''))) {
+    if (!seg.trim()) continue;
+    const hit = harmless(seg) ? readOnlySegmentRule(rules, seg, cwd) : (rules.find((r) => matchOne(r, 'Bash', input, cwd, seg)) ?? null);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Every part of the command only reads and prints, and reads no file a Read/Edit rule protects. */
+function readOnlyCommand(rules: string[], input: any, cwd: string): boolean {
+  const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
+  return segs.length > 0 && segs.every((seg) => harmless(seg) && !readOnlySegmentRule(rules, seg, cwd));
+}
+
 /** True when any rule matches any part of the action. */
 export function rulesTouch(rules: string[], toolName: string, input: any, cwd: string): boolean {
   return matchingRule(rules, toolName, input, cwd) !== null;
@@ -184,11 +237,14 @@ export function decide(bot: Bot, level: PermissionLevel, toolName: string, input
       because: `角色范围只包括 ${scope}`,
     };
   }
-  const botRule = matchingRule(bot.askRules, toolName, input, cwd);
+  const botRule = askRuleFor(bot.askRules, toolName, input, cwd);
   if (botRule) return { behavior: 'ask', because: `机器人的「必须确认」规则 ${botRule}` };
-  const projectRule = opts.projectRules?.length ? matchingRule(opts.projectRules, toolName, input, cwd) : null;
+  const projectRule = opts.projectRules?.length ? askRuleFor(opts.projectRules, toolName, input, cwd) : null;
   if (projectRule) return { behavior: 'ask', because: `项目的「必须确认」规则 ${projectRule}` };
-  if (opts.matchedAskRule) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${String(opts.matchedAskRule)}` };
+  // Claude Code matched one of these same rules on the raw text (`grep x deploy.sh` hits *deploy*);
+  // a command that only reads and prints, and no protected file, is not what the rule is about.
+  const readOnly = toolName === 'Bash' && readOnlyCommand([...bot.askRules, ...(opts.projectRules || [])], input, cwd);
+  if (opts.matchedAskRule && !readOnly) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${String(opts.matchedAskRule)}` };
   // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
   if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
     const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
