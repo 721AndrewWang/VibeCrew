@@ -5,6 +5,7 @@ import {
   type McpServerConfig,
   type Options,
   type PermissionResult,
+  type PostToolUseHookInput,
   type PreToolUseHookInput,
   type Query,
   query,
@@ -15,6 +16,7 @@ import {
 import type { ContextUsage, Effort } from '../../shared/types';
 import { APP_VERSION, findClaudeExecutable } from '../config';
 import { logger } from '../log';
+import { wrapUpNote } from './wrapUp';
 
 const log = logger('session');
 
@@ -66,6 +68,8 @@ export interface SessionConfig {
   /** Refused outright, in every permission mode (checked by a hook too, so auto mode cannot approve them). */
   denyRules?: string[];
   deniedReason?(toolName: string, input: unknown): string | null;
+  /** Context size (tokens) past which a turn is asked to wrap up; read at each tool call, 0 = never. */
+  wrapUpAt?(): number;
   /** Hide Claude Code's attribution (Co-Authored-By trailers, PR footers) in commits and PRs. */
   attributionOff?: boolean;
   /** Claude Code's command sandbox (see server/sandbox.ts); undefined runs commands unconfined. */
@@ -104,6 +108,14 @@ export class BotSession implements AgentSession {
   /** The main loop's last API usage and context window, for when Claude Code cannot report /context. */
   private lastUsage: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null } | null = null;
   private lastWindow = 0;
+  /** The context size at this turn's last wrap-up reminder. */
+  private remindedAt: number | null = null;
+
+  /** Tokens the main loop's last call read: what the next call will re-read, and then some. */
+  private contextSize(): number {
+    const u = this.lastUsage;
+    return u ? (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0) : 0;
+  }
   /** The model this session runs on, from Claude Code's init message. */
   private model?: string;
 
@@ -119,7 +131,7 @@ export class BotSession implements AgentSession {
     }
     const u = this.lastUsage;
     if (!u || !this.lastWindow) return null;
-    const used = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
+    const used = this.contextSize();
     return { model: this.model, used, max: this.lastWindow, percentage: Math.round((used / this.lastWindow) * 100) };
   }
   private active: { hooks: TurnHooks; resolve: (r: SDKResultMessage) => void; reject: (e: Error) => void } | null = null;
@@ -173,6 +185,20 @@ export class BotSession implements AgentSession {
                   log.error('beforeEdit', e);
                 }
                 return {};
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            // A turn grown past the limit is asked to finish the step in hand and hand back.
+            hooks: [
+              async (input) => {
+                if ((input as PostToolUseHookInput).agent_id || !this.active) return {};
+                const note = wrapUpNote(this.contextSize(), cfg.wrapUpAt?.() ?? 0, this.remindedAt);
+                if (!note) return {};
+                this.remindedAt = this.contextSize();
+                return { hookSpecificOutput: { hookEventName: 'PostToolUse' as const, additionalContext: note } };
               },
             ],
           },
@@ -247,6 +273,7 @@ export class BotSession implements AgentSession {
     if (this.closed) return Promise.reject(new Error('会话已关闭'));
     if (this.active) return Promise.reject(new Error('会话正忙'));
     this.lastUsed = Date.now();
+    this.remindedAt = null;
     return new Promise((resolve, reject) => {
       this.active = { hooks, resolve, reject };
       this.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null });

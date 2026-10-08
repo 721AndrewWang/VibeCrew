@@ -167,6 +167,7 @@ export function apiRouter() {
     }
     if (b.routing) patch.routing = { mode: b.routing.mode };
     if (b.rotateAtTokens !== undefined) patch.rotateAtTokens = b.rotateAtTokens;
+    if (b.wrapUpAtTokens !== undefined) patch.wrapUpAtTokens = b.wrapUpAtTokens;
     if (b.push) {
       const prev = cur.push || { barkUrl: '', afterMinutes: 10 };
       const barkUrl = b.push.barkUrl === undefined ? prev.barkUrl : b.push.barkUrl.trim();

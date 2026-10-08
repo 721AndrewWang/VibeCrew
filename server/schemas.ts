@@ -151,6 +151,7 @@ export const SettingsPatch = z
     sandbox: z.object({ enabled: z.boolean().optional(), allowedDomains: z.array(text(300)).max(200).optional() }),
     routing: z.object({ mode: z.enum(['off', 'shadow']) }),
     rotateAtTokens: z.number().int().min(0).max(2_000_000),
+    wrapUpAtTokens: z.number().int().min(0).max(2_000_000),
     push: z.object({ barkUrl: text(500).optional(), afterMinutes: z.number().int().min(1).max(240).optional() }),
     pluginSecrets: z.record(z.string(), z.unknown()),
     authMode: z.enum(['claude-code', 'api-key', 'provider']),

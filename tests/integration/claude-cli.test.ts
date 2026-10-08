@@ -161,3 +161,43 @@ async function waitTurnContext(crew: CrewServer, chatId: string, botId: string) 
   }
   throw new Error('no context usage recorded');
 }
+
+describe.skipIf(!hasCli)('the wrap-up reminder', () => {
+  let mock: MockProvider;
+  let crew: CrewServer;
+
+  beforeAll(async () => {
+    // One harmless command, then a closing line.
+    mock = await startMockProvider({
+      token: TOKEN,
+      reply: (r) => (r.tools.includes('Bash') && !mock.toolResults.length ? { tool: { id: 'toolu_echo', name: 'Bash', input: { command: 'echo hi', description: 'Say hi' } } } : { text: '收尾了。' }),
+    });
+    crew = await startServer({ fakeAgent: false });
+    await crew.api('PATCH', '/settings', {
+      authMode: 'provider',
+      provider: { preset: 'custom', baseUrl: mock.url, model: 'mock-model', fastModel: 'mock-fast' },
+      providerToken: TOKEN,
+      // The mock reports a few tokens per call: any context is past a 1-token limit.
+      wrapUpAtTokens: 1,
+    });
+  });
+  afterAll(async () => {
+    await crew?.stop();
+    await mock?.close();
+  });
+
+  it('reaches the model with the next call after a tool, once', async () => {
+    const b = await crew.api('GET', '/bootstrap');
+    const chief = b.bots.find((x: any) => x.name === 'Chief');
+    const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
+    await crew.api('PATCH', `/chats/${dm.id}`, { permission: 'auto' });
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '打个招呼' });
+    expect((await waitTurn(crew.api, dm.id, sent.seq, 120_000)).status).toBe('done');
+    const main = mock.requests.filter((r) => r.tools.includes('Bash'));
+    const after = main.at(-1)!;
+    const text = JSON.stringify(after.body.messages);
+    expect(text).toContain('这一轮的上下文已经到');
+    expect(text.split('这一轮的上下文已经到').length - 1).toBe(1);
+    expect(JSON.stringify(main[0].body.messages)).not.toContain('这一轮的上下文已经到');
+  });
+});

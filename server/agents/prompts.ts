@@ -63,6 +63,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
     if (chat.leadBotId === bot.id) {
       lines.push(
         `- 你是这个群的负责人。这一轮做完了，但下一步还要你自己接着做（比如先提交，再派人审）时，在回复最后单独一行写「${CONTINUE_MARK}」，系统会马上再给你一轮，不用等用户。在等用户决定、或者这一批已经完成时不要写；也不要用它空转。`,
+        '- 派活时把大任务拆成小步骤，一次只派一步：每一步要在一轮里做得完、验收得了（大约几十次工具调用以内），做完交回再派下一步。一轮里做的事越多，上下文越长，后面每调用一次工具都更贵，也更容易做乱。',
       );
     }
   } else {

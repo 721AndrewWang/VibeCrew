@@ -459,6 +459,8 @@ export interface PublicSettings {
   routing: { mode: 'off' | 'shadow' };
   /** A resumed session whose context passes this many tokens starts over with a recap; 0 = never. */
   rotateAtTokens: number;
+  /** A turn whose context passes this many tokens is asked to wrap up and hand back; 0 = never. */
+  wrapUpAtTokens: number;
   /** Phone push through Bark for approvals left open; the URL itself stays on the server. */
   push: { configured: boolean; afterMinutes: number };
 }
