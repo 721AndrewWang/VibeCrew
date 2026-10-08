@@ -2,9 +2,10 @@
 // answers to approval requests shown in the chat.
 
 import type { ApprovalPart, Bot, Chat, Project } from '../../shared/types';
-import { decide, describeAction, matchingRule, suggestRules } from '../agents/permissions';
+import { decide, describeAction, harmless, matchingRule, splitCommand, suggestRules } from '../agents/permissions';
 import type { TurnStream } from '../agents/stream';
 import { bus, notify } from '../bus';
+import { recordFriction, SLOW_APPROVAL_MS } from '../friction';
 import { logger } from '../log';
 import { configOf } from '../projects';
 import { remindLater } from '../push';
@@ -69,6 +70,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     notify(`${bot.name} 需要你的确认`, desc.title, { chatId: chat.id, level: 'warn' });
     // Still open after a few minutes: a push to the phone (Bark), if one is set up.
     const cancelPush = remindLater(bot.name, chat.title || bot.name, desc.title);
+    const askedAt = Date.now();
     const decision = await new Promise<{ allow: boolean; always?: boolean; message?: string; expired?: boolean }>((resolve) => {
       approvals.set(part.id, { chatId: chat.id, botId: bot.id, part, stream, resolve });
       opts.signal?.addEventListener('abort', () => resolve({ allow: false, expired: true }), { once: true });
@@ -77,6 +79,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     approvals.delete(part.id);
     part.status = decision.allow ? 'allowed' : decision.expired ? 'expired' : 'denied';
     stream.updatePart(part);
+    noteApprovalFriction({ bot, chat, toolName, input, title: desc.title, because: d.because, decision, waitedMs: Date.now() - askedAt });
     setStatus(bot.id, { state: 'tool', detail: toolName, chatId: chat.id });
     const newRules = (part.rules || []).filter(Boolean);
     if (decision.allow && decision.always && newRules.length) {
@@ -126,5 +129,39 @@ export function denyApprovals(chatId: string, message: string) {
       a.resolve({ allow: false, message });
       approvals.delete(id);
     }
+  }
+}
+
+/**
+ * What an answered approval says about Crew's friction: denied, slow to answer, or a read-only
+ * command that a rule should not have stopped.
+ */
+function noteApprovalFriction(a: {
+  bot: Bot;
+  chat: Chat;
+  toolName: string;
+  input: Record<string, unknown>;
+  title: string;
+  because: string;
+  decision: { allow: boolean; expired?: boolean; message?: string };
+  waitedMs: number;
+}) {
+  const base = { chatId: a.chat.id, chatTitle: a.chat.title, botName: a.bot.name };
+  const command = a.toolName === 'Bash' ? String(a.input?.command || '') : '';
+  if (!a.decision.allow && !a.decision.expired) {
+    recordFriction({
+      ...base,
+      kind: 'approval-denied',
+      key: a.because,
+      detail: `${a.bot.name}：${a.title}${command ? ` — ${command}` : ''}${a.decision.message ? `（你说：${a.decision.message}）` : ''}`,
+    });
+  }
+  // In "ask every step" mode the user chose to see read-only commands too.
+  if (a.decision.allow && command && (a.chat.permission || a.bot.permission) !== 'ask') {
+    const segs = splitCommand(command).filter((s) => s.trim());
+    if (segs.length && segs.every(harmless)) recordFriction({ ...base, kind: 'approval-readonly', key: a.because, detail: `${a.bot.name}：${command}` });
+  }
+  if (!a.decision.expired && a.waitedMs >= SLOW_APPROVAL_MS) {
+    recordFriction({ ...base, kind: 'approval-slow', key: a.because, detail: `${a.bot.name} 等了 ${Math.round(a.waitedMs / 60_000)} 分钟：${a.title}` });
   }
 }

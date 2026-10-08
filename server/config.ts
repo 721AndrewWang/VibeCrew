@@ -34,6 +34,8 @@ export const DATA = {
   improvements: path.join(HOME_DIR, 'improvements.json'),
   /** Shadow routing decisions. */
   routing: path.join(HOME_DIR, 'routing.json'),
+  /** Moments Crew got in the way, one JSON line each (server/friction.ts). */
+  friction: path.join(HOME_DIR, 'friction.jsonl'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

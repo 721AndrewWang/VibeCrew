@@ -582,6 +582,28 @@ export interface SkillCandidate {
 }
 
 /** A proposed change to a bot's setup, backed by evidence from real turns; the user decides. */
+export type FrictionKind = 'stall' | 'hop-limit' | 'approval-denied' | 'approval-readonly' | 'approval-slow' | 'outside-edit' | 'turn-error';
+
+/** A moment Crew got in the way (server/friction.ts). `key` groups events with the same cause. */
+export interface FrictionEvent {
+  at: number;
+  kind: FrictionKind;
+  key: string;
+  detail: string;
+  chatId?: ID;
+  chatTitle?: string;
+  botName?: string;
+}
+
+export interface FrictionReport {
+  days: number;
+  since: number;
+  total: number;
+  kinds: { kind: FrictionKind; label: string; count: number; groups: { key: string; count: number; examples: FrictionEvent[] }[] }[];
+  /** A message for a group working on Crew itself; {lead} stands for its lead's name. Empty when nothing happened. */
+  brief: string;
+}
+
 export interface Improvement {
   id: ID;
   createdAt: number;

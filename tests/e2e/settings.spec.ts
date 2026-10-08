@@ -1,4 +1,6 @@
 // Settings pages in the browser: the logo picker and the deny list.
+import fs from 'node:fs';
+import path from 'node:path';
 import { expect, test } from './fixtures';
 
 test('picking a logo changes the app, the tab icon and what the server serves', async ({ page, crew }) => {
@@ -65,7 +67,7 @@ test('improvement proposals can be made, accepted and reverted from the bots pag
   await item.locator('button', { hasText: '接受' }).click();
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBe(true);
 
-  await panel.locator('.improve-toggle').click();
+  await panel.locator('.improve-toggle:not(.friction-toggle)').click();
   await panel.locator('.improve-row button', { hasText: '撤回' }).click();
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBeUndefined();
   await expect(panel.locator('.improve-row .badge')).toHaveText('已撤回');
@@ -116,4 +118,33 @@ test('a proposed setting change can be edited before it is accepted', async ({ p
   await item.locator('button', { hasText: '取消' }).click();
   await item.locator('button', { hasText: '接受' }).click();
   await expect.poll(async () => (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.id === chief.id).freshSession).toBe(true);
+});
+
+test('the friction report shows what got in the way and hands it to a group', async ({ page, crew }) => {
+  const b = await crew.api('GET', '/bootstrap');
+  const chief = b.bots.find((x: any) => x.name === 'Chief');
+  const group = await crew.api('POST', '/chats', { title: '维护小队', botIds: [chief.id], projectId: b.projects[0].id });
+  const at = Date.now() - 60_000;
+  const events = [
+    { at, kind: 'approval-readonly', key: 'Bash(ls*)', detail: 'Forge：ls -la', chatId: group.id, chatTitle: '维护小队' },
+    { at, kind: 'approval-readonly', key: 'Bash(ls*)', detail: 'Forge：ls src' },
+    { at, kind: 'stall', key: 'Chief 交回后没人接手', detail: 'Chief 停了' },
+  ];
+  fs.writeFileSync(path.join(crew.home, 'friction.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="机器人"]').click();
+  await page.locator('.friction-toggle').click();
+  const kinds = page.locator('.friction-kind');
+  await expect(kinds.first()).toContainText('只读命令也来问你');
+  await expect(kinds.first().locator('.badge')).toHaveText('2');
+  await expect(kinds.first().locator('.friction-group').first()).toContainText('Bash(ls*) × 2');
+  await expect(kinds.nth(1)).toContainText('接力停住');
+
+  await page.locator('.friction-body select').selectOption(group.id);
+  await page.locator('.friction-body button', { hasText: '交给小队去修' }).click();
+  await expect
+    .poll(async () => (await crew.api('GET', `/chats/${group.id}/messages?limit=5`)).messages.find((m: any) => m.role === 'user')?.text ?? '', { timeout: 10_000 })
+    .toContain('@Chief 这是 Crew 最近 7 天的摩擦报告');
+  await crew.api('POST', `/chats/${group.id}/stop`).catch(() => {});
 });

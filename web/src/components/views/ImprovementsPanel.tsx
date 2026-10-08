@@ -1,8 +1,8 @@
 import { Check, ChevronRight, Lightbulb, Pencil, RotateCcw, X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import type { Effort, ImprovableField, Improvement, ImprovementEffect, PermissionLevel, SkillCandidate, SkillDraft } from '../../../../shared/types';
+import type { Effort, FrictionReport, ImprovableField, Improvement, ImprovementEffect, PermissionLevel, SkillCandidate, SkillDraft } from '../../../../shared/types';
 import { api } from '../../api';
-import { openChat, toast } from '../../store';
+import { openChat, toast, useStore } from '../../store';
 import { cx, EFFORT_OPTIONS, fmtWhen, PERMISSION_INFO } from '../../utils';
 import { Toggle } from '../ui';
 import { fmtUsd } from './BotsView';
@@ -77,6 +77,7 @@ export function ImprovementsPanel() {
       ))}
       {items && !pending.length && <div className="muted improve-empty">现在没有待定的建议。</div>}
       <SkillCandidates onDrafted={load} />
+      <FrictionReportView />
       {done.length > 0 && (
         <>
           <button className="link-btn improve-toggle" onClick={() => setShowDone(!showDone)}>
@@ -453,6 +454,107 @@ function SettingEditor({ item, onSave, onCancel }: { item: Improvement; onSave: 
           {saving ? <span className="spinner tiny" /> : null} 保存修改
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Where Crew got in the way lately, grouped by cause, with a button that hands the report to a
+ * group working on Crew's own code. Nothing is sent until the user picks the group and clicks.
+ */
+function FrictionReportView() {
+  const [days, setDays] = useState(7);
+  const [report, setReport] = useState<FrictionReport | null>(null);
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState('');
+  const [sending, setSending] = useState(false);
+  const chats = useStore((s) => s.chats);
+  const bots = useStore((s) => s.bots);
+  const groups = Object.values(chats).filter((c) => c.kind === 'group' && c.leadBotId && bots[c.leadBotId]);
+
+  useEffect(() => {
+    if (!open) return;
+    api
+      .friction(days)
+      .then(setReport)
+      .catch((e) => toast('读取摩擦报告失败', (e as Error).message, 'error'));
+  }, [open, days]);
+
+  const send = async () => {
+    const chat = chats[target];
+    const lead = chat?.leadBotId ? bots[chat.leadBotId] : undefined;
+    if (!report?.brief || !chat || !lead) return;
+    setSending(true);
+    try {
+      await api.send(chat.id, report.brief.replace('{lead}', lead.name), []);
+      toast(`已交给「${chat.title}」`, `${lead.name} 会挑一条来修`, 'success');
+      openChat(chat.id);
+    } catch (e) {
+      toast('发送失败', (e as Error).message, 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="friction">
+      <button className="link-btn improve-toggle friction-toggle" onClick={() => setOpen(!open)}>
+        <ChevronRight size={12} className={cx('chev', open && 'open')} /> 摩擦报告：Crew 哪里碍事了
+      </button>
+      {open && (
+        <div className="friction-body">
+          <div className="row wrap">
+            <span className="hint">最近</span>
+            {[7, 14, 30].map((d) => (
+              <button key={d} className={cx('btn sm', days === d && 'primary')} onClick={() => setDays(d)}>
+                {d} 天
+              </button>
+            ))}
+          </div>
+          {!report && <span className="spinner tiny" />}
+          {report && !report.kinds.length && <div className="muted improve-empty">这段时间没有记录到摩擦。</div>}
+          {report?.kinds.map((k) => (
+            <div key={k.kind} className="friction-kind">
+              <div className="sr-title">
+                {k.label} <span className="badge">{k.count}</span>
+              </div>
+              {k.groups.map((g) => (
+                <div key={g.key} className="friction-group">
+                  <span className="mono">{g.key}</span> <span className="muted">× {g.count}</span>
+                  {g.examples[0] && (
+                    <div className="hint">
+                      {g.examples[0].detail}
+                      {g.examples[0].chatId && chats[g.examples[0].chatId] && (
+                        <>
+                          {' '}
+                          <button className="link-btn" onClick={() => openChat(g.examples[0].chatId!)}>
+                            打开「{chats[g.examples[0].chatId].title}」
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+          {report && report.kinds.length > 0 && (
+            <div className="row wrap">
+              <select className="input sm" value={target} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">选一个负责修 Crew 的群聊…</option>
+                {groups.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}（{bots[c.leadBotId!].name} 负责）
+                  </option>
+                ))}
+              </select>
+              <button className="btn sm primary" disabled={!target || sending} onClick={send} title="把报告发给这个群的负责人，让小队挑一条来修；合并、打包、重启仍然由你来">
+                交给小队去修
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
