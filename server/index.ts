@@ -6,7 +6,7 @@ import express from 'express';
 import { type WebSocket, WebSocketServer } from 'ws';
 import { appIconSvg } from '../shared/logos';
 import type { ClientEvent } from '../shared/types';
-import { apiRouter, lanUrl } from './api';
+import { apiRouter, lanUrl, tailscaleUrl } from './api';
 import { closeBrowser } from './browser';
 import { bus } from './bus';
 import { checkAuth } from './claudeAuth';
@@ -150,6 +150,8 @@ async function main() {
     console.log(`  本机访问：  ${local}`);
     const lan = lanUrl();
     if (lan) console.log(`  手机访问：  ${lan}`);
+    const ts = tailscaleUrl();
+    if (ts) console.log(`  Tailscale： ${ts}`);
     else if (lanAddress()) console.log('  手机访问：  未开启（可在「设置 → 手机访问」中打开）');
     console.log(`  数据目录：  ${HOME_DIR}`);
     console.log(`  Claude：    ${findClaudeExecutable() || '未找到'}`);

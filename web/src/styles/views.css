@@ -1639,6 +1639,14 @@
   background: var(--bg-sunken);
 }
 
+.access-link {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
 .qr-box {
   width: 180px;
   height: 180px;
