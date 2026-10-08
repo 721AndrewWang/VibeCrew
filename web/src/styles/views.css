@@ -2102,3 +2102,9 @@
   margin-bottom: 4px;
   word-break: break-word;
 }
+
+.cache-badge {
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}

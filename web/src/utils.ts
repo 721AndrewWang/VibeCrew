@@ -68,6 +68,14 @@ export function fmtRelative(ts: number) {
   return diff >= 0 ? `${n} ${unit[1]}后` : `${n} ${unit[1]}前`;
 }
 
+/** Token counts: 950, 1.2k, 45k, 1.3M. */
+export function fmtTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
 export function fmtBytes(n?: number) {
   if (n === undefined) return '';
   if (n < 1024) return `${n} B`;

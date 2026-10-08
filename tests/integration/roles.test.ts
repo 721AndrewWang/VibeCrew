@@ -79,13 +79,27 @@ describe('spend and budget', () => {
     expect((await crew.api('GET', '/bootstrap')).usage[bot.id].month.costUsd).toBeCloseTo(0.01, 5);
   });
 
+  it("counts each turn's own share of the session's running totals, with the cache it read", async () => {
+    await turn('再来');
+    await turn('第三轮');
+    const u = (await crew.api('GET', '/usage'))[bot.id].month;
+    expect(u.turns).toBe(3);
+    // The demo agent reports 0.01, 0.02, 0.03 as the session goes: three cents, not six.
+    expect(u.costUsd).toBeCloseTo(0.03, 5);
+    expect(u.tokenTurns).toBe(3);
+    // Re-reads of 17.5k, 23k and 28.5k; 2k written to the cache and 50 uncached each turn.
+    expect(u.tokens).toEqual({ input: 150, cacheRead: 69_000, cacheWrite: 6_000, output: 360 });
+    expect(u.peak.cacheRead).toBe(28_500);
+    expect(u.peak.chatId).toBe(chatId);
+  });
+
   it('stops the bot once the monthly budget is spent, and tells the chat once', async () => {
-    expect((await crew.api('PATCH', `/bots/${bot.id}`, { monthlyBudgetUsd: 0.015 })).monthlyBudgetUsd).toBe(0.015);
-    await turn('再来一次'); // 0.02 ≥ 0.015 after this one
+    expect((await crew.api('PATCH', `/bots/${bot.id}`, { monthlyBudgetUsd: 0.035 })).monthlyBudgetUsd).toBe(0.035);
+    await turn('再来一次'); // 0.04 ≥ 0.035 after this one
     const before = (await crew.api('GET', `/chats/${chatId}/messages?limit=30`)).messages.length;
     const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '还能干活吗' });
     await waitFor(async () => (await lastSystem(chatId)).includes('预算'), 10_000);
-    expect(await lastSystem(chatId)).toContain('$0.02');
+    expect(await lastSystem(chatId)).toContain('$0.04');
     await new Promise((r) => setTimeout(r, 1500));
     const { messages } = await crew.api('GET', `/chats/${chatId}/messages?limit=30`);
     expect(messages.some((m: any) => m.role === 'bot' && m.seq > sent.seq)).toBe(false);

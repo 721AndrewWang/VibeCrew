@@ -332,6 +332,13 @@ export class FakeSession implements AgentSession {
 
   private turns = 0;
 
+  /** Cache reads over the session so far: each turn re-reads what came before it. */
+  private readSoFar() {
+    let sum = 0;
+    for (let t = 1; t <= this.turns; t++) sum += 12_000 + t * 5_500;
+    return sum;
+  }
+
   async contextUsage(): Promise<Omit<ContextUsage, 'at'> | null> {
     const used = 14_000 + this.turns * 5_500;
     return { model: this.cfg.model || 'claude-opus-5-5', used, max: 200_000, percentage: Math.round((used / 200_000) * 100) };
@@ -442,10 +449,18 @@ export class FakeSession implements AgentSession {
         num_turns: 3,
         result: 'ok',
         stop_reason: 'end_turn',
-        // A demo turn costs a cent, so budgets and spend are visible in the UI and testable.
-        total_cost_usd: 0.01,
+        // A demo turn costs a cent, so budgets and spend are visible in the UI and testable. Like
+        // Claude Code, cost and tokens are running totals for the session.
+        total_cost_usd: 0.01 * this.turns,
         usage: {},
-        modelUsage: { [this.cfg.model || 'claude-opus-5-5']: { outputTokens: 120 } },
+        modelUsage: {
+          [this.cfg.model || 'claude-opus-5-5']: {
+            inputTokens: 50 * this.turns,
+            cacheReadInputTokens: this.readSoFar(),
+            cacheCreationInputTokens: 2_000 * this.turns,
+            outputTokens: 120 * this.turns,
+          },
+        },
         permission_denials: [],
       } as unknown as SDKResultMessage;
       emit(result);
