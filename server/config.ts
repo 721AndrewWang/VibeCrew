@@ -188,13 +188,29 @@ export function findChrome(): string | null {
   return null;
 }
 
+/** Tailscale gives each device an address in 100.64.0.0/10 (the carrier-grade NAT range). */
+export function isTailscaleIp(ip: string): boolean {
+  const m = /^100\.(\d+)\.\d+\.\d+$/.exec(ip);
+  return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+}
+
+/** Interfaces that are not the machine's own network: containers, bridges, VPN tunnels. */
+const VIRTUAL_IFACE = /^(docker|br-|veth|virbr|vmnet|vboxnet|tailscale|utun|tun|wg|zt)/;
+
+function ipv4s(): { name: string; address: string }[] {
+  return Object.entries(os.networkInterfaces()).flatMap(([name, list]) =>
+    (list || []).filter((i) => i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.')).map((i) => ({ name, address: i.address })),
+  );
+}
+
+/** The address other devices on the local network reach this machine at. */
 export function lanAddress(): string | null {
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const i of list || []) {
-      if (i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.')) return i.address;
-    }
-  }
-  return null;
+  return ipv4s().find((i) => !VIRTUAL_IFACE.test(i.name) && !isTailscaleIp(i.address))?.address ?? null;
+}
+
+/** This machine's address in the user's tailnet, when Tailscale is running. */
+export function tailscaleAddress(): string | null {
+  return ipv4s().find((i) => isTailscaleIp(i.address))?.address ?? null;
 }
 
 /**

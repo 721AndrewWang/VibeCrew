@@ -110,7 +110,7 @@ export const api = {
   friction: (days = 7) => get<FrictionReport>(`/api/friction?days=${days}`),
   /** Sends a test push to the saved Bark address. */
   testPush: () => post<{ ok: boolean }>('/api/settings/push-test'),
-  lan: () => get<{ url?: string; qr: string | null; pluginSecretKeys: string[] }>('/api/lan'),
+  lan: () => get<{ url?: string; qr: string | null; tailscaleUrl?: string; tailscaleQr: string | null; pluginSecretKeys: string[] }>('/api/lan'),
 
   createBot: (b: Partial<Bot> & { template?: string }) => post<Bot>('/api/bots', b),
   updateBot: (id: string, b: Partial<Bot>) => patch<Bot>(`/api/bots/${id}`, b),

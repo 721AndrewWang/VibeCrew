@@ -10,7 +10,7 @@ import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder
 import { hasBrowser, screenshot } from './browser';
 import { bus } from './bus';
 import { authStatus, checkAuth, testConnection } from './claudeAuth';
-import { APP_VERSION, lanAddress } from './config';
+import { APP_VERSION, lanAddress, tailscaleAddress } from './config';
 import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
 import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
@@ -71,11 +71,19 @@ import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWork
 
 const log = logger('api');
 
-export function lanUrl(): string | undefined {
+function accessUrl(ip: string | null): string | undefined {
   const s = settings.get();
-  const ip = lanAddress();
   if (!s.lanEnabled || !ip) return undefined;
   return `http://${ip}:${s.port}/?token=${encodeURIComponent(s.token)}`;
+}
+
+export function lanUrl(): string | undefined {
+  return accessUrl(lanAddress());
+}
+
+/** The same link through Tailscale: works from anywhere the phone is in the user's tailnet. */
+export function tailscaleUrl(): string | undefined {
+  return accessUrl(tailscaleAddress());
 }
 
 function bootstrap(): Bootstrap {
@@ -248,7 +256,9 @@ export function apiRouter() {
 
   r.get('/lan', async (_req, res) => {
     const url = lanUrl();
-    res.json({ url, qr: url ? await QRCode.toString(url, { type: 'svg', margin: 1, width: 220 }) : null, pluginSecretKeys: Object.keys(settings.get().pluginSecrets || {}) });
+    const ts = tailscaleUrl();
+    const qr = (u?: string) => (u ? QRCode.toString(u, { type: 'svg', margin: 1, width: 220 }) : null);
+    res.json({ url, qr: await qr(url), tailscaleUrl: ts, tailscaleQr: await qr(ts), pluginSecretKeys: Object.keys(settings.get().pluginSecrets || {}) });
   });
 
   // ------------------------------------------------------------ bots

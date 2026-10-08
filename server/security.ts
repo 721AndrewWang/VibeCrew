@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type http from 'node:http';
 import type { NextFunction, Request, Response } from 'express';
-import { lanAddress } from './config';
+import { isTailscaleIp, lanAddress } from './config';
 import { settings } from './store';
 
 const COOKIE = 'vc_token';
@@ -41,7 +41,8 @@ export function hostAllowed(host: string | undefined): boolean {
   const h = hostname(host);
   if (isLocalHostname(h)) return true;
   if (!settings.get().lanEnabled) return false;
-  return h === lanAddress() || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.\d+(\.\d+)?$/.test(h) || h.endsWith('.local');
+  // Tailscale: the tailnet address, or its MagicDNS name (also what `tailscale serve` forwards).
+  return h === lanAddress() || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.\d+(\.\d+)?$/.test(h) || h.endsWith('.local') || isTailscaleIp(h) || h.endsWith('.ts.net');
 }
 
 function tokenOf(req: http.IncomingMessage): string | null {
