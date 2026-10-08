@@ -220,7 +220,23 @@ export interface ChatMessage {
   turnId?: ID;
   trigger?: MessageTrigger;
   /** model: the one that did most of the turn (Claude Code may use a small model on the side). */
-  meta?: { costUsd?: number; durationMs?: number; numTurns?: number; model?: string; trace?: TraceRef; verdict?: { refuted: number } };
+  meta?: {
+    /** This turn's cost. */
+    costUsd?: number;
+    /** The session's running total after this turn, as Claude Code reports it (absent on turns saved before it was kept). */
+    sessionCostUsd?: number;
+    /** The Claude Code session the turn ran in. */
+    sessionId?: string;
+    /** This turn's tokens, all models. */
+    tokens?: TurnTokens;
+    /** The session's running token totals after this turn. */
+    sessionTokens?: TurnTokens;
+    durationMs?: number;
+    numTurns?: number;
+    model?: string;
+    trace?: TraceRef;
+    verdict?: { refuted: number };
+  };
   /** Files changed by this bot turn. */
   changes?: { files: string[]; reverted?: boolean };
   /** A note for the human only; never included in bot prompts. */
@@ -685,10 +701,22 @@ export interface ModelOption {
 }
 
 /** What a bot's turns cost over a period. */
+export interface TurnTokens {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+}
+
 export interface BotUsage {
   costUsd: number;
   turns: number;
   durationMs: number;
+  /** Summed over the turns that recorded tokens (`tokenTurns` of them). */
+  tokens: TurnTokens;
+  tokenTurns: number;
+  /** The turn that re-read the most from the cache. */
+  peak?: { chatId: string; messageId: string; cacheRead: number };
 }
 
 export interface UsageSummary {

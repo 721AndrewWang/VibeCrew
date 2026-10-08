@@ -1,5 +1,5 @@
 import type { SDKMessage, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { ChatMessage, MessagePart, ToolPart } from '../../shared/types';
+import type { ChatMessage, MessagePart, ToolPart, TurnTokens } from '../../shared/types';
 import { bus } from '../bus';
 import { saveUpload } from '../uploads';
 
@@ -182,7 +182,14 @@ export class TurnStream {
   }
 
   finish(result: SDKResultMessage) {
-    this.msg.meta = { costUsd: result.total_cost_usd, durationMs: result.duration_ms, numTurns: result.num_turns, model: mainModel(result.modelUsage) };
+    // Claude Code reports running totals for the whole session; the orchestrator turns them into this turn's share.
+    this.msg.meta = {
+      sessionCostUsd: result.total_cost_usd,
+      sessionTokens: sumTokens(result.modelUsage),
+      durationMs: result.duration_ms,
+      numTurns: result.num_turns,
+      model: mainModel(result.modelUsage),
+    };
     const isError = result.is_error || result.subtype !== 'success';
     if (this.stopped) {
       this.msg.status = 'stopped';
@@ -220,6 +227,17 @@ export class TurnStream {
 }
 
 /** The model that produced most of a turn's output. */
+function sumTokens(usage: SDKResultMessage['modelUsage'] | undefined): TurnTokens {
+  const t: TurnTokens = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  for (const u of Object.values(usage || {})) {
+    t.input += u.inputTokens || 0;
+    t.cacheRead += u.cacheReadInputTokens || 0;
+    t.cacheWrite += u.cacheCreationInputTokens || 0;
+    t.output += u.outputTokens || 0;
+  }
+  return t;
+}
+
 function mainModel(usage: Record<string, { outputTokens?: number }> | undefined): string | undefined {
   const entries = Object.entries(usage || {});
   if (!entries.length) return undefined;

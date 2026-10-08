@@ -148,3 +148,19 @@ test('the friction report shows what got in the way and hands it to a group', as
     .toContain('@Chief 这是 Crew 最近 7 天的摩擦报告');
   await crew.api('POST', `/chats/${group.id}/stop`).catch(() => {});
 });
+
+test('the bot card shows the cache hit rate and the average re-read per turn', async ({ page, crew }) => {
+  const b = await crew.api('GET', '/bootstrap');
+  const chief = b.bots.find((x: any) => x.name === 'Chief');
+  const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
+  for (const text of ['你好', '再说一句']) {
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text });
+    await expect.poll(async () => (await crew.api('GET', `/chats/${dm.id}/messages?limit=8`)).messages.some((m: any) => m.seq > sent.seq && m.status === 'done'), { timeout: 20_000 }).toBe(true);
+  }
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="机器人"]').click();
+  // Re-reads of 17.5k and 23k against 4k written and 100 uncached: 91%, 20k a turn.
+  const badge = page.locator('.cache-badge');
+  await expect(badge).toContainText('缓存命中 91% · 每轮重读 20k');
+  await expect(badge).toHaveAttribute('title', /重读最多的一轮：23k/);
+});

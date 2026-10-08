@@ -23,7 +23,7 @@ import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { continueNote, leadContinues, stalledLead, stallNote } from '../stall';
 import { bots, chats, messages, projects, settings, uid } from '../store';
-import { monthSpend, usageOf } from '../usage';
+import { monthSpend, shareOfTurn, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
 import { setStatus } from './botStatus';
 import { ALL_RE, emitChat, parseMentions, preview, setLastMessage, systemMessage } from './chatLog';
@@ -472,6 +472,8 @@ async function runTurn(job: Job) {
     stream.finish(result);
     // Where to find this turn in Claude Code's transcript (none for the demo agent).
     if (session.sessionId && !session.sessionId.startsWith('fake-')) msg.meta = { ...msg.meta, trace: { sessionId: session.sessionId, cwd, from: msg.ts, to: Date.now() } };
+    if (session.sessionId) msg.meta = { ...msg.meta, sessionId: session.sessionId };
+    shareOfTurn(msg);
     void recordContext(chat.id, bot.id, session);
   } catch (e) {
     stream.fail(e);

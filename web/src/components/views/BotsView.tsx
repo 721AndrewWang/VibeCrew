@@ -1,9 +1,9 @@
-import { ChevronLeft, Coins, FolderGit2, MessageCircle, MoreHorizontal, Plus, Puzzle, Scissors, Settings, Trash2, UserPlus, Users } from 'lucide-react';
+import { ChevronLeft, Coins, Database, FolderGit2, MessageCircle, MoreHorizontal, Plus, Puzzle, Scissors, Settings, Trash2, UserPlus, Users } from 'lucide-react';
 import { type ReactNode, useMemo } from 'react';
-import type { Bot, ModelOption } from '../../../../shared/types';
+import type { Bot, BotUsage, ModelOption } from '../../../../shared/types';
 import { api } from '../../api';
 import { dmOf, openChat, openModal, toast, useStore } from '../../store';
-import { cx, PERMISSION_INFO, statusLabel } from '../../utils';
+import { cx, fmtTokens, PERMISSION_INFO, statusLabel } from '../../utils';
 import { Avatar, confirmDialog, Glyph, MenuButton } from '../ui';
 import { ImprovementsPanel } from './ImprovementsPanel';
 
@@ -69,6 +69,30 @@ export function messageBot(botId: string) {
 
 const TONE_DOT: Record<string, string> = { idle: '', busy: 'green pulse', wait: 'orange pulse', error: 'red', queued: 'blue pulse' };
 
+/**
+ * How much of what the bot read came from the cache, and how much a turn re-reads on average: a
+ * long turn re-reads its whole context at every tool call. Click to open the turn that read most.
+ */
+function CacheBadge({ usage }: { usage: BotUsage }) {
+  const t = usage.tokens;
+  const read = t.input + t.cacheRead + t.cacheWrite;
+  const hit = read ? Math.round((t.cacheRead / read) * 100) : 0;
+  const perTurn = t.cacheRead / usage.tokenTurns;
+  const peak = usage.peak;
+  const title = [
+    `本月 ${usage.tokenTurns} 轮：读取 ${fmtTokens(read)}，其中缓存命中 ${fmtTokens(t.cacheRead)}、写入缓存 ${fmtTokens(t.cacheWrite)}、未缓存 ${fmtTokens(t.input)}；输出 ${fmtTokens(t.output)}。`,
+    '一轮里每调用一次工具都要把上下文重读一遍，所以重读量主要看一轮做了多少步、上下文有多长。',
+    peak ? `重读最多的一轮：${fmtTokens(peak.cacheRead)}，点一下打开那个对话。` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return (
+    <button type="button" className="badge cache-badge" title={title} onClick={() => peak && openChat(peak.chatId)}>
+      <Database size={11} /> 缓存命中 {hit}% · 每轮重读 {fmtTokens(perTurn)}
+    </button>
+  );
+}
+
 function BotCard({ bot }: { bot: Bot }) {
   const status = useStore((s) => s.statuses[bot.id]);
   const models = useStore((s) => s.models);
@@ -122,6 +146,7 @@ function BotCard({ bot }: { bot: Bot }) {
             {bot.monthlyBudgetUsd ? ` / ${fmtUsd(bot.monthlyBudgetUsd)}` : ''} · {usage.month.turns} 轮
           </span>
         ) : null}
+        {usage?.month.tokenTurns ? <CacheBadge usage={usage.month} /> : null}
         {bot.plugins.length > 0 && (
           <span className="badge accent">
             <Puzzle size={11} /> {bot.plugins.length} 个插件
