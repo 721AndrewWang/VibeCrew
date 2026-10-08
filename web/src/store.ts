@@ -158,6 +158,7 @@ export const useStore = create<AppState>(() => ({
     sandbox: { enabled: false, allowedDomains: [] },
     routing: { mode: 'off' },
     rotateAtTokens: 60_000,
+    wrapUpAtTokens: 120_000,
     push: { configured: false, afterMinutes: 10 },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },

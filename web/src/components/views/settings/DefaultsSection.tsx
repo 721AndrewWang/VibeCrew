@@ -15,6 +15,7 @@ export function DefaultsSection() {
   const [projectsRoot, setProjectsRoot] = useState(settings.projectsRoot);
   const [denyRules, setDenyRules] = useState((settings.denyRules || []).join('\n'));
   const [rotateK, setRotateK] = useState(Math.round(settings.rotateAtTokens / 1000));
+  const [wrapUpK, setWrapUpK] = useState(Math.round(settings.wrapUpAtTokens / 1000));
   const [saving, setSaving] = useState(false);
   const denyList = denyRules
     .split('\n')
@@ -27,7 +28,8 @@ export function DefaultsSection() {
     maxHops !== settings.maxHops ||
     projectsRoot !== settings.projectsRoot ||
     denyList.join('\n') !== (settings.denyRules || []).join('\n') ||
-    rotateK * 1000 !== settings.rotateAtTokens;
+    rotateK * 1000 !== settings.rotateAtTokens ||
+    wrapUpK * 1000 !== settings.wrapUpAtTokens;
 
   const save = async () => {
     setSaving(true);
@@ -39,6 +41,7 @@ export function DefaultsSection() {
         maxHops: hops,
         denyRules: denyList,
         rotateAtTokens: Math.max(0, Math.round(rotateK) || 0) * 1000,
+        wrapUpAtTokens: Math.max(0, Math.round(wrapUpK) || 0) * 1000,
         ...(projectsRoot.trim() ? { projectsRoot: projectsRoot.trim() } : {}),
       });
       useStore.setState({ settings: r.settings });
@@ -80,6 +83,13 @@ export function DefaultsSection() {
           <label>上下文超过多少换新会话（k token）</label>
           <input className="input num-input" type="number" min={0} step={10} value={rotateK} onChange={(e) => setRotateK(Number(e.target.value))} />
           <div className="hint">续上的会话每次调用都要把全部历史重读一遍，越聊越贵。超过这个大小，下一轮换成新会话，带上最近 12 条消息。新会话本身大约 40k。填 0 就不换。</div>
+        </div>
+        <div className="field">
+          <label>一轮里上下文超过多少提醒收尾（k token）</label>
+          <input className="input num-input" type="number" min={0} step={10} value={wrapUpK} onChange={(e) => setWrapUpK(Number(e.target.value))} />
+          <div className="hint">
+            一轮里每调用一次工具，都要把整段上下文重读一遍，长任务越做越贵。超过这个大小，提醒机器人做完手上这一步就收尾：写下做完了什么、还剩什么，交回去，下一轮用新会话接着做。填 0 就不提醒。
+          </div>
         </div>
         <div className="field">
           <label>项目文件夹</label>

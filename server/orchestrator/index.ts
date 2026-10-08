@@ -132,6 +132,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
     denyRules: settings.get().denyRules || [],
     deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir()),
+    wrapUpAt: () => settings.get().wrapUpAtTokens,
     attributionOff: !!conf?.noAttribution,
     sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
     mcpServers: {
@@ -193,6 +194,17 @@ export const COMPLEX_TURN_TOOLS = 5;
 
 /** Sessions to start over on their next turn, with how many tokens they had grown to. */
 const rotateNext = new Map<string, number>();
+/**
+ * The size saved with the chat, for a session that outgrew the limit before Crew restarted (the
+ * in-memory mark is gone, the session is resumed from disk).
+ */
+function savedOversize(chat: Chat, bot: Bot): number | undefined {
+  const limit = settings.get().rotateAtTokens;
+  const used = chat.context?.[bot.id]?.used ?? 0;
+  if (limit > 0 && chat.sessions[bot.id] && used >= limit && !bots.get(bot.id)?.freshSession) return used;
+  return undefined;
+}
+
 /** Messages a started-over session gets again. */
 const RECAP_MESSAGES = 12;
 
@@ -202,11 +214,13 @@ const RECAP_MESSAGES = 12;
  */
 function rotateSession(chat: Chat, bot: Bot): number | null {
   const key = sessionKey(chat.id, bot.id);
-  const tokens = rotateNext.get(key);
+  const tokens = rotateNext.get(key) ?? savedOversize(chat, bot);
   if (tokens === undefined) return null;
   rotateNext.delete(key);
   closeSession(key);
   delete chat.sessions[bot.id];
+  // The size belonged to the old session; the new one reports its own after the turn.
+  if (chat.context?.[bot.id]) delete chat.context[bot.id];
   const recent = messages
     .sorted(chat.id)
     .filter((m) => !m.uiOnly && m.status !== 'streaming')

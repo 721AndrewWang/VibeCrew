@@ -104,6 +104,7 @@ export interface Settings {
   sandbox: SandboxSettings;
   routing: { mode: 'off' | 'shadow' };
   rotateAtTokens: number;
+  wrapUpAtTokens: number;
   /** Secret for LAN access and API calls. */
   token: string;
   /** Values for ${VAR} placeholders in plugin configs (e.g. GITHUB_TOKEN). */
@@ -131,6 +132,7 @@ const DEFAULT_SETTINGS: Settings = {
   sandbox: { enabled: true, allowedDomains: [...DEFAULT_ALLOWED] },
   routing: { mode: 'shadow' },
   rotateAtTokens: 60_000,
+  wrapUpAtTokens: 120_000,
   token: '',
   pluginSecrets: {},
   push: { barkUrl: '', afterMinutes: 10 },
@@ -180,6 +182,7 @@ class SettingsStore {
       sandbox: s.sandbox || { enabled: false, allowedDomains: [] },
       routing: s.routing || { mode: 'off' },
       rotateAtTokens: s.rotateAtTokens ?? 60_000,
+      wrapUpAtTokens: s.wrapUpAtTokens ?? 120_000,
       push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
     };
   }

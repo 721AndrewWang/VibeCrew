@@ -1,19 +1,25 @@
 // A resumed session that has grown past the threshold starts over on its next turn, with the
 // recent messages again; checking roles that start fresh anyway are left alone.
+import fs from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type CrewServer, startServer, waitTurn } from '../helpers/server';
+import { type CrewServer, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
+
+const dir = tempDir('crew-rotation');
 
 let crew: CrewServer;
 let chiefDm: string;
 let chief: any;
 
 beforeAll(async () => {
-  crew = await startServer();
+  crew = await startServer({ dir });
   const b = await crew.api('GET', '/bootstrap');
   chief = b.bots.find((x: any) => x.name === 'Chief');
   chiefDm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id).id;
 });
-afterAll(() => crew?.stop());
+afterAll(async () => {
+  await crew?.stop();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 const turn = async (chatId: string, text: string) => {
   const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text });
@@ -47,6 +53,23 @@ describe('session rotation', () => {
     expect(n[0].text).toMatch(/Chief 的会话上下文到了 25k token，这一轮换成新会话，带上最近 \d+ 条消息/);
     expect(await sessionOf(chiefDm, chief.id)).not.toBe(before);
     expect((await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.id === chiefDm).context[chief.id].used).toBe(19_500);
+  });
+
+  it('still starts over when Crew restarted after the session outgrew the threshold', async () => {
+    const pixel = (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.name === 'Pixel');
+    const pixelDm = (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === pixel.id).id;
+    await turn(pixelDm, '一');
+    await turn(pixelDm, '二'); // 25k: marked, but only in memory
+    const before = await sessionOf(pixelDm, pixel.id);
+    await waitFor(async () => ((await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.id === pixelDm).context?.[pixel.id]?.used ?? 0) >= 25_000);
+    await new Promise((r) => setTimeout(r, 600)); // the debounced save
+    await crew.kill();
+    crew = await startServer({ dir });
+    await turn(pixelDm, '三');
+    const n = await notes(pixelDm);
+    expect(n).toHaveLength(1);
+    expect(n[0].text).toContain('Pixel 的会话上下文到了 25k token');
+    expect(await sessionOf(pixelDm, pixel.id)).not.toBe(before);
   });
 
   it('leaves fresh-session roles alone, and does nothing when switched off', async () => {
