@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { internal } from './bus';
 import { devServer } from './devserver';
+import { recordFriction } from './friction';
 import { projectBusy, systemMessage } from './orchestrator';
 import { chatProjectId } from './projects';
 import { isQuiet } from './quietWrites';
@@ -122,6 +123,8 @@ function flush(projectId: string) {
   const who = byEditor ? '用户在 Crew 的编辑器里改了文件' : '有文件在聊天之外被改了（不是这个对话里的机器人改的，可能是用户手动改的，或者别的程序、git 操作）';
   const text = `${who}：\n${lines.join('\n')}\n以文件现在的内容为准；如果和聊天里之前的要求不一致，按现在的文件来，拿不准就先问用户。`;
   for (const chat of chats.all()) if (chatProjectId(chat) === projectId) systemMessage(chat, text, { notice: 'outside-edit' });
+  // One event per path, so a path that keeps showing up (a placeholder Crew should skip) stands out.
+  if (!byEditor) for (const [rel] of entries.slice(0, MAX_FILES)) recordFriction({ kind: 'outside-edit', key: rel, detail: `${project.name}：${rel}` });
 }
 
 function onFiles(projectId: string, paths: string[]) {

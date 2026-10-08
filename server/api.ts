@@ -15,6 +15,7 @@ import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
 import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
+import { frictionReport } from './friction';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
@@ -207,6 +208,10 @@ export function apiRouter() {
 
   // ------------------------------------------------------------ improvements
   r.get('/improvements', (_req, res) => res.json(listImprovements()));
+  r.get('/friction', (req, res) => {
+    const days = Math.max(1, Math.min(90, Math.round(Number(req.query.days) || 7)));
+    res.json(frictionReport(days));
+  });
   r.post('/improvements/run', async (_req, res) => res.json(await proposeImprovements()));
   r.post('/improvements/:id/accept', (req, res) => res.json(acceptImprovement(req.params.id)));
   r.post('/improvements/:id/reject', (req, res) => res.json({ improvement: rejectImprovement(req.params.id, body(ImprovementReject, req.body).note) }));

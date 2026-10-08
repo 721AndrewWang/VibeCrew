@@ -75,4 +75,15 @@ describe('approval cards', () => {
     const reply = await waitTurn(crew.api, chatId, sent.seq);
     expect(reply.parts.find((p: any) => p.type === 'approval').status).toBe('denied');
   });
+
+  it('a refusal is recorded as friction; read-only commands asked in "ask every step" mode are not', async () => {
+    const r = await crew.api('GET', '/friction?days=7');
+    const denied = r.kinds.find((k: any) => k.kind === 'approval-denied');
+    expect(denied.groups[0].key).toBe('项目的「必须确认」规则 Bash(ls*)');
+    expect(denied.groups[0].examples[0].detail).toContain('（你说：别列文件）');
+    // The second test allowed ls under a project rule in auto mode: a rule that stopped a read-only command.
+    const readonly = r.kinds.find((k: any) => k.kind === 'approval-readonly');
+    expect(readonly.groups.map((g: any) => g.key)).toEqual(['项目的「必须确认」规则 Bash(ls*)']);
+    expect(r.brief).toContain('@{lead}');
+  });
 });

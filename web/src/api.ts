@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   DevServerState,
   Effort,
+  FrictionReport,
   Improvement,
   ImprovementEffect,
   PermissionLevel,
@@ -106,6 +107,7 @@ export const api = {
   updateSettings: (p: Record<string, unknown>) => patch<{ settings: PublicSettings; lanUrl?: string }>('/api/settings', p),
   /** One tiny prompt through Claude Code with these (unsaved) connection settings. */
   testConnection: (p: Record<string, unknown>) => post<{ ok: boolean; text: string; models?: string[]; ms: number }>('/api/settings/test-connection', p),
+  friction: (days = 7) => get<FrictionReport>(`/api/friction?days=${days}`),
   /** Sends a test push to the saved Bark address. */
   testPush: () => post<{ ok: boolean }>('/api/settings/push-test'),
   lan: () => get<{ url?: string; qr: string | null; pluginSecretKeys: string[] }>('/api/lan'),

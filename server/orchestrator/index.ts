@@ -12,6 +12,7 @@ import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { FAKE_AGENT } from '../config';
+import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
@@ -504,8 +505,11 @@ async function runTurn(job: Job) {
     systemMessage(fresh, `没能把这一轮的改动提交到分支 ${project.workspace.branch}：${commitError}。改动还在工作区的文件里，但在解决这个问题之前没法合并。`, { uiOnly: true });
   }
   settleStatus(bot.id, msg.status === 'error' ? msg.error?.slice(0, 80) : undefined);
-  if (msg.status === 'error') notify(`${bot.name} 出错了`, msg.error?.slice(0, 140) || '', { chatId: chat.id, level: 'error' });
-  else if (msg.status === 'done') notify(`${bot.name} 完成了`, preview(msg.text).slice(0, 100) || '任务完成', { chatId: chat.id, level: 'success' });
+  if (msg.status === 'error') {
+    notify(`${bot.name} 出错了`, msg.error?.slice(0, 140) || '', { chatId: chat.id, level: 'error' });
+    const what = (msg.error || '未知错误').split('\n')[0].slice(0, 80);
+    recordFriction({ kind: 'turn-error', key: `${bot.name}：${what}`, detail: msg.error || '', chatId: chat.id, chatTitle: chat.title, botName: bot.name });
+  } else if (msg.status === 'done') notify(`${bot.name} 完成了`, preview(msg.text).slice(0, 100) || '任务完成', { chatId: chat.id, level: 'success' });
 
   // Bot-to-bot handoffs.
   let mentioned: Bot[] = [];
@@ -517,6 +521,7 @@ async function runTurn(job: Job) {
         for (const m of mentioned) enqueue({ chatId: fresh.id, botId: m.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: job.hopsLeft - 1 });
       } else {
         systemMessage(fresh, `自动接力已达到上限（${fresh.maxHops} 次）。回复一条消息即可让大家继续。`, { uiOnly: true });
+        recordFriction({ kind: 'hop-limit', key: `「${fresh.title}」上限 ${fresh.maxHops} 次`, detail: `${bot.name} 之后停住`, chatId: fresh.id, chatTitle: fresh.title, botName: bot.name });
       }
     }
   }
@@ -537,6 +542,7 @@ async function runTurn(job: Job) {
     });
     if (lead) {
       systemMessage(fresh, stallNote(bot.name, lead.name), { notice: 'stall' });
+      recordFriction({ kind: 'stall', key: `${bot.name} 交回后没人接手`, detail: msg.text.replace(/\s+/g, ' ').slice(0, 120), chatId: fresh.id, chatTitle: fresh.title, botName: bot.name });
       // As a handoff from the teammate, so the lead reads its report in full.
       enqueue({ chatId: fresh.id, botId: lead.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: fresh.maxHops });
     } else if (leadContinues({ chat: fresh, bot, msg, mentioned, history: messages.sorted(fresh.id) })) {

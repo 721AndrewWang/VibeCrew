@@ -2086,3 +2086,19 @@
   gap: 8px;
   padding: 8px 0;
 }
+
+.friction-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0 4px 18px;
+}
+.friction-kind .sr-title {
+  margin-bottom: 4px;
+}
+.friction-group {
+  padding: 2px 0 4px 8px;
+  border-left: 2px solid var(--border);
+  margin-bottom: 4px;
+  word-break: break-word;
+}
