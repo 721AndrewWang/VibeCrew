@@ -336,11 +336,26 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
 
 /** The rule "always allow" adds for this action. */
 /** The rule for one simple command, e.g. "git log --oneline" → Bash(git log*). */
+/** Shell syntax that can start a command part without being the command: `{ a; }`, `if x; then y; fi`. */
+const SHELL_SYNTAX = new Set(['{', '}', '(', ')', '!', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'time']);
+
+/** The words of a command part from the command on: no grouping, control words or VAR=value. */
+function commandWords(seg: string): string[] {
+  const tokens = seg.trim().replace(/\)+$/, '').split(/\s+/).filter(Boolean);
+  for (;;) {
+    if (tokens.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+    else if (tokens.length && SHELL_SYNTAX.has(tokens[0])) tokens.shift();
+    else if (tokens.length && /^\(+./.test(tokens[0])) tokens[0] = tokens[0].replace(/^\(+/, '');
+    else break;
+  }
+  return tokens;
+}
+
 function commandRule(seg: string): string | undefined {
-  // Leading VAR=value assignments are not the command.
-  const tokens = seg.trim().split(/\s+/).filter(Boolean);
-  while (tokens.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
-  if (!tokens.length) return undefined;
+  const tokens = commandWords(seg);
+  // Nothing left, or a command that is itself syntax or an expansion (`[`, `$(…)`, `for`, `case`):
+  // no rule beats a rule that allows far more than was asked.
+  if (!tokens.length || !/^[A-Za-z0-9_.~/][\w.~/+-]*$/.test(tokens[0]) || tokens[0] === 'for' || tokens[0] === 'case') return undefined;
   if (/^(npm|pnpm|yarn|bun)$/.test(tokens[0]) && tokens[1] === 'run' && tokens[2]) return `Bash(${tokens.slice(0, 3).join(' ')}*)`;
   if (/^(npm|pnpm|yarn|bun|npx|bunx|uv|uvx|git|node|python3?|pip3?|docker|cargo|go|make)$/.test(tokens[0]) && tokens[1] && !tokens[1].startsWith('-')) return `Bash(${tokens[0]} ${tokens[1]}*)`;
   return `Bash(${tokens[0]}*)`;
@@ -356,7 +371,8 @@ export function suggestRules(toolName: string, input: any, cwd: string): string[
     return r ? [r] : [];
   }
   const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
-  const needed = segs.filter((seg) => !harmless(seg));
+  // `(cd app` is the cd helper once the grouping is off.
+  const needed = segs.filter((seg) => !harmless(seg) && !harmless(commandWords(seg).join(' ')));
   return [...new Set((needed.length ? needed : segs.slice(0, 1)).map(commandRule).filter((r): r is string => !!r))];
 }
 

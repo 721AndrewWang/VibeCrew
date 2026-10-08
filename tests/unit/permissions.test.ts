@@ -48,6 +48,23 @@ describe('suggestRules', () => {
   it('skips leading VAR=value assignments', () => {
     expect(suggestRules('Bash', bash('NODE_ENV=test npm run build'), cwd)).toEqual(['Bash(npm run build*)']);
   });
+  it('looks past shell grouping and control words to the command', () => {
+    // From a real card: "always allow" on this added Bash({*) and Bash(}*).
+    expect(suggestRules('Bash', bash('{ npm test; npm run lint; } 2>&1 | tail -20'), cwd)).toEqual(['Bash(npm test*)', 'Bash(npm run lint*)']);
+    expect(suggestRules('Bash', bash('(cd app && npm run dev)'), cwd)).toEqual(['Bash(npm run dev*)']);
+    expect(suggestRules('Bash', bash('if [ -f package.json ]; then make build; fi'), cwd)).toEqual(['Bash(make build*)']);
+    expect(suggestRules('Bash', bash('! git diff --quiet'), cwd)).toEqual(['Bash(git diff*)']);
+  });
+  it('suggests nothing rather than a rule for punctuation or an expansion', () => {
+    for (const cmd of ['{ }', '$(cat cmd.txt)', '`cat cmd.txt`', 'for f in *.md; do wc -l $f; done', '[ -n "$X" ]']) {
+      const rules = suggestRules('Bash', bash(cmd), cwd);
+      expect(
+        rules.every((r) => /^Bash\([A-Za-z0-9_.~/]/.test(r)),
+        `${cmd} -> ${rules}`,
+      ).toBe(true);
+    }
+    expect(suggestRules('Bash', bash('{ }'), cwd)).toEqual([]);
+  });
   it('keeps one rule for other tools', () => {
     expect(suggestRules('WebFetch', { url: 'https://docs.example.com/x' }, cwd)).toEqual(['WebFetch(domain:docs.example.com)']);
   });
