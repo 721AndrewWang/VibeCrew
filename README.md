@@ -36,9 +36,6 @@ The difference: in Crew, an agent's "computer" is your project folder. The right
 
 - Node.js 22.12 or newer (Node 24 is used for development)
 - On Linux you also need a C/C++ toolchain: the terminal component node-pty has no prebuilt binaries for Linux, so `npm install` compiles it on the spot (without the toolchain the whole install fails). Ubuntu: `sudo apt install build-essential python3`
-- [Claude Code](https://docs.claude.com/en/docs/claude-code) installed: `npm i -g @anthropic-ai/claude-code`
-  - and **logged in**: run `claude auth login` in a terminal (a subscription account or a Console account both work)
-  - or switch to an Anthropic API key in Crew's "Settings", or to another model provider such as DeepSeek, Kimi or Zhipu GLM (see below)
 - Google Chrome or Chromium (used for agent screenshots and browser tests; Crew works without it, only those two features are unavailable)
 - The sandbox (recommended to keep on) needs `bubblewrap` and `socat` on Linux: `sudo apt install bubblewrap socat`. Without them agents still work, but their commands are not isolated, and the Settings page warns you
 - The desktop app (AppImage) also needs FUSE 2: `libfuse2t64` on Ubuntu 24.04
