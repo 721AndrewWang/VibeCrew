@@ -140,8 +140,89 @@ export function findClaudeExecutable(refresh = false): string | null {
 let chromePath: string | undefined;
 
 /**
- * Locates a Chrome/Chromium binary for headless screenshots and browser tests. The cached path is
- * checked again on every call: Playwright deletes old ms-playwright/chromium-NNNN builds on upgrade.
+ * Where `npx playwright install` keeps its browsers: PLAYWRIGHT_BROWSERS_PATH when set (0 means
+ * inside the playwright package, which is not a browser to share), otherwise the platform's user
+ * cache folder.
+ */
+export function playwrightCacheDir(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string | null {
+  const custom = env.PLAYWRIGHT_BROWSERS_PATH;
+  if (custom === '0') return null;
+  if (custom) return path.resolve(env.INIT_CWD || process.cwd(), custom); // relative to the npm script's folder, as Playwright reads it
+  const home = os.homedir();
+  if (platform === 'darwin') return path.join(home, 'Library', 'Caches', 'ms-playwright');
+  if (platform === 'win32') return path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'ms-playwright');
+  return path.join(env.XDG_CACHE_HOME || path.join(home, '.cache'), 'ms-playwright');
+}
+
+/** The folder of each `<prefix><build>` entry in `cache`, newest build first. */
+function playwrightBuilds(cache: string, prefix: string): string[] {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(cache);
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((d) => d.startsWith(prefix) && /^\d+$/.test(d.slice(prefix.length)))
+    .sort((a, b) => Number(b.slice(prefix.length)) - Number(a.slice(prefix.length)))
+    .map((d) => path.join(cache, d));
+}
+
+const MAC_APP = ['Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'];
+/**
+ * Where the executable sits inside a Playwright build folder, per platform: the full Chromium
+ * (chromium-NNNN) and the headless shell (chromium_headless_shell-NNNN). The folder name carries
+ * the CPU (an Intel and an Apple Silicon Mac install different ones); chrome-mac is the layout of
+ * builds older than Playwright 1.46. Windows is listed as Playwright names it, untested here.
+ */
+const PLAYWRIGHT_LAYOUTS: Record<string, { full: string[][]; shell: string[][] }> = {
+  darwin: {
+    full: [
+      ['chrome-mac-arm64', ...MAC_APP],
+      ['chrome-mac-x64', ...MAC_APP],
+      ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+    ],
+    shell: [
+      ['chrome-headless-shell-mac-arm64', 'chrome-headless-shell'],
+      ['chrome-headless-shell-mac-x64', 'chrome-headless-shell'],
+    ],
+  },
+  win32: {
+    full: [
+      ['chrome-win64', 'chrome.exe'],
+      ['chrome-win', 'chrome.exe'],
+    ],
+    shell: [['chrome-headless-shell-win64', 'chrome-headless-shell.exe']],
+  },
+  linux: {
+    full: [
+      ['chrome-linux64', 'chrome'],
+      ['chrome-linux', 'chrome'],
+      ['chrome-linux-arm64', 'chrome'],
+    ],
+    shell: [
+      ['chrome-headless-shell-linux64', 'chrome-headless-shell'],
+      ['chrome-headless-shell-linux-arm64', 'chrome-headless-shell'],
+    ],
+  },
+};
+
+/**
+ * The Chromium executables a Playwright cache may hold: full builds first, newest first, then
+ * the headless shell, which runs headless only. Nothing here is checked for existence.
+ */
+export function playwrightChromes(cache: string, platform: NodeJS.Platform = process.platform): string[] {
+  const { full, shell } = PLAYWRIGHT_LAYOUTS[platform] ?? PLAYWRIGHT_LAYOUTS.linux;
+  return [
+    ...playwrightBuilds(cache, 'chromium-').flatMap((d) => full.map((l) => path.join(d, ...l))),
+    ...playwrightBuilds(cache, 'chromium_headless_shell-').flatMap((d) => shell.map((l) => path.join(d, ...l))),
+  ];
+}
+
+/**
+ * Locates a Chrome/Chromium binary for headless screenshots and browser tests: the environment,
+ * the usual install locations, then Playwright's cache. The cached path is checked again on every
+ * call: Playwright deletes old ms-playwright/chromium-NNNN builds on upgrade.
  */
 export function findChrome(): string | null {
   if (chromePath) {
@@ -163,19 +244,10 @@ export function findChrome(): string | null {
     '/snap/bin/chromium',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    path.join(home, 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome'),
   ].filter(Boolean) as string[];
-  try {
-    const pw = path.join(home, '.cache', 'ms-playwright');
-    for (const d of fs
-      .readdirSync(pw)
-      .filter((d) => d.startsWith('chromium-'))
-      .sort()
-      .reverse()) {
-      candidates.push(path.join(pw, d, 'chrome-linux64', 'chrome'), path.join(pw, d, 'chrome-linux', 'chrome'));
-    }
-  } catch {
-    /* no playwright cache */
-  }
+  const cache = playwrightCacheDir();
+  if (cache) candidates.push(...playwrightChromes(cache));
   for (const c of candidates) {
     try {
       fs.accessSync(c, fs.constants.X_OK);

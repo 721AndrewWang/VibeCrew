@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The project is now English-only: UI, agent prompts, docs and code comments. The default UI language is English, and `@all` (or `@everyone`) mentions everyone in a group chat.
 - The desktop build downloads Electron and the AppImage tools from their official sources; set `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` to use a mirror.
 
+### Fixed
+
+- On macOS, the Chromium that `npx playwright install` puts in `~/Library/Caches/ms-playwright` is found for screenshots and browser tests (only the Linux cache was searched), as is a Chrome in `~/Applications`; Playwright's headless shell serves as a last resort.
+
 ## [0.2.0] - 2026-10-02
 
 The first official release. Renamed to Crew, with isolated workspaces, a sandbox, adversarial review and a set of "improve from use" mechanisms, plus the engineering groundwork.
