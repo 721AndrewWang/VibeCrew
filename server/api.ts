@@ -151,11 +151,11 @@ export function apiRouter() {
 
   r.post('/settings/push-test', async (_req, res) => {
     const url = settings.get().push?.barkUrl;
-    if (!url) throw new HttpError(400, '还没有填 Bark 地址');
+    if (!url) throw new HttpError(400, 'No Bark URL set yet');
     try {
-      await sendBark(url, 'Crew', '手机推送已接通：机器人等你确认太久时会推到这里。');
+      await sendBark(url, 'Crew', "Phone push is connected: you'll get a push here when a bot has been waiting too long for your approval.");
     } catch (e) {
-      throw new HttpError(502, `推送没有发出去：${(e as Error).message}`);
+      throw new HttpError(502, `The push wasn't sent: ${(e as Error).message}`);
     }
     res.json({ ok: true });
   });
@@ -179,7 +179,7 @@ export function apiRouter() {
     if (b.push) {
       const prev = cur.push || { barkUrl: '', afterMinutes: 10 };
       const barkUrl = b.push.barkUrl === undefined ? prev.barkUrl : b.push.barkUrl.trim();
-      if (barkUrl && !barkUrlOk(barkUrl)) throw new HttpError(400, 'Bark 地址的格式不对，应该像 https://api.day.app/你的key');
+      if (barkUrl && !barkUrlOk(barkUrl)) throw new HttpError(400, "That Bark URL doesn't look right; it should look like https://api.day.app/your-key");
       patch.push = { barkUrl, afterMinutes: b.push.afterMinutes ?? prev.afterMinutes };
     }
     if (b.sandbox) {
@@ -201,7 +201,12 @@ export function apiRouter() {
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
-      bus.emit({ t: 'notify', title: '手机访问', body: patch.lanEnabled ? '已开启，重启 Crew 后生效（主服务需要重新监听局域网地址）' : '已关闭，重启后生效', level: 'info' });
+      bus.emit({
+        t: 'notify',
+        title: 'Phone access',
+        body: patch.lanEnabled ? 'Turned on. Restart Crew for it to take effect (the server needs to listen on the LAN address).' : 'Turned off. Takes effect after a restart.',
+        level: 'info',
+      });
     }
     res.json({ settings: settings.public(), lanUrl: lanUrl() });
   });
@@ -232,7 +237,7 @@ export function apiRouter() {
   // A skill draft is edited field by field; a change to a bot's setting gets a new value.
   r.patch('/improvements/:id', (req, res) => {
     const i = improvements.get(req.params.id);
-    if (!i) throw new HttpError(404, '没有这条建议');
+    if (!i) throw new HttpError(404, 'Suggestion not found');
     if (i.field === 'skill') res.json({ improvement: editSkillDraft(i.id, body(DraftEdit, req.body)) });
     else res.json({ improvement: editSettingProposal(i.id, body(SettingEdit, req.body).value) });
   });
@@ -241,10 +246,10 @@ export function apiRouter() {
   // ------------------------------------------------------------ traces
   r.get('/chats/:id/messages/:mid/trace', (req, res) => {
     const m = messages.get(req.params.id, req.params.mid);
-    if (!m) throw new HttpError(404, '消息不存在');
+    if (!m) throw new HttpError(404, 'Message not found');
     if (req.query.raw === '1') {
       const raw = m.meta?.trace ? turnTraceRaw(m.meta.trace) : null;
-      if (raw === null) throw new HttpError(404, '没有这一轮的会话记录');
+      if (raw === null) throw new HttpError(404, 'No session record for this turn');
       res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
       res.setHeader('content-disposition', `attachment; filename="trace-${m.id}.jsonl"`);
       res.send(raw);
@@ -270,7 +275,7 @@ export function apiRouter() {
   });
   r.get('/bots/:id/memory', (req, res) => res.json({ text: readMemory(req.params.id) }));
   r.put('/bots/:id/memory', (req, res) => {
-    if (!bots.get(req.params.id)) throw new HttpError(404, '机器人不存在');
+    if (!bots.get(req.params.id)) throw new HttpError(404, 'Bot not found');
     fs.writeFileSync(memoryFile(req.params.id), str(req.body?.text));
     res.json({ ok: true });
   });
@@ -283,7 +288,7 @@ export function apiRouter() {
     res.json({ ok: true });
   });
   r.get('/chats/:id/messages', (req, res) => {
-    if (!chats.get(req.params.id)) throw new HttpError(404, '对话不存在');
+    if (!chats.get(req.params.id)) throw new HttpError(404, 'Chat not found');
     const before = req.query.before ? Number(req.query.before) : undefined;
     const limit = Math.min(Number(req.query.limit) || 60, 200);
     const list = messages.list(req.params.id, { beforeSeq: before, limit: limit + 1 });
@@ -313,7 +318,7 @@ export function apiRouter() {
   r.get('/chats/:id/turns', (req, res) => res.json(listTurns(req.params.id)));
   r.get('/chats/:id/turns/:turnId/diff', (req, res) => {
     const d = turnFileDiff(req.params.id, req.params.turnId, str(req.query.path));
-    if (!d) throw new HttpError(404, '没有这个文件的记录');
+    if (!d) throw new HttpError(404, 'No record for this file');
     let current: string | null | undefined;
     const project = turnProject(req.params.id, req.params.turnId);
     if (project) {
@@ -328,7 +333,7 @@ export function apiRouter() {
   r.post('/chats/:id/turns/:turnId/revert', async (req, res) => {
     const chat = chats.get(req.params.id);
     const project = turnProject(req.params.id, req.params.turnId);
-    if (!chat || !project) throw new HttpError(400, '这一轮改动所在的项目或工作区已经不在了');
+    if (!chat || !project) throw new HttpError(400, "The project or workspace for this turn's changes no longer exists");
     // Undoing a turn rewrites files on Crew's behalf, not the user's.
     const result = await quietly([project.id], () => revertTurn(chat.id, req.params.turnId, project.path, !!req.body?.force));
     if (!result.conflicts.length) {
@@ -362,7 +367,7 @@ export function apiRouter() {
   r.post('/approvals/:id', (req, res) => {
     const { decision: d, message } = body(Approval, req.body);
     const ok = resolveApproval(req.params.id, { allow: d === 'allow' || d === 'always', always: d === 'always', message: message || undefined });
-    if (!ok) throw new HttpError(410, '这个请求已经失效了');
+    if (!ok) throw new HttpError(410, 'This request has expired');
     res.json({ ok: true });
   });
 
@@ -380,7 +385,7 @@ export function apiRouter() {
     res.json(decorate(p));
   });
   r.delete('/projects/:id', async (req, res) => {
-    if (getProject(req.params.id).workspace) throw new HttpError(400, '这是某个对话的独立工作区，请在那个对话里关闭它');
+    if (getProject(req.params.id).workspace) throw new HttpError(400, "This is a chat's own workspace; close it from that chat");
     // Unbinding closes the chats' workspaces: not while a bot works in one.
     for (const c of chats.all()) if (c.projectId === req.params.id) assertWorkspaceIdle(c);
     await devServer(req.params.id).stop();
@@ -414,7 +419,7 @@ export function apiRouter() {
     else if (a === 'stop') await ds.stop();
     else if (a === 'restart') await ds.restart();
     else if (a === 'url') ds.setUrl(str(req.body?.url));
-    else throw new HttpError(400, '未知操作');
+    else throw new HttpError(400, 'Unknown action');
     res.json(ds.state);
   });
   r.get('/projects/:id/dev/logs', (req, res) => res.json({ logs: devServer(req.params.id).logs(60_000), state: devServer(req.params.id).state }));
@@ -443,7 +448,7 @@ export function apiRouter() {
   r.post('/projects/:id/git/commit', async (req, res) => {
     const p = getProject(req.params.id);
     const message = str(req.body?.message).trim();
-    if (!message) throw new HttpError(400, '请填写提交说明');
+    if (!message) throw new HttpError(400, 'Enter a commit message');
     // In a workspace: under the chat's lock, and never with unresolved conflicts.
     if (p.workspace) {
       await commitWorkspace(p.workspace.chatId, message);
@@ -458,7 +463,7 @@ export function apiRouter() {
   r.post('/projects/:id/screenshot', async (req, res) => {
     const device = ['desktop', 'tablet', 'mobile'].includes(req.body?.device) ? req.body.device : 'desktop';
     const shot = await screenshot({ projectId: req.params.id, path: str(req.body?.path) || '/', device, fullPage: !!req.body?.fullPage });
-    res.json(saveUpload(shot.png, 'image/png', `预览截图 ${str(req.body?.path) || '/'}`));
+    res.json(saveUpload(shot.png, 'image/png', `Preview screenshot ${str(req.body?.path) || '/'}`));
   });
 
   // Folder picker for "open an existing project".
@@ -476,7 +481,7 @@ export function apiRouter() {
         })
         .sort((a, b) => a.name.localeCompare(b.name));
     } catch (e) {
-      throw new HttpError(400, `无法读取文件夹：${(e as Error).message}`);
+      throw new HttpError(400, `Can't read the folder: ${(e as Error).message}`);
     }
     res.json({ path: dir, parent: path.dirname(dir) === dir ? null : path.dirname(dir), home: os.homedir(), entries });
   });
@@ -493,14 +498,14 @@ export function apiRouter() {
   r.post('/skills/from-recording', (req, res) => {
     const b = req.body || {};
     const steps = (Array.isArray(b.steps) ? b.steps : []) as RecordedStep[];
-    if (!steps.length) throw new HttpError(400, '没有录制到任何操作');
+    if (!steps.length) throw new HttpError(400, 'No actions were recorded');
     res.json(
       skills.save({
         name: str(b.name),
         title: str(b.title) || str(b.name),
         icon: '🎬',
-        description: str(b.goal) || `复现录制于 ${str(b.page) || '/'} 的操作`,
-        argsHint: '补充说明（可选）',
+        description: str(b.goal) || `Replay the actions recorded on ${str(b.page) || '/'}`,
+        argsHint: 'Additional notes (optional)',
         body: recordingToSkillBody(steps, str(b.page) || '/', str(b.goal)),
       }),
     );
@@ -510,7 +515,7 @@ export function apiRouter() {
   r.post('/routines', (req, res) => res.json(saveRoutine(body(RoutineSave, req.body))));
   r.patch('/routines/:id', (req, res) => {
     const cur = routines.get(req.params.id);
-    if (!cur) throw new HttpError(404, '任务不存在');
+    if (!cur) throw new HttpError(404, 'Task not found');
     res.json(saveRoutine({ ...cur, ...body(RoutineSave.partial(), req.body), id: cur.id }));
   });
   r.delete('/routines/:id', (req, res) => {
@@ -519,7 +524,7 @@ export function apiRouter() {
   });
   r.post('/routines/:id/run', (req, res) => {
     const cur = routines.get(req.params.id);
-    if (!cur) throw new HttpError(404, '任务不存在');
+    if (!cur) throw new HttpError(404, 'Task not found');
     runRoutine(cur, 'manual');
     res.json(routines.get(cur.id));
   });
@@ -527,9 +532,9 @@ export function apiRouter() {
   // ------------------------------------------------------------ uploads
   r.post('/uploads', (req, res) => {
     const b = body(Upload, req.body);
-    if (!IMAGE_MIMES.has(b.mime)) throw new HttpError(400, '只支持 PNG、JPEG、GIF、WebP 图片');
+    if (!IMAGE_MIMES.has(b.mime)) throw new HttpError(400, 'Only PNG, JPEG, GIF and WebP images are supported');
     const buf = Buffer.from(b.data, 'base64');
-    if (!buf.length || buf.length > 15 * 1024 * 1024) throw new HttpError(400, '图片为空或超过 15MB');
+    if (!buf.length || buf.length > 15 * 1024 * 1024) throw new HttpError(400, 'The image is empty or larger than 15MB');
     res.json(saveUpload(buf, b.mime, b.name || 'image'));
   });
   r.get('/uploads/:file', (req, res) => {

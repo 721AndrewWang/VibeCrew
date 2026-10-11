@@ -1,7 +1,7 @@
 // Every main screen opens without errors, in both themes and at phone width.
 import { expect, test } from './fixtures';
 
-const SCREENS = ['对话', '机器人', '技能', '定时', '项目', '设置'];
+const SCREENS = ['Chats', 'Bots', 'Skills', 'Routines', 'Projects', 'Settings'];
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`all screens open (${colorScheme})`, async ({ page, crew }) => {

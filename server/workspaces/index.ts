@@ -16,11 +16,11 @@ export { workspaceDiff, workspaceStatus } from './status';
 // ---------------------------------------------------------------- public operations
 // One git operation per chat at a time, and never while a bot turn runs or waits there.
 
-export const createWorkspace = (chatId: string) => withChatLocked(chatId, '切换', () => doCreate(chatId));
-export const mergeWorkspace = (chatId: string, message?: string) => withChatLocked(chatId, '合并', () => doMerge(chatId, message));
-export const suggestCommitMessage = (chatId: string) => withChatLocked(chatId, '生成提交说明', () => doSuggest(chatId));
-export const syncWorkspace = (chatId: string) => withChatLocked(chatId, '同步', () => doSync(chatId));
-export const resolveConflicts = (chatId: string) => withChatLocked(chatId, '处理冲突', () => doResolve(chatId));
-export const abortSync = (chatId: string) => withChatLocked(chatId, '放弃同步', () => doAbort(chatId));
-export const commitWorkspace = (chatId: string, message: string) => withChatLocked(chatId, '提交', () => doCommit(chatId, message));
-export const removeWorkspace = (chatId: string, deleteBranch: boolean) => withChatLocked(chatId, '关闭工作区', () => doRemove(chatId, deleteBranch));
+export const createWorkspace = (chatId: string) => withChatLocked(chatId, 'switching', () => doCreate(chatId));
+export const mergeWorkspace = (chatId: string, message?: string) => withChatLocked(chatId, 'merging', () => doMerge(chatId, message));
+export const suggestCommitMessage = (chatId: string) => withChatLocked(chatId, 'generating a commit message', () => doSuggest(chatId));
+export const syncWorkspace = (chatId: string) => withChatLocked(chatId, 'syncing', () => doSync(chatId));
+export const resolveConflicts = (chatId: string) => withChatLocked(chatId, 'resolving conflicts', () => doResolve(chatId));
+export const abortSync = (chatId: string) => withChatLocked(chatId, 'abandoning the sync', () => doAbort(chatId));
+export const commitWorkspace = (chatId: string, message: string) => withChatLocked(chatId, 'committing', () => doCommit(chatId, message));
+export const removeWorkspace = (chatId: string, deleteBranch: boolean) => withChatLocked(chatId, 'closing the workspace', () => doRemove(chatId, deleteBranch));

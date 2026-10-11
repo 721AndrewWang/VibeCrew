@@ -37,17 +37,17 @@ export function TraceDialog({ chatId, msgId, onClose }: { chatId: string; msgId:
 
   return (
     <Modal
-      title="这一轮的轨迹"
+      title="Turn trace"
       icon={<Route size={18} />}
       onClose={onClose}
       wide
       footer={
         trace?.available ? (
           <>
-            <span className="hint">来自 Claude Code 的会话记录，Crew 不另存一份。</span>
+            <span className="hint">From Claude Code's session log. Crew doesn't keep its own copy.</span>
             <span className="spacer" />
             <a className="btn sm" href={api.traceRawUrl(chatId, msgId)} download>
-              <Download size={14} /> 下载原始记录（JSONL）
+              <Download size={14} /> Download raw log (JSONL)
             </a>
           </>
         ) : undefined
@@ -67,19 +67,19 @@ function TraceBody({ trace }: { trace: Extract<TurnTrace, { available: true }> }
     <div className="trace">
       <div className="trace-totals">
         <span>
-          <b>{t.calls}</b> 次模型调用
+          <b>{t.calls}</b> model call{t.calls === 1 ? '' : 's'}
         </span>
         <span>
-          <b>{t.tools}</b> 次工具
+          <b>{t.tools}</b> tool call{t.tools === 1 ? '' : 's'}
         </span>
         <span>
-          读 <b>{fmtK(read)}</b>（缓存命中 {hit}%）
+          Read <b>{fmtK(read)}</b> (cache hit {hit}%)
         </span>
         <span>
-          写 <b>{fmtK(t.output)}</b>
-          {t.thinking ? `（思考 ${fmtK(t.thinking)}）` : ''}
+          Wrote <b>{fmtK(t.output)}</b>
+          {t.thinking ? ` (thinking ${fmtK(t.thinking)})` : ''}
         </span>
-        <span>用时 {fmtDuration(t.durationMs)}</span>
+        <span>Took {fmtDuration(t.durationMs)}</span>
       </div>
       <div className="trace-steps">
         {trace.steps.map((s, i) => (
@@ -103,21 +103,21 @@ function TraceRow({ step, open, onToggle, maxRead }: { step: TraceStep; open: bo
   let bar = 0;
   if (step.kind === 'model') {
     const tools = step.blocks.filter((b) => b.type === 'tool_use').map((b) => (b.type === 'tool_use' ? b.name : ''));
-    const kinds = tools.length ? `调用 ${tools.join('、')}` : step.blocks.some((b) => b.type === 'text') ? '回复' : '思考';
-    title = `${modelLabel(step.model) || step.model}${step.effort ? ` · ${step.effort}` : ''}${step.sidechain ? ' · 子代理' : ''} · ${kinds}`;
+    const kinds = tools.length ? `Called ${tools.join(', ')}` : step.blocks.some((b) => b.type === 'text') ? 'Reply' : 'Thinking';
+    title = `${modelLabel(step.model) || step.model}${step.effort ? ` · ${step.effort}` : ''}${step.sidechain ? ' · subagent' : ''} · ${kinds}`;
     detail = step.blocks
-      .map((b) => (b.type === 'thinking' ? `【思考】\n${b.text}` : b.type === 'tool_use' ? `【${b.name}】\n${b.input}` : b.text))
+      .map((b) => (b.type === 'thinking' ? `[Thinking]\n${b.text}` : b.type === 'tool_use' ? `[${b.name}]\n${b.input}` : b.text))
       .filter(Boolean)
       .join('\n\n');
     bar = readTokens(step.usage) / maxRead;
   } else if (step.kind === 'tool_result') {
-    title = step.isError ? '工具出错' : '工具结果';
+    title = step.isError ? 'Tool error' : 'Tool result';
     detail = step.text;
   } else if (step.kind === 'prompt') {
-    title = step.sidechain ? '子代理收到的任务' : 'Crew 发给它的内容';
+    title = step.sidechain ? 'Task given to the subagent' : 'What Crew sent it';
     detail = step.text;
   } else {
-    title = `Claude Code 附加：${step.type}`;
+    title = `Added by Claude Code: ${step.type}`;
   }
   return (
     <div className={cx('trace-row', step.kind, step.kind === 'tool_result' && step.isError && 'error', open && 'open')}>
@@ -126,7 +126,7 @@ function TraceRow({ step, open, onToggle, maxRead }: { step: TraceStep; open: bo
         <span className="trace-icon">{icon}</span>
         <span className="trace-title">{title}</span>
         {step.kind === 'model' && (
-          <span className="trace-tokens mono" title="读（其中缓存命中）/ 写">
+          <span className="trace-tokens mono" title="Read (cache hits) / written">
             {fmtK(readTokens(step.usage))}
             {step.usage.cacheRead ? ` (${Math.round((step.usage.cacheRead / readTokens(step.usage)) * 100)}%)` : ''} / {fmtK(step.usage.output)}
           </span>

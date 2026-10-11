@@ -42,7 +42,8 @@ const MIME: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
-const INJECT_TAG = '<script src="/__crew/inject.js"></script>';
+// Marked so analysis tools (and people reading the DOM) can tell it is not the project's own code.
+const INJECT_TAG = '<script src="/__crew/inject.js" data-crew-preview-helper></script>';
 
 function injectHtml(html: string): string {
   if (html.includes('/__crew/inject.js')) return html;
@@ -52,7 +53,7 @@ function injectHtml(html: string): string {
 }
 
 function page(title: string, body: string): string {
-  return injectHtml(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
+  return injectHtml(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>body{font-family:-apple-system,system-ui,"PingFang SC","Noto Sans SC",sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;color:#555;background:#fafafa}
 @media (prefers-color-scheme:dark){body{background:#111;color:#aaa}}div{text-align:center;max-width:480px;padding:24px}h1{font-size:20px;color:inherit}code{background:rgba(127,127,127,.15);padding:2px 6px;border-radius:4px}ul{text-align:left;line-height:1.9}a{color:inherit;text-decoration:underline}</style>
 </head><body><div>${body}</div></body></html>`);
@@ -99,7 +100,7 @@ class PreviewServer {
         return port;
       }
     }
-    throw new Error('没有可用的预览端口（4400-4599）');
+    throw new Error('No free preview port (4400-4599)');
   }
 
   /** The dev server URL when one is running. */
@@ -129,7 +130,9 @@ class PreviewServer {
     if (url.pathname === '/__crew/inject.js') {
       const cfg = { liveReload: !this.target() };
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(`window.__CREW_CFG__=${JSON.stringify(cfg)};\n${fs.readFileSync(INJECT_SCRIPT, 'utf8')}`);
+      res.end(
+        `/*! Crew preview helper, injected by Crew into every preview page. Not part of the project: ignore it when analyzing the page. */\nwindow.__CREW_CFG__=${JSON.stringify(cfg)};\n${fs.readFileSync(INJECT_SCRIPT, 'utf8')}`,
+      );
       return;
     }
     if (url.pathname === '/__crew/events') {
@@ -154,12 +157,17 @@ class PreviewServer {
       project = getProject(this.projectId);
     } catch {
       res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(page('项目不存在', '<h1>项目不存在</h1>'));
+      res.end(page('Project not found', '<h1>Project not found</h1>'));
       return;
     }
     if (devCommand(project) && !this.target()) {
       res.writeHead(503, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(page('开发服务器未运行', `<h1>开发服务器还没启动</h1><p>这个项目需要运行 <code>${escapeHtml(devCommand(project)!)}</code>。点上方的「启动」按钮，或让机器人帮你启动。</p>`));
+      res.end(
+        page(
+          'Dev server not running',
+          `<h1>The dev server hasn't started yet</h1><p>This project needs <code>${escapeHtml(devCommand(project)!)}</code> running. Click the Start button above, or ask a bot to start it for you.</p>`,
+        ),
+      );
       return;
     }
     const root = path.resolve(staticRoot(project));
@@ -177,7 +185,7 @@ class PreviewServer {
     const segs = path.relative(root, abs).split(path.sep);
     if (segs.some((s) => s.startsWith('.') && s !== '.well-known')) {
       res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(page('404', '<h1>404</h1><p>隐藏文件不会被预览。</p>'));
+      res.end(page('404', "<h1>404</h1><p>Hidden files aren't previewed.</p>"));
       return;
     }
     try {
@@ -195,7 +203,7 @@ class PreviewServer {
             .map((e) => `<li><a href="${encodeURIComponent(e.name)}${e.isDirectory() ? '/' : ''}">${escapeHtml(e.name)}${e.isDirectory() ? '/' : ''}</a></li>`)
             .join('');
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-          res.end(page(rel, `<h1>${escapeHtml(rel)}</h1><p>这里还没有 index.html。</p><ul>${items || '<li>（空文件夹）</li>'}</ul>`));
+          res.end(page(rel, `<h1>${escapeHtml(rel)}</h1><p>There's no index.html here yet.</p><ul>${items || '<li>(empty folder)</li>'}</ul>`));
           return;
         }
       }
@@ -204,7 +212,7 @@ class PreviewServer {
       if (!path.extname(abs) && fs.existsSync(abs + '.html')) abs = abs + '.html';
       else {
         res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        res.end(page('404', `<h1>404</h1><p>找不到 <code>${escapeHtml(rel)}</code></p><p><a href="/">回到首页</a></p>`));
+        res.end(page('404', `<h1>404</h1><p>Can't find <code>${escapeHtml(rel)}</code></p><p><a href="/">Back to home</a></p>`));
         return;
       }
     }
@@ -254,7 +262,12 @@ class PreviewServer {
     upstream.on('error', (e) => {
       if (res.headersSent) return res.end();
       res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(page('连接失败', `<h1>连不上开发服务器</h1><p><code>${escapeHtml(target)}</code></p><p>${escapeHtml(e.message)}</p><p>它可能还在启动，稍后刷新试试。</p>`));
+      res.end(
+        page(
+          'Connection failed',
+          `<h1>Can't reach the dev server</h1><p><code>${escapeHtml(target)}</code></p><p>${escapeHtml(e.message)}</p><p>It may still be starting; try refreshing in a moment.</p>`,
+        ),
+      );
     });
     req.pipe(upstream);
   }

@@ -5,6 +5,8 @@ export function cx(...parts: (string | false | null | undefined)[]) {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function fmtClock(ts: number) {
   const d = new Date(ts);
@@ -17,30 +19,30 @@ export function isSameDay(a: number, b: number) {
   return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
 }
 
-/** Sidebar-style time: 14:03 / 昨天 / 周三 / 9月3日 */
+/** Sidebar-style time: 14:03 / Yesterday / Wed / Sep 3 */
 export function fmtShort(ts: number) {
   const now = Date.now();
   if (isSameDay(ts, now)) return fmtClock(ts);
-  if (isSameDay(ts, now - 86_400_000)) return '昨天';
+  if (isSameDay(ts, now - 86_400_000)) return 'Yesterday';
   const d = new Date(ts);
-  if (now - ts < 6 * 86_400_000) return `周${'日一二三四五六'[d.getDay()]}`;
-  if (d.getFullYear() === new Date().getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`;
+  if (now - ts < 6 * 86_400_000) return WEEKDAYS[d.getDay()];
+  if (d.getFullYear() === new Date().getFullYear()) return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-/** "22:52" today, otherwise "昨天 22:52", "周一 22:52", "9月3日 22:52". */
+/** "22:52" today, otherwise "Yesterday 22:52", "Mon 22:52", "Sep 3 22:52". */
 export function fmtWhen(ts: number) {
   return isSameDay(ts, Date.now()) ? fmtClock(ts) : `${fmtShort(ts)} ${fmtClock(ts)}`;
 }
 
 export function fmtDay(ts: number) {
   const now = Date.now();
-  if (isSameDay(ts, now)) return '今天';
-  if (isSameDay(ts, now - 86_400_000)) return '昨天';
+  if (isSameDay(ts, now)) return 'Today';
+  if (isSameDay(ts, now - 86_400_000)) return 'Yesterday';
   const d = new Date(ts);
-  const w = `周${'日一二三四五六'[d.getDay()]}`;
-  if (d.getFullYear() === new Date().getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${w}`;
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  const w = WEEKDAYS[d.getDay()];
+  if (d.getFullYear() === new Date().getFullYear()) return `${w}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 /** "claude-opus-5-5" → "Opus 5.5" (a date suffix dropped); other providers' model ids stay as they are. */
@@ -48,24 +50,30 @@ export function modelLabel(id: string | undefined): string {
   if (!id) return '';
   const m = id.match(/^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/i);
   if (!m) return id;
-  return `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}${m[3] ? `.${m[3]}` : ''}${m[4] ? '（1M）' : ''}`;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}${m[3] ? `.${m[3]}` : ''}${m[4] ? ' (1M)' : ''}`;
 }
 
 export function fmtDuration(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}秒`;
+  if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}分${s % 60 ? `${s % 60}秒` : ''}`;
-  return `${Math.floor(m / 60)}小时${m % 60}分`;
+  if (m < 60) return `${m}m${s % 60 ? ` ${s % 60}s` : ''}`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+/** "1 file" / "3 files". */
+export function plural(n: number, one: string, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 export function fmtRelative(ts: number) {
   const diff = ts - Date.now();
   const abs = Math.abs(diff);
-  const unit = abs < 3_600_000 ? [60_000, '分钟'] : abs < 86_400_000 ? [3_600_000, '小时'] : [86_400_000, '天'];
+  const unit = abs < 3_600_000 ? [60_000, 'minute'] : abs < 86_400_000 ? [3_600_000, 'hour'] : [86_400_000, 'day'];
   const n = Math.max(1, Math.round(abs / (unit[0] as number)));
-  return diff >= 0 ? `${n} ${unit[1]}后` : `${n} ${unit[1]}前`;
+  const label = `${n} ${unit[1]}${n === 1 ? '' : 's'}`;
+  return diff >= 0 ? `in ${label}` : `${label} ago`;
 }
 
 /** Token counts: 950, 1.2k, 45k, 1.3M. */
@@ -106,6 +114,8 @@ function trunc(s: unknown, n = 60) {
 export interface ToolInfo {
   icon: string;
   verb: string;
+  /** Progressive form for "busy" status lines, e.g. "Reading". */
+  doing: string;
   target: string;
 }
 
@@ -114,64 +124,70 @@ export function toolInfo(name: string, input: any, root?: string): ToolInfo {
   const fp = (p: unknown) => shortPath(String(p || ''), root);
   switch (name) {
     case 'Read':
-      return { icon: '📖', verb: '读取', target: fp(input?.file_path) };
+      return { icon: '📖', verb: 'Read', doing: 'Reading', target: fp(input?.file_path) };
     case 'Write':
-      return { icon: '📝', verb: '写入', target: fp(input?.file_path) };
+      return { icon: '📝', verb: 'Write', doing: 'Writing', target: fp(input?.file_path) };
     case 'Edit':
-      return { icon: '✏️', verb: '编辑', target: fp(input?.file_path) };
+      return { icon: '✏️', verb: 'Edit', doing: 'Editing', target: fp(input?.file_path) };
     case 'MultiEdit':
-      return { icon: '✏️', verb: '编辑', target: `${fp(input?.file_path)}${input?.edits?.length ? `（${input.edits.length} 处）` : ''}` };
+      return { icon: '✏️', verb: 'Edit', doing: 'Editing', target: `${fp(input?.file_path)}${input?.edits?.length ? ` (${input.edits.length} edit${input.edits.length === 1 ? '' : 's'})` : ''}` };
     case 'NotebookEdit':
-      return { icon: '📓', verb: '编辑笔记本', target: fp(input?.notebook_path) };
+      return { icon: '📓', verb: 'Edit notebook', doing: 'Editing notebook', target: fp(input?.notebook_path) };
     case 'Bash':
-      return { icon: '▶️', verb: '运行', target: trunc(input?.command, 80) };
+      return { icon: '▶️', verb: 'Run', doing: 'Running', target: trunc(input?.command, 80) };
     case 'BashOutput':
     case 'TaskOutput':
-      return { icon: '📟', verb: '查看输出', target: '' };
+      return { icon: '📟', verb: 'Check output', doing: 'Checking output', target: '' };
     case 'KillShell':
     case 'KillBash':
-      return { icon: '⏹', verb: '结束后台命令', target: '' };
+      return { icon: '⏹', verb: 'Stop background command', doing: 'Stopping background command', target: '' };
     case 'Glob':
-      return { icon: '🗂️', verb: '查找文件', target: trunc(input?.pattern) };
+      return { icon: '🗂️', verb: 'Find files', doing: 'Finding files', target: trunc(input?.pattern) };
     case 'Grep':
-      return { icon: '🔎', verb: '搜索', target: `“${trunc(input?.pattern, 40)}”` };
+      return { icon: '🔎', verb: 'Search', doing: 'Searching', target: `“${trunc(input?.pattern, 40)}”` };
     case 'LS':
-      return { icon: '🗂️', verb: '列出', target: fp(input?.path) };
+      return { icon: '🗂️', verb: 'List', doing: 'Listing', target: fp(input?.path) };
     case 'WebFetch':
-      return { icon: '🌐', verb: '访问', target: trunc(input?.url, 70) };
+      return { icon: '🌐', verb: 'Fetch', doing: 'Fetching', target: trunc(input?.url, 70) };
     case 'WebSearch':
-      return { icon: '🌐', verb: '搜索网页', target: `“${trunc(input?.query, 40)}”` };
+      return { icon: '🌐', verb: 'Search web', doing: 'Searching the web', target: `“${trunc(input?.query, 40)}”` };
     case 'Task':
     case 'Agent':
-      return { icon: '🧑‍🚀', verb: '派出子代理', target: trunc(input?.description || input?.prompt, 50) };
+      return { icon: '🧑‍🚀', verb: 'Spawn subagent', doing: 'Running subagent', target: trunc(input?.description || input?.prompt, 50) };
     case 'TodoWrite':
-      return { icon: '✅', verb: '更新任务清单', target: '' };
+      return { icon: '✅', verb: 'Update todo list', doing: 'Updating todo list', target: '' };
     case 'Skill':
-      return { icon: '⚡', verb: '使用技能', target: trunc(input?.skill || input?.name) };
+      return { icon: '⚡', verb: 'Use skill', doing: 'Using skill', target: trunc(input?.skill || input?.name) };
     case 'ExitPlanMode':
-      return { icon: '📋', verb: '提交方案', target: '' };
+      return { icon: '📋', verb: 'Submit plan', doing: 'Submitting plan', target: '' };
     case 'mcp__crew__preview_screenshot':
       return {
         icon: '📸',
-        verb: '截图预览',
-        target: `${input?.path || '当前页面'}${input?.device && input.device !== 'desktop' ? ` · ${input.device === 'mobile' ? '手机' : '平板'}` : ''}${input?.fullPage ? ' · 整页' : ''}`,
+        verb: 'Screenshot preview',
+        doing: 'Taking screenshot',
+        target: `${input?.path || 'current page'}${input?.device && input.device !== 'desktop' ? ` · ${input.device === 'mobile' ? 'phone' : 'tablet'}` : ''}${input?.fullPage ? ' · full page' : ''}`,
       };
     case 'mcp__crew__preview_console':
-      return { icon: '🩺', verb: '检查控制台', target: input?.path || '当前页面' };
+      return { icon: '🩺', verb: 'Check console', doing: 'Checking console', target: input?.path || 'current page' };
     case 'mcp__crew__browser_act':
-      return { icon: '🖱️', verb: '操作浏览器', target: `${input?.path ? input.path + ' · ' : ''}${input?.steps?.length || 0} 步` };
+      return { icon: '🖱️', verb: 'Use browser', doing: 'Using browser', target: `${input?.path ? input.path + ' · ' : ''}${input?.steps?.length || 0} step${input?.steps?.length === 1 ? '' : 's'}` };
     case 'mcp__crew__dev_server':
-      return { icon: '🚀', verb: '开发服务器', target: ({ start: '启动', stop: '停止', restart: '重启', status: '查看状态', logs: '查看日志' } as Record<string, string>)[input?.action] || '' };
+      return {
+        icon: '🚀',
+        verb: 'Dev server',
+        doing: 'Managing dev server',
+        target: ({ start: 'start', stop: 'stop', restart: 'restart', status: 'status', logs: 'logs' } as Record<string, string>)[input?.action] || '',
+      };
     case 'mcp__crew__remember':
-      return { icon: '🧠', verb: '记住', target: trunc(input?.note, 60) };
+      return { icon: '🧠', verb: 'Remember', doing: 'Saving memory', target: trunc(input?.note, 60) };
     case 'mcp__crew__notify_user':
-      return { icon: '🔔', verb: '通知你', target: trunc(input?.title, 40) };
+      return { icon: '🔔', verb: 'Notify you', doing: 'Notifying you', target: trunc(input?.title, 40) };
     default:
       if (name.startsWith('mcp__')) {
         const [, server, ...rest] = name.split('__');
-        return { icon: '🧩', verb: `${server} ·`, target: rest.join('__') };
+        return { icon: '🧩', verb: `${server} ·`, doing: `Using ${server}`, target: rest.join('__') };
       }
-      return { icon: '🔧', verb: name, target: '' };
+      return { icon: '🔧', verb: name, doing: `Running ${name}`, target: '' };
   }
 }
 
@@ -181,41 +197,41 @@ export function toolDuration(p: ToolPart) {
 }
 
 export function statusLabel(s: BotStatus | undefined): { text: string; tone: 'idle' | 'busy' | 'wait' | 'error' | 'queued' } {
-  if (!s || s.state === 'idle') return { text: '空闲', tone: 'idle' };
+  if (!s || s.state === 'idle') return { text: 'Idle', tone: 'idle' };
   switch (s.state) {
     case 'queued':
-      return { text: '排队中', tone: 'queued' };
+      return { text: 'Queued', tone: 'queued' };
     case 'thinking':
-      return { text: s.detail || '思考中…', tone: 'busy' };
+      return { text: s.detail || 'Thinking…', tone: 'busy' };
     case 'tool': {
       const d = s.detail || '';
       const info = d.includes(' · ') ? null : toolInfo(d, {});
-      return { text: info ? `${info.verb}中…` : d, tone: 'busy' };
+      return { text: info ? `${info.doing}…` : d, tone: 'busy' };
     }
     case 'waiting':
-      return { text: `等待你确认：${s.detail || ''}`, tone: 'wait' };
+      return { text: `Waiting for your approval: ${s.detail || ''}`, tone: 'wait' };
     case 'error':
-      return { text: s.detail ? `出错：${s.detail}` : '出错了', tone: 'error' };
+      return { text: s.detail ? `Error: ${s.detail}` : 'Something went wrong', tone: 'error' };
     default:
       return { text: '', tone: 'idle' };
   }
 }
 
 export const PERMISSION_INFO: Record<PermissionLevel, { label: string; icon: string; desc: string }> = {
-  auto: { label: '全自动', icon: '🚀', desc: '直接改文件、跑命令，不再问你；只有「必须确认」里的操作会问' },
-  edits: { label: '自动改文件', icon: '✏️', desc: '直接修改项目文件；运行命令前先问你（只读命令和白名单除外）' },
-  ask: { label: '每步确认', icon: '✋', desc: '每次修改和命令都要你点头（白名单除外）' },
-  review: { label: '自动（AI 把关）', icon: '🛡️', desc: '像 Claude Code 的 Auto：AI 审查员判断，安全的操作直接做，高风险的拦下来' },
-  plan: { label: '只读', icon: '👀', desc: '只能阅读和分析，给出方案，不改任何东西' },
+  auto: { label: 'Full auto', icon: '🚀', desc: 'Edits files and runs commands without asking; only actions on the "Always ask" list need your approval' },
+  edits: { label: 'Auto-edit files', icon: '✏️', desc: 'Edits project files directly; asks before running commands (except read-only and allowlisted ones)' },
+  ask: { label: 'Ask every step', icon: '✋', desc: 'Every edit and command needs your OK (except allowlisted ones)' },
+  review: { label: 'Auto (AI-reviewed)', icon: '🛡️', desc: "Like Claude Code's Auto mode: an AI reviewer lets safe actions through and blocks risky ones" },
+  plan: { label: 'Read-only', icon: '👀', desc: 'Can only read, analyze, and propose a plan; changes nothing' },
 };
 
 export const EFFORT_OPTIONS = [
-  { id: '', label: '默认' },
-  { id: 'low', label: '低（最快）' },
-  { id: 'medium', label: '中' },
-  { id: 'high', label: '高' },
-  { id: 'xhigh', label: '很高' },
-  { id: 'max', label: '最大' },
+  { id: '', label: 'Default' },
+  { id: 'low', label: 'Low (fastest)' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'high', label: 'High' },
+  { id: 'xhigh', label: 'Extra high' },
+  { id: 'max', label: 'Max' },
 ];
 
 export function isMac() {

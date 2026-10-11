@@ -9,7 +9,7 @@ const READ_ONLY = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'TodoWr
 /** The outcome and, in words the user sees, what settled it. */
 export type Decision = { behavior: 'allow'; because: string } | { behavior: 'ask'; because: string } | { behavior: 'deny'; message: string; because: string };
 
-export const LEVEL_LABEL: Record<PermissionLevel, string> = { auto: '全自动', edits: '自动改文件', ask: '每步确认', review: '自动（AI 把关）', plan: '只读' };
+export const LEVEL_LABEL: Record<PermissionLevel, string> = { auto: 'Full auto', edits: 'Auto-edit files', ask: 'Ask every step', review: 'Auto (AI-reviewed)', plan: 'Read-only' };
 
 function parseRule(rule: string): { tool: string; spec?: string } {
   const m = rule.trim().match(/^([^()]+?)(?:\((.*)\))?$/);
@@ -217,11 +217,15 @@ export function insideDir(dir: string, p: string | undefined): boolean {
  * `projectRules` are the project's own must-ask rules, named apart from the bot's.
  */
 export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown; projectRules?: string[] }): Decision {
-  const mode = `权限是「${LEVEL_LABEL[level]}」`;
-  if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow', because: 'Crew 自己的工具' };
-  if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow', because: '只读操作' };
+  const mode = `permission mode is "${LEVEL_LABEL[level]}"`;
+  if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow', because: "Crew's own tool" };
+  if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow', because: 'read-only action' };
   if (toolName === 'ExitPlanMode' && level === 'plan') {
-    return { behavior: 'deny', message: '你是只读角色，不能执行修改。请直接在回复中给出方案或结论，由用户或队友来实施。', because: `${mode}，不能开始修改` };
+    return {
+      behavior: 'deny',
+      message: 'You are a read-only role and cannot make changes. Give your plan or conclusions directly in your reply, and the user or a teammate will carry them out.',
+      because: `${mode}, so it cannot start making changes`,
+    };
   }
   // A role's lane: edits outside it are refused, so the work goes to the teammate whose lane it is.
   if (
@@ -234,43 +238,47 @@ export function decide(bot: Bot, level: PermissionLevel, toolName: string, input
       cwd,
     )
   ) {
-    const scope = bot.editScope.join('、');
+    const scope = bot.editScope.join(', ');
     return {
       behavior: 'deny',
-      message: `这个文件不在你负责的范围内（你只能修改：${scope}）。不要用命令行绕过去改它；请 @ 负责它的队友来改，或者让用户在你的设置里调整「只能修改的路径」。`,
-      because: `角色范围只包括 ${scope}`,
+      message: `This file is outside your area (you may only edit: ${scope}). Do not work around this with the command line. @ the teammate who owns it, or ask the user to change "Editable paths only" in your settings.`,
+      because: `the role's area only covers ${scope}`,
     };
   }
   const botRule = askRuleFor(bot.askRules, toolName, input, cwd);
-  if (botRule) return { behavior: 'ask', because: `机器人的「必须确认」规则 ${botRule}` };
+  if (botRule) return { behavior: 'ask', because: `bot "always ask" rule ${botRule}` };
   const projectRule = opts.projectRules?.length ? askRuleFor(opts.projectRules, toolName, input, cwd) : null;
-  if (projectRule) return { behavior: 'ask', because: `项目的「必须确认」规则 ${projectRule}` };
+  if (projectRule) return { behavior: 'ask', because: `project "always ask" rule ${projectRule}` };
   // Claude Code's ask list is these same bot and project rules, matched on the raw text
   // (`grep x deploy.sh` hits *deploy*). When its match is one of them, the checks above already
   // decided, part by part; only a rule from elsewhere (settings files) still asks here.
   if (opts.matchedAskRule) {
     const ours = toolName === 'Bash' && matchingRule([...bot.askRules, ...(opts.projectRules || [])], toolName, input, cwd) !== null;
-    if (!ours) return { behavior: 'ask', because: `Claude Code 设置里的 ask 规则 ${ruleText(opts.matchedAskRule)}` };
+    if (!ours) return { behavior: 'ask', because: `ask rule in Claude Code settings ${ruleText(opts.matchedAskRule)}` };
   }
   // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
   if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
     const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());
-    if (segs.length && segs.every(harmless)) return { behavior: 'allow', because: `${mode}，这条命令只读取和打印` };
+    if (segs.length && segs.every(harmless)) return { behavior: 'allow', because: `${mode}, and this command only reads and prints` };
   }
   // Rules added with "always allow" during this session.
   const allowRule = matchingRule(bot.allowRules, toolName, input, cwd);
-  if (allowRule && rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow', because: `「总是允许」规则 ${allowRule}` };
+  if (allowRule && rulesAllow(bot.allowRules, toolName, input, cwd)) return { behavior: 'allow', because: `"always allow" rule ${allowRule}` };
   switch (level) {
     case 'auto':
       return { behavior: 'allow', because: mode };
     case 'edits':
       if (EDIT_TOOLS.has(toolName)) {
-        return insideDir(cwd, filePathOf(input)) ? { behavior: 'allow', because: `${mode}，文件在项目里` } : { behavior: 'ask', because: `${mode}，但这个文件在项目外` };
+        return insideDir(cwd, filePathOf(input))
+          ? { behavior: 'allow', because: `${mode}, and the file is in the project` }
+          : { behavior: 'ask', because: `${mode}, but this file is outside the project` };
       }
-      if (WEB_TOOLS.has(toolName)) return { behavior: 'allow', because: `${mode}，联网查资料不改东西` };
-      return allowRule ? { behavior: 'ask', because: `${mode}；「总是允许」规则 ${allowRule} 只覆盖了命令的一部分` } : { behavior: 'ask', because: `${mode}，运行命令要先问` };
+      if (WEB_TOOLS.has(toolName)) return { behavior: 'allow', because: `${mode}, and looking things up online changes nothing` };
+      return allowRule
+        ? { behavior: 'ask', because: `${mode}; "always allow" rule ${allowRule} only covers part of the command` }
+        : { behavior: 'ask', because: `${mode}, and running commands needs asking first` };
     default:
-      return { behavior: 'ask', because: allowRule ? `${mode}；「总是允许」规则 ${allowRule} 只覆盖了命令的一部分` : mode };
+      return { behavior: 'ask', because: allowRule ? `${mode}; "always allow" rule ${allowRule} only covers part of the command` : mode };
   }
 }
 
@@ -297,10 +305,10 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
   const rel = (p?: string) => (p ? path.relative(cwd, path.resolve(cwd, p)) || '.' : '');
   switch (toolName) {
     case 'Bash':
-      return { title: input?.description ? `运行命令：${short(input.description, 60)}` : '运行命令', detail: String(input?.command || '') };
+      return { title: input?.description ? `Run command: ${short(input.description, 60)}` : 'Run command', detail: String(input?.command || '') };
     case 'Write':
       return {
-        title: `写入文件 ${rel(input?.file_path)}`,
+        title: `Write file ${rel(input?.file_path)}`,
         detail: String(input?.content || '')
           .split('\n')
           .slice(0, 40)
@@ -308,7 +316,7 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
       };
     case 'Edit':
       return {
-        title: `修改文件 ${rel(input?.file_path)}`,
+        title: `Edit file ${rel(input?.file_path)}`,
         detail: `- ${String(input?.old_string || '')
           .split('\n')
           .join('\n- ')}\n+ ${String(input?.new_string || '')
@@ -316,21 +324,21 @@ export function describeAction(toolName: string, input: any, cwd: string): { tit
           .join('\n+ ')}`,
       };
     case 'MultiEdit':
-      return { title: `修改文件 ${rel(input?.file_path)}（${input?.edits?.length || 0} 处）` };
+      return { title: `Edit file ${rel(input?.file_path)} (${input?.edits?.length || 0} edits)` };
     case 'NotebookEdit':
-      return { title: `修改笔记本 ${rel(input?.notebook_path)}` };
+      return { title: `Edit notebook ${rel(input?.notebook_path)}` };
     case 'WebFetch':
-      return { title: `访问网页 ${short(String(input?.url || ''), 70)}`, detail: input?.prompt };
+      return { title: `Fetch web page ${short(String(input?.url || ''), 70)}`, detail: input?.prompt };
     case 'WebSearch':
-      return { title: `搜索网页「${short(String(input?.query || ''), 50)}」` };
+      return { title: `Search the web for "${short(String(input?.query || ''), 50)}"` };
     case 'Read':
-      return { title: `读取文件 ${rel(input?.file_path)}` };
+      return { title: `Read file ${rel(input?.file_path)}` };
     default:
       if (toolName.startsWith('mcp__')) {
         const [, server, ...rest] = toolName.split('__');
-        return { title: `使用插件 ${server} · ${rest.join('__')}`, detail: JSON.stringify(input, null, 2).slice(0, 2000) };
+        return { title: `Use plugin ${server} · ${rest.join('__')}`, detail: JSON.stringify(input, null, 2).slice(0, 2000) };
       }
-      return { title: `使用工具 ${toolName}`, detail: JSON.stringify(input, null, 2).slice(0, 2000) };
+      return { title: `Use tool ${toolName}`, detail: JSON.stringify(input, null, 2).slice(0, 2000) };
   }
 }
 

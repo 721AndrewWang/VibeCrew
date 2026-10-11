@@ -83,7 +83,7 @@ export async function unresolvedConflicts(dir: string): Promise<string[]> {
  */
 async function assertTopLevel(dir: string) {
   const top = (await gitIn(dir, ['rev-parse', '--show-toplevel'])).trim();
-  if (fs.realpathSync(top) !== fs.realpathSync(dir)) throw new Error(`${dir} 不是工作区的根目录`);
+  if (fs.realpathSync(top) !== fs.realpathSync(dir)) throw new Error(`${dir} is not the root of a worktree`);
 }
 
 /**
@@ -122,7 +122,7 @@ export function gitError(e: unknown): string {
   return (
     text
       .split('\n')
-      .find((l) => /fatal|error|错误|致命/i.test(l))
-      ?.replace(/^(fatal|error|致命错误|错误)[:：]\s*/i, '') || text.split('\n')[0]
+      .find((l) => /fatal|error/i.test(l))
+      ?.replace(/^(fatal|error):\s*/i, '') || text.split('\n')[0]
   );
 }

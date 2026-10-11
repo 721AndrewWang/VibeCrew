@@ -1,7 +1,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { ConsoleEntry } from '../../shared/types';
-import { act, consoleCheck, screenshot } from '../browser';
+import { act, consoleCheck, debugTarget, screenshot } from '../browser';
 import { notify } from '../bus';
 import { devServer } from '../devserver';
 import { bots, messages } from '../store';
@@ -32,20 +32,22 @@ function fmtLogs(logs: ConsoleEntry[], limit = 40): string {
   const order = { error: 0, warn: 1, info: 2, log: 3 } as const;
   const sorted = [...logs].sort((a, b) => order[a.level] - order[b.level]);
   const lines = sorted.slice(0, limit).map((l) => `[${l.level}] ${l.text}`);
-  if (logs.length > limit) lines.push(`…以及另外 ${logs.length - limit} 条`);
+  if (logs.length > limit) lines.push(`…and ${logs.length - limit} more`);
   return lines.join('\n');
 }
 
-const device = z.enum(['desktop', 'tablet', 'mobile']).optional().describe('设备尺寸：desktop 1280×800、tablet 820×1180、mobile 390×844，默认 desktop');
+const device = z.enum(['desktop', 'tablet', 'mobile']).optional().describe('Device size: desktop 1280×800, tablet 820×1180, mobile 390×844. Defaults to desktop.');
 const colorScheme = z
   .enum(['light', 'dark'])
   .optional()
-  .describe('配色：dark 模拟系统的暗色模式（prefers-color-scheme: dark），页面有暗色主题时会切过去；默认 light。检查暗色模式一定要用它实际看，不要只读 CSS 推断');
+  .describe(
+    'Color scheme: dark emulates the system dark mode (prefers-color-scheme: dark), so a page with a dark theme switches to it. Defaults to light. To check dark mode, always look with this; do not just infer it from the CSS.',
+  );
 
 export function crewServer(ctx: CrewContext) {
   const projectId = () => {
     const id = ctx.projectId();
-    if (!id) throw new Error('当前对话没有绑定项目');
+    if (!id) throw new Error('This conversation is not linked to a project');
     return id;
   };
   const pagePath = (p?: string) => p || ctx.currentPage() || '/';
@@ -56,28 +58,28 @@ export function crewServer(ctx: CrewContext) {
     tools: [
       tool(
         'chat_history',
-        '读这个对话里消息的全文。群聊里较早的、和这一轮关系不大的队友消息只给了一行摘要（带 #编号），需要细节时用它查；也可以看最近几条。',
+        'Read messages in this conversation in full. In a group chat, older teammate messages that have little to do with this turn are shown only as a one-line summary (with a #number); use this to look up the details. It can also show the latest few messages.',
         {
-          seqs: z.array(z.number().int()).max(20).optional().describe('要看的消息编号（摘要里的 #后面的数字）'),
-          last: z.number().int().min(1).max(20).optional().describe('看最近的几条消息'),
+          seqs: z.array(z.number().int()).max(20).optional().describe('Numbers of the messages to read (the number after # in a summary)'),
+          last: z.number().int().min(1).max(20).optional().describe('Read this many of the latest messages'),
         },
         async ({ seqs, last }) => {
           const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user' || m.notice === 'outside-edit'));
           const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
-          if (!picked.length) return fail('没有找到这些消息。');
-          const who = (m: (typeof all)[number]) => (m.role === 'user' ? '用户' : m.role === 'system' ? '系统' : `@${bots.get(m.botId || '')?.name || '队友'}`);
-          return text(picked.map((m) => `【${who(m)} · #${m.seq}】\n${(m.prompt || m.text).trim() || '（没有文字）'}`).join('\n\n'));
+          if (!picked.length) return fail('No such messages found.');
+          const who = (m: (typeof all)[number]) => (m.role === 'user' ? 'User' : m.role === 'system' ? 'System' : `@${bots.get(m.botId || '')?.name || 'teammate'}`);
+          return text(picked.map((m) => `[${who(m)} · #${m.seq}]\n${(m.prompt || m.text).trim() || '(no text)'}`).join('\n\n'));
         },
         { annotations: { readOnlyHint: true } },
       ),
       tool(
         'preview_screenshot',
-        '用真实的浏览器打开项目预览并截图，返回图片和控制台错误摘要。修改界面后用它确认实际效果；可以指定页面、设备尺寸、整页截图或只截某个元素。',
+        'Open the project preview in a real browser and take a screenshot. Returns the image and a summary of console errors. Use it after changing the UI to check how it really looks. You can pick the page, the device size, a full-page shot, or just one element.',
         {
-          path: z.string().optional().describe('页面路径，例如 / 或 /about；不填则是用户当前正在看的页面'),
+          path: z.string().optional().describe('Page path, such as / or /about. Defaults to the page the user is looking at.'),
           device,
-          fullPage: z.boolean().optional().describe('截取整页（最多 3 屏高）'),
-          selector: z.string().optional().describe('只截取匹配这个 CSS 选择器的元素'),
+          fullPage: z.boolean().optional().describe('Capture the full page (up to 3 screens tall)'),
+          selector: z.string().optional().describe('Capture only the element matching this CSS selector'),
           colorScheme,
         },
         async (args) => {
@@ -90,54 +92,54 @@ export function crewServer(ctx: CrewContext) {
                 { type: 'image' as const, data: r.png.toString('base64'), mimeType: 'image/png' },
                 {
                   type: 'text' as const,
-                  text: `页面 ${where}（${r.title || '无标题'}），${args.device || 'desktop'}${args.colorScheme === 'dark' ? '，暗色模式' : ''}${r.truncated ? '，页面较长只截取了前 3 屏' : ''}。\n${issues.length ? `控制台问题：\n${fmtLogs(issues)}` : '控制台没有错误或警告。'}`,
+                  text: `Page ${where} (${r.title || 'untitled'}), ${args.device || 'desktop'}${args.colorScheme === 'dark' ? ', dark mode' : ''}${r.truncated ? ', long page so only the first 3 screens were captured' : ''}.\n${issues.length ? `Console issues:\n${fmtLogs(issues)}` : 'No console errors or warnings.'}`,
                 },
               ],
             };
           } catch (e) {
-            return fail(`截图失败：${(e as Error).message}`);
+            return fail(`Screenshot failed: ${(e as Error).message}`);
           }
         },
         { annotations: { readOnlyHint: true } },
       ),
       tool(
         'preview_console',
-        '在浏览器中打开项目预览页面，收集控制台日志、未捕获异常和失败的网络请求。',
+        'Open a project preview page in the browser and collect console logs, uncaught exceptions, and failed network requests.',
         {
-          path: z.string().optional().describe('页面路径，不填则是用户当前正在看的页面'),
-          waitMs: z.number().optional().describe('页面加载后再等待多少毫秒收集日志，默认 1500'),
+          path: z.string().optional().describe('Page path. Defaults to the page the user is looking at.'),
+          waitMs: z.number().optional().describe('How many milliseconds to keep collecting logs after the page loads. Defaults to 1500.'),
           colorScheme,
         },
         async (args) => {
           try {
             const r = await consoleCheck({ projectId: projectId(), path: pagePath(args.path), waitMs: args.waitMs, colorScheme: args.colorScheme });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-            if (!r.logs.length) return text(`页面 ${where}（HTTP ${r.status}，${r.title || '无标题'}）：控制台干净，没有日志。`);
-            return text(`页面 ${where}（HTTP ${r.status}，${r.title || '无标题'}）共 ${r.logs.length} 条日志：\n${fmtLogs(r.logs, 60)}`);
+            if (!r.logs.length) return text(`Page ${where} (HTTP ${r.status}, ${r.title || 'untitled'}): console is clean, no logs.`);
+            return text(`Page ${where} (HTTP ${r.status}, ${r.title || 'untitled'}), ${r.logs.length} log entr${r.logs.length === 1 ? 'y' : 'ies'}:\n${fmtLogs(r.logs, 60)}`);
           } catch (e) {
-            return fail(`打开页面失败：${(e as Error).message}`);
+            return fail(`Could not open the page: ${(e as Error).message}`);
           }
         },
         { annotations: { readOnlyHint: true } },
       ),
       tool(
         'browser_act',
-        '像真实用户一样在项目预览中操作页面：打开页面、点击、输入、按键、选择、勾选、悬停、等待、滚动、执行脚本、确认页面包含某段文字。页面和登录状态在多次调用之间保留。遇到失败会停下并附带截图。',
+        'Use the project preview like a real user: open pages, click, type, press keys, select, check, hover, wait, scroll, run scripts, and confirm the page contains some text. The page and login state are kept between calls. On a failure it stops and attaches a screenshot.',
         {
-          path: z.string().optional().describe('先打开这个页面路径；不填则在当前页面继续（第一次调用会打开用户正在看的页面）'),
+          path: z.string().optional().describe('Open this page path first. If empty, continue on the current page (the first call opens the page the user is looking at).'),
           steps: z
             .array(
               z.object({
                 action: z.enum(['goto', 'click', 'fill', 'press', 'select', 'check', 'hover', 'wait', 'scroll', 'eval', 'expect_text']),
-                selector: z.string().optional().describe('CSS 选择器'),
-                text: z.string().optional().describe('按可见文字/标签/占位符定位元素（代替 selector）；expect_text 时是要确认的文字'),
-                value: z.string().optional().describe('fill 的内容、select 的选项、goto 的路径、scroll 的 top/bottom/像素、eval 的 JS 表达式、check 的 true/false'),
-                key: z.string().optional().describe('press 的按键，如 Enter、Escape、Tab'),
-                ms: z.number().optional().describe('wait 的毫秒数或超时'),
+                selector: z.string().optional().describe('CSS selector'),
+                text: z.string().optional().describe('Find the element by visible text, label, or placeholder (instead of selector). For expect_text, the text to confirm.'),
+                value: z.string().optional().describe('The text for fill, the option for select, the path for goto, top/bottom/pixels for scroll, the JS expression for eval, true/false for check'),
+                key: z.string().optional().describe('The key for press, such as Enter, Escape, Tab'),
+                ms: z.number().optional().describe('Milliseconds to wait, or the timeout'),
               }),
             )
-            .describe('按顺序执行的操作'),
-          screenshot: z.boolean().optional().describe('操作结束后附带截图'),
+            .describe('Actions to run in order'),
+          screenshot: z.boolean().optional().describe('Attach a screenshot when done'),
           device,
           colorScheme,
         },
@@ -153,26 +155,49 @@ export function crewServer(ctx: CrewContext) {
               colorScheme: args.colorScheme,
             });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-            const summary = [...r.lines, '', `当前页面：${where}（${r.title || '无标题'}）`, r.logs.length ? `期间的控制台日志：\n${fmtLogs(r.logs)}` : '期间没有控制台日志。'].join('\n');
+            const summary = [...r.lines, '', `Current page: ${where} (${r.title || 'untitled'})`, r.logs.length ? `Console logs meanwhile:\n${fmtLogs(r.logs)}` : 'No console logs meanwhile.'].join(
+              '\n',
+            );
             const content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] = [];
             if (r.png) content.push({ type: 'image', data: r.png.toString('base64'), mimeType: 'image/png' });
             content.push({ type: 'text', text: summary });
             return { content, isError: r.failed || undefined };
           } catch (e) {
-            return fail(`浏览器操作失败：${(e as Error).message}`);
+            return fail(`Browser action failed: ${(e as Error).message}`);
           }
         },
       ),
       tool(
+        'browser_debug_target',
+        'Get a DevTools protocol (CDP) endpoint and target id for your browser_act page, so analysis tools such as REA (mcp__rea__inspect_web_page, analyze_web_bundle, observe_web_session) can attach to it. It is the same page and state browser_act left; use browser_act first to get the page where you want it.',
+        {
+          path: z.string().optional().describe('Open this page path first. If empty, keep the current browser_act page (or open the page the user is looking at).'),
+          device,
+          colorScheme,
+        },
+        async (args) => {
+          try {
+            const r = await debugTarget({ key: `${ctx.chatId}:${ctx.botId}`, projectId: projectId(), path: args.path, device: args.device, colorScheme: args.colorScheme });
+            const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+            return text(
+              `cdp_endpoint: ${r.endpoint}\ntarget_id: ${r.targetId}\nPage: ${where} (${r.title || 'untitled'})\nScripts and requests under /__crew/ (such as /__crew/inject.js) are Crew's preview helper, not the project's code: leave them out of your analysis.\nThe endpoint changes if the browser restarts (it closes after 10 idle minutes); call this again if attaching fails.`,
+            );
+          } catch (e) {
+            return fail(`Could not open the page: ${(e as Error).message}`);
+          }
+        },
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
         'dev_server',
-        '管理项目的开发服务器（预览依赖它）：start 启动（缺依赖时会自动安装）、stop 停止、restart 重启、status 查看状态、logs 查看最近日志。',
+        "Manage the project's dev server (the preview depends on it): start (installs missing dependencies automatically), stop, restart, status, or logs for recent output.",
         { action: z.enum(['start', 'stop', 'restart', 'status', 'logs']) },
         async ({ action }) => {
           try {
             const ds = devServer(projectId());
             if (action === 'stop') {
               await ds.stop();
-              return text('开发服务器已停止。');
+              return text('Dev server stopped.');
             }
             if (action === 'start' || action === 'restart') {
               if (action === 'restart') await ds.restart();
@@ -187,9 +212,9 @@ export function crewServer(ctx: CrewContext) {
               .logs(action === 'logs' ? 6000 : 1500)
               .replace(ANSI, '')
               .replace(/\r/g, '');
-            const status = { stopped: '未运行', installing: '安装依赖中', starting: '启动中', running: '运行中', error: '出错' }[s.status];
+            const status = { stopped: 'not running', installing: 'installing dependencies', starting: 'starting', running: 'running', error: 'error' }[s.status];
             return text(
-              `状态：${status}${s.command ? `\n命令：${s.command}` : ''}${s.url ? `\n地址：${s.url}` : ''}${s.error ? `\n错误：${s.error}` : ''}${tail.trim() ? `\n\n最近日志：\n${tail.trim()}` : ''}`,
+              `Status: ${status}${s.command ? `\nCommand: ${s.command}` : ''}${s.url ? `\nURL: ${s.url}` : ''}${s.error ? `\nError: ${s.error}` : ''}${tail.trim() ? `\n\nRecent logs:\n${tail.trim()}` : ''}`,
             );
           } catch (e) {
             return fail((e as Error).message);
@@ -198,17 +223,22 @@ export function crewServer(ctx: CrewContext) {
       ),
       tool(
         'remember',
-        '把值得长期记住的信息写入你的长期记忆（跨对话保留），例如用户的偏好、项目约定、踩过的坑。一次记一条，简短具体。',
-        { note: z.string().describe('要记住的内容') },
+        "Save something worth keeping to your long-term memory (kept across conversations), such as the user's preferences, project conventions, or pitfalls you hit. One note at a time, short and specific.",
+        { note: z.string().describe('What to remember') },
         async ({ note }) => {
           appendMemory(ctx.botId, note);
-          return text('已记住。');
+          return text('Saved.');
         },
       ),
-      tool('notify_user', '给用户发送一条桌面/手机通知。用于定时任务或长任务中发现需要用户关注的事情。', { title: z.string(), body: z.string() }, async ({ title, body }) => {
-        notify(`${ctx.botName}：${title}`, body, { chatId: ctx.chatId, level: 'info' });
-        return text('通知已发送。');
-      }),
+      tool(
+        'notify_user',
+        'Send the user a desktop or phone notification. Use it when a scheduled or long-running task finds something the user should look at.',
+        { title: z.string(), body: z.string() },
+        async ({ title, body }) => {
+          notify(`${ctx.botName}: ${title}`, body, { chatId: ctx.chatId, level: 'info' });
+          return text('Notification sent.');
+        },
+      ),
     ],
   });
 }

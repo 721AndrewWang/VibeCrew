@@ -15,9 +15,9 @@ beforeEach(() => fs.rmSync(file, { force: true }));
 
 describe('frictionReport', () => {
   it('groups by kind and cause, worst first, inside the window', () => {
-    for (let i = 0; i < 3; i++) recordFriction({ at: now - DAY, kind: 'approval-readonly', key: 'Bash(ls*)', detail: `Forge：ls ${i}`, chatId: 'c1', chatTitle: '小队' });
-    recordFriction({ at: now - DAY, kind: 'approval-readonly', key: 'Bash(cat*)', detail: 'Forge：cat a' });
-    recordFriction({ at: now - 2 * DAY, kind: 'stall', key: 'Chief 交回后没人接手', detail: 'Chief 停了' });
+    for (let i = 0; i < 3; i++) recordFriction({ at: now - DAY, kind: 'approval-readonly', key: 'Bash(ls*)', detail: `Forge: ls ${i}`, chatId: 'c1', chatTitle: 'Squad' });
+    recordFriction({ at: now - DAY, kind: 'approval-readonly', key: 'Bash(cat*)', detail: 'Forge: cat a' });
+    recordFriction({ at: now - 2 * DAY, kind: 'stall', key: 'Nobody picked up after Chief handed back', detail: 'Chief stopped' });
     recordFriction({ at: now - 30 * DAY, kind: 'turn-error', key: 'old', detail: 'too old' });
     const r = frictionReport(7, now);
     expect(r.total).toBe(5);
@@ -31,7 +31,7 @@ describe('frictionReport', () => {
       ['Bash(cat*)', 1],
     ]);
     // Newest example first.
-    expect(ro.groups[0].examples[0].detail).toBe('Forge：ls 2');
+    expect(ro.groups[0].examples[0].detail).toBe('Forge: ls 2');
   });
 
   it('skips torn lines and unknown kinds', () => {
@@ -55,12 +55,12 @@ describe('frictionReport', () => {
 
 describe('the brief', () => {
   it('names the lead to fill in, the evidence, the guarded files, and leaves merging to the user', () => {
-    recordFriction({ at: now, kind: 'hop-limit', key: '「小队」上限 15 次', detail: '接力到了 15 次', chatTitle: '小队' });
+    recordFriction({ at: now, kind: 'hop-limit', key: '"Squad" limit 15', detail: 'Reached 15 handoffs', chatTitle: 'Squad' });
     const { brief } = frictionReport(14, now);
-    expect(brief.startsWith('@{lead} 这是 Crew 最近 14 天的摩擦报告')).toBe(true);
-    expect(brief).toContain('- 自动接力达到上限：1 次');
-    expect(brief).toContain('「小队」上限 15 次（1 次）例：接力到了 15 次（「小队」）');
+    expect(brief.startsWith("@{lead} Here's Crew's friction report for the last 14 days")).toBe(true);
+    expect(brief).toContain('- Automatic handoffs hit the limit: 1x');
+    expect(brief).toContain('"Squad" limit 15 (1x) e.g. Reached 15 handoffs ("Squad")');
     for (const f of GUARDED_FILES) expect(brief).toContain(f);
-    expect(brief).toContain('不要合并、推送、打包、重启 Crew');
+    expect(brief).toContain("Don't merge, push, package or restart Crew");
   });
 });

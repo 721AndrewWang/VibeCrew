@@ -34,7 +34,7 @@ describe('Tailscale access', () => {
     await crew.api('PATCH', '/settings', { lanEnabled: true });
     expect(await get('/api/bootstrap', HOST)).toBe(401);
     expect(await get('/api/bootstrap', `${HOST}:${crew.port}`, token())).toBe(200);
-    expect(await get('/api/bootstrap', '100.104.164.120', token())).toBe(200);
+    expect(await get('/api/bootstrap', '100.101.102.103', token())).toBe(200);
     expect(await get('/api/bootstrap', 'crew.example.com', token())).toBe(403);
   });
 });

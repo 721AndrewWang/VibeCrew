@@ -8,8 +8,8 @@ test('typing or pasting a full path replaces the folder already in the box', asy
   const target = path.join(crew.dir, 'elsewhere', 'my-app');
   fs.mkdirSync(path.join(target, 'src'), { recursive: true });
   await page.goto(crew.base);
-  await page.locator('.sb-nav-item[title="项目"]').click();
-  await page.locator('.page button', { hasText: '打开文件夹' }).first().click();
+  await page.locator('.sb-nav-item[title="Projects"]').click();
+  await page.locator('.page button', { hasText: 'Open folder' }).first().click();
   const box = page.locator('.fb-bar input');
   await expect(box).not.toHaveValue('');
   const start = await box.inputValue();

@@ -29,15 +29,15 @@ async function say(text: string) {
 describe('a chain that stops without a handoff', () => {
   it('wakes the lead once, which reads the report in full and closes the chain', async () => {
     const lead = names.get(group.leadBotId)!;
-    // The demo lead hands off to its first teammate on 交给; the teammate reports back to no one.
-    const after = await say(`@${lead} 把任务交给队友`);
+    // The demo lead hands off to its first teammate on "hand off"; the teammate reports back to no one.
+    const after = await say(`@${lead} hand off the task to a teammate`);
     const bots = after.filter((m: any) => m.role === 'bot');
     const teammate = bots[1];
     expect(names.get(bots[0].botId)).toBe(lead);
     expect(teammate.trigger).toEqual({ type: 'mention', by: group.leadBotId });
     const notes = after.filter((m: any) => m.notice === 'stall');
     expect(notes).toHaveLength(1);
-    expect(notes[0].text).toContain(`${names.get(teammate.botId)} 交回了结果`);
+    expect(notes[0].text).toContain(`${names.get(teammate.botId)} handed back their result`);
     expect(notes[0].text).toContain(`@${lead}`);
     const woken = after.filter((m: any) => m.seq > notes[0].seq && m.role === 'bot');
     expect(woken.map((m: any) => names.get(m.botId))).toEqual([lead]);
@@ -46,21 +46,21 @@ describe('a chain that stops without a handoff', () => {
 
   it('gives the lead the next turn when it ends with the continue line, once', async () => {
     const lead = names.get(group.leadBotId)!;
-    const after = await say(`@${lead} 分两步做`); // the demo lead asks to continue, then finishes
+    const after = await say(`@${lead} do it in two steps`); // the demo lead asks to continue, then finishes
     const notes = after.filter((m: any) => m.notice === 'stall');
     expect(notes).toHaveLength(1);
-    expect(notes[0].text).toContain(`${lead} 说下一步还要自己接着做`);
+    expect(notes[0].text).toContain(`${lead} said the next step is theirs too`);
     const turns = after.filter((m: any) => m.role === 'bot');
     expect(turns.map((m: any) => names.get(m.botId))).toEqual([lead, lead]);
-    expect(turns[0].text).toContain('【继续】');
+    expect(turns[0].text).toContain('[continue]');
     expect(turns[1].trigger).toEqual({ type: 'system' });
-    expect(turns[1].text).not.toContain('【继续】');
+    expect(turns[1].text).not.toContain('[continue]');
   });
 
   it('does not wake anyone when the user only asked a teammate, or the lead answered last', async () => {
     const lead = names.get(group.leadBotId)!;
     const teammate = group.botIds.map((id: string) => names.get(id)).find((n: string) => n !== lead);
-    expect((await say(`@${teammate} 看一下首页`)).some((m: any) => m.notice === 'stall')).toBe(false);
-    expect((await say(`@${teammate} 看一下首页，看完 @${lead} 核对`)).some((m: any) => m.notice === 'stall')).toBe(false);
+    expect((await say(`@${teammate} look at the home page`)).some((m: any) => m.notice === 'stall')).toBe(false);
+    expect((await say(`@${teammate} look at the home page, then @${lead} double-check`)).some((m: any) => m.notice === 'stall')).toBe(false);
   });
 });

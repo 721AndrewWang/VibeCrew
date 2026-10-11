@@ -13,15 +13,15 @@ function methodLabel(m: string) {
     case 'claudeai':
     case 'oauth':
     case 'oauth_token':
-      return 'Claude 账号';
+      return 'Claude account';
     case 'api-key':
     case 'api_key':
     case 'apiKey':
       return 'API Key';
     case 'none':
-      return '未登录';
+      return 'Not signed in';
     case 'unknown':
-      return '未知方式';
+      return 'Unknown';
     default:
       return m;
   }
@@ -56,9 +56,13 @@ export function ConnectionSection() {
     try {
       const a = await api.auth(true);
       useStore.setState({ auth: a });
-      toast(a.ready ? '模型已连接' : '还没有连接好', a.ready ? '机器人可以开始工作了' : '请按提示完成登录，或填写 API Key / 模型服务商', a.ready ? 'success' : 'warn');
+      toast(
+        a.ready ? 'Model connected' : 'Not connected yet',
+        a.ready ? 'Bots can start working' : 'Finish signing in as prompted, or enter an API key / model provider',
+        a.ready ? 'success' : 'warn',
+      );
     } catch (e) {
-      toast('检测失败', (e as Error).message, 'error');
+      toast('Check failed', (e as Error).message, 'error');
     } finally {
       setChecking(false);
     }
@@ -84,11 +88,11 @@ export function ConnectionSection() {
 
   /** What is missing before this connection can work, if anything. */
   const missing = (): string | null => {
-    if (authMode === 'api-key' && !apiKey.trim() && !settings.hasApiKey) return '请填写 API Key（在 console.anthropic.com 创建）';
+    if (authMode === 'api-key' && !apiKey.trim() && !settings.hasApiKey) return 'Enter an API key (create one at console.anthropic.com)';
     if (authMode !== 'provider') return null;
-    if (!provider.baseUrl.trim()) return '请填写服务商的地址（Base URL）';
-    if (!provider.model.trim()) return '请填写主力模型的名字';
-    if (needsKey) return `请填写 ${preset?.name || '服务商'} 的 API Key`;
+    if (!provider.baseUrl.trim()) return 'Enter the provider address (Base URL)';
+    if (!provider.model.trim()) return 'Enter the main model name';
+    if (needsKey) return `Enter the ${preset?.name || 'provider'} API key`;
     return null;
   };
 
@@ -115,23 +119,23 @@ export function ConnectionSection() {
       setToken('');
       const a = await api.auth(true);
       useStore.setState({ auth: a });
-      toast('连接设置已保存', a.ready ? '机器人可以开始工作了' : '还没有连接成功，请检查设置', a.ready ? 'success' : 'warn');
+      toast('Connection settings saved', a.ready ? 'Bots can start working' : 'Not connected yet, check the settings', a.ready ? 'success' : 'warn');
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Section icon={<KeyRound size={18} />} title="模型连接" extra={<span className={cx('badge', auth.ready ? 'green' : 'red')}>{auth.ready ? '已就绪' : '未就绪'}</span>}>
+    <Section icon={<KeyRound size={18} />} title="Model connection" extra={<span className={cx('badge', auth.ready ? 'green' : 'red')}>{auth.ready ? 'Ready' : 'Not ready'}</span>}>
       <div className="kv-list">
         <div className="kv">
           <span className="k">Claude Code</span>
           <span className="v">
             {auth.cliFound ? (
               <>
-                <span className="badge green">已安装</span>
+                <span className="badge green">Installed</span>
                 {auth.cliVersion && <span className="mono">v{auth.cliVersion.replace(/^v/, '')}</span>}
                 {auth.cliPath && (
                   <span className="mono muted ellipsis" title={auth.cliPath}>
@@ -140,33 +144,33 @@ export function ConnectionSection() {
                 )}
               </>
             ) : (
-              <span className="badge red">未找到</span>
+              <span className="badge red">Not found</span>
             )}
           </span>
         </div>
         <div className="kv">
-          <span className="k">{settings.authMode === 'provider' ? '模型服务商' : '登录状态'}</span>
+          <span className="k">{settings.authMode === 'provider' ? 'Model provider' : 'Sign-in status'}</span>
           <span className="v">
             {settings.authMode === 'provider' ? (
               <>
-                {auth.loggedIn ? <span className="badge green">已配置</span> : <span className="badge red">未配置</span>}
-                <span className="muted">{savedPreset?.name || '自定义'}</span>
+                {auth.loggedIn ? <span className="badge green">Configured</span> : <span className="badge red">Not configured</span>}
+                <span className="muted">{savedPreset?.name || 'Custom'}</span>
                 {settings.provider.model && <span className="mono">{settings.provider.model}</span>}
               </>
             ) : (
               <>
-                {auth.loggedIn ? <span className="badge green">已登录</span> : <span className="badge red">未登录</span>}
+                {auth.loggedIn ? <span className="badge green">Signed in</span> : <span className="badge red">Not signed in</span>}
                 {auth.loggedIn && <span className="muted">{methodLabel(auth.method)}</span>}
               </>
             )}
           </span>
         </div>
         <div className="kv">
-          <span className="k">上次检测</span>
+          <span className="k">Last checked</span>
           <span className="v">
             <span className="muted">{auth.checkedAt ? fmtShort(auth.checkedAt) : '—'}</span>
             <button className="btn sm" disabled={checking} onClick={recheck}>
-              {checking ? <span className="spinner tiny" /> : <RefreshCw size={13} />} 重新检测
+              {checking ? <span className="spinner tiny" /> : <RefreshCw size={13} />} Check again
             </button>
           </span>
         </div>
@@ -174,34 +178,34 @@ export function ConnectionSection() {
 
       {!auth.cliFound && (
         <div className="callout warn">
-          <div>没有在这台电脑上找到 Claude Code。Crew 通过它来运行机器人（用其他模型服务商时也一样），请先安装（需要 Node.js 18+）：</div>
+          <div>Claude Code was not found on this computer. Crew runs bots through it (even with another model provider). Install it first (requires Node.js 18+):</div>
           <CodeLine code="npm i -g @anthropic-ai/claude-code" />
-          <div className="hint">安装完成后点「重新检测」。</div>
+          <div className="hint">After installing, click "Check again".</div>
         </div>
       )}
       {auth.cliFound && !auth.ready && settings.authMode === 'claude-code' && (
         <div className="callout warn">
-          <div>Crew 通过你电脑上的 Claude Code 运行机器人。请先登录，或者在下面改用 API Key、其他模型服务商：</div>
+          <div>Crew runs bots through Claude Code on your computer. Sign in first, or switch to an API key or another model provider below:</div>
           <CodeLine code="claude auth login" />
           <div className="row wrap">
             <button className="btn primary sm" onClick={() => requestTerminal('claude auth login')}>
-              <Terminal size={13} /> 在 Crew 终端里登录
+              <Terminal size={13} /> Sign in from Crew terminal
             </button>
-            <span className="hint">登录完成后回到这里点「重新检测」。</span>
+            <span className="hint">After signing in, come back and click "Check again".</span>
           </div>
         </div>
       )}
 
       <div className="field" style={{ marginTop: 16 }}>
-        <label>连接方式</label>
+        <label>Connection method</label>
         <div className="choice-list">
           <button className={cx('choice-card row-card', authMode === 'claude-code' && 'on')} onClick={() => setAuthMode('claude-code')}>
             <span className="cc-icon">
               <Glyph emoji="💻" size={18} />
             </span>
             <div className="cc-text">
-              <div className="cc-title">使用本机 Claude Code 登录（可用订阅账号）</div>
-              <div className="cc-desc">沿用你在终端里 claude 的登录状态，Pro / Max 订阅或 Console 账号都可以。</div>
+              <div className="cc-title">Use local Claude Code sign-in (subscriptions work)</div>
+              <div className="cc-desc">Reuses your claude sign-in from the terminal. Pro / Max subscriptions and Console accounts both work.</div>
             </div>
             <span className="cc-radio">{authMode === 'claude-code' && <Check size={12} />}</span>
           </button>
@@ -210,8 +214,8 @@ export function ConnectionSection() {
               <Glyph emoji="🔑" size={18} />
             </span>
             <div className="cc-text">
-              <div className="cc-title">使用 Anthropic API Key</div>
-              <div className="cc-desc">按用量计费；也可以配合自定义 Base URL 使用兼容的网关。</div>
+              <div className="cc-title">Use an Anthropic API key</div>
+              <div className="cc-desc">Billed by usage. Can also use a compatible gateway with a custom Base URL.</div>
             </div>
             <span className="cc-radio">{authMode === 'api-key' && <Check size={12} />}</span>
           </button>
@@ -220,8 +224,8 @@ export function ConnectionSection() {
               <Glyph emoji="🌐" size={18} />
             </span>
             <div className="cc-text">
-              <div className="cc-title">使用其他模型服务商</div>
-              <div className="cc-desc">DeepSeek、Kimi、智谱 GLM、通义千问、MiniMax、OpenRouter，或本机的 Ollama。机器人仍然由 Claude Code 驱动，只是换了背后的模型。</div>
+              <div className="cc-title">Use another model provider</div>
+              <div className="cc-desc">DeepSeek, Kimi, Zhipu GLM, Qwen, MiniMax, OpenRouter, or a local Ollama. Bots still run on Claude Code, just with a different model behind it.</div>
             </div>
             <span className="cc-radio">{authMode === 'provider' && <Check size={12} />}</span>
           </button>
@@ -237,12 +241,12 @@ export function ConnectionSection() {
               type="password"
               autoComplete="off"
               value={apiKey}
-              placeholder={settings.hasApiKey ? '已保存（留空则不修改）' : 'sk-ant-…'}
+              placeholder={settings.hasApiKey ? 'Saved (leave empty to keep)' : 'sk-ant-…'}
               onChange={(e) => setApiKey(e.target.value)}
             />
           </div>
           <div className="field">
-            <label>Base URL（可选）</label>
+            <label>Base URL (optional)</label>
             <input className="input mono" value={baseUrl} placeholder="https://api.anthropic.com" onChange={(e) => setBaseUrl(e.target.value)} />
           </div>
         </div>
@@ -251,7 +255,7 @@ export function ConnectionSection() {
       {authMode === 'provider' && (
         <>
           <div className="field">
-            <label>服务商</label>
+            <label>Provider</label>
             <div className="pick-grid provider-grid">
               {providers.map((p) => (
                 <button key={p.id} type="button" className={cx('pick-card', provider.preset === p.id && 'on')} onClick={() => pick(p)}>
@@ -269,14 +273,14 @@ export function ConnectionSection() {
               {preset.hint}{' '}
               {preset.docsUrl && (
                 <a href={preset.docsUrl} target="_blank" rel="noreferrer">
-                  {preset.name} 的官方接入说明 ↗
+                  {preset.name} setup guide ↗
                 </a>
               )}
             </div>
           )}
           <div className="form-grid">
             <div className="field">
-              <label>地址（Base URL）</label>
+              <label>Address (Base URL)</label>
               <input className="input mono" value={provider.baseUrl} placeholder="https://…/anthropic" onChange={(e) => edit({ baseUrl: e.target.value })} />
             </div>
             <div className="field">
@@ -286,7 +290,7 @@ export function ConnectionSection() {
                 type="password"
                 autoComplete="off"
                 value={token}
-                placeholder={preset?.defaultToken ? '不需要' : keySaved ? '已保存（留空则不修改）' : `${preset?.name || '服务商'} 的 API Key`}
+                placeholder={preset?.defaultToken ? 'Not needed' : keySaved ? 'Saved (leave empty to keep)' : `${preset?.name || 'Provider'} API key`}
                 onChange={(e) => {
                   setToken(e.target.value);
                   setTest(null);
@@ -294,14 +298,14 @@ export function ConnectionSection() {
               />
             </div>
             <div className="field">
-              <label>主力模型</label>
+              <label>Main model</label>
               <input className="input mono" list="provider-models" value={provider.model} onChange={(e) => edit({ model: e.target.value })} />
-              <div className="hint">机器人默认用它；每个机器人也可以在自己的设置里单独选</div>
+              <div className="hint">Bots use it by default. Each bot can also pick its own in its settings</div>
             </div>
             <div className="field">
-              <label>后台小模型</label>
-              <input className="input mono" list="provider-models" value={provider.fastModel} placeholder="留空则和主力模型相同" onChange={(e) => edit({ fastModel: e.target.value })} />
-              <div className="hint">Claude Code 用它做总结、起标题这类轻量的活，便宜一些</div>
+              <label>Background small model</label>
+              <input className="input mono" list="provider-models" value={provider.fastModel} placeholder="Leave empty to use the main model" onChange={(e) => edit({ fastModel: e.target.value })} />
+              <div className="hint">Claude Code uses it for light work like summaries and titles, which is cheaper</div>
             </div>
           </div>
           <datalist id="provider-models">
@@ -316,29 +320,29 @@ export function ConnectionSection() {
         <div className={cx('callout', test === 'running' ? '' : test.ok ? 'ok' : 'error')}>
           {test === 'running' ? (
             <div>
-              <span className="spinner tiny" /> 正在用这些设置发一条很短的消息试试…
+              <span className="spinner tiny" /> Sending a very short test message with these settings…
             </div>
           ) : test.ok ? (
             <div>
-              <Check size={13} className="test-ic" /> 连接成功（{(test.ms / 1000).toFixed(1)} 秒{test.models?.length ? `，模型 ${test.models.join('、')}` : ''}），回复：{test.text}
-              {dirty && <div className="hint">别忘了点「保存连接设置」。</div>}
+              <Check size={13} className="test-ic" /> Connected ({(test.ms / 1000).toFixed(1)}s{test.models?.length ? `, model ${test.models.join(', ')}` : ''}), reply: {test.text}
+              {dirty && <div className="hint">Don't forget to click "Save connection settings".</div>}
             </div>
           ) : (
             <div>
-              <X size={13} className="test-ic" /> 连接失败：{test.text}
+              <X size={13} className="test-ic" /> Connection failed: {test.text}
             </div>
           )}
         </div>
       )}
 
       <div className="row wrap">
-        <span className="hint">密钥只保存在本机，不会上传到任何地方（只会发给你选的服务商）。</span>
+        <span className="hint">Keys are stored only on this machine and never uploaded anywhere (only sent to the provider you choose).</span>
         <span className="spacer" />
-        <button className="btn" disabled={test === 'running' || !auth.cliFound} onClick={runTest} title="用下面的设置真实发一条很短的消息，确认机器人能用">
-          {test === 'running' ? <span className="spinner tiny" /> : <Plug size={14} />} 测试连接
+        <button className="btn" disabled={test === 'running' || !auth.cliFound} onClick={runTest} title="Send a real, very short message with the settings below to confirm bots will work">
+          {test === 'running' ? <span className="spinner tiny" /> : <Plug size={14} />} Test connection
         </button>
         <button className="btn primary" disabled={saving || !dirty} onClick={save}>
-          {saving ? <span className="spinner" /> : <Save size={14} />} 保存连接设置
+          {saving ? <span className="spinner" /> : <Save size={14} />} Save connection settings
         </button>
       </div>
     </Section>

@@ -41,12 +41,12 @@ function DevServerPanel({ project, active }: { project: Project; active: boolean
       .catch(() => {});
   }, [project.id]);
   const status = ds?.status || 'stopped';
-  const run = (a: 'start' | 'stop' | 'restart') => api.dev(project.id, a).catch((e) => toast('操作失败', e.message, 'error'));
+  const run = (a: 'start' | 'stop' | 'restart') => api.dev(project.id, a).catch((e) => toast('Action failed', e.message, 'error'));
   return (
     <div className="dev-panel">
       <div className="dev-panel-head">
         <span className={cx('dot', status === 'running' ? 'green' : status === 'error' ? 'red' : status === 'stopped' ? '' : 'orange pulse')} />
-        <code>{ds?.command || project.devDetected || '（没有检测到启动命令）'}</code>
+        <code>{ds?.command || project.devDetected || '(No start command detected)'}</code>
         {ds?.url && (
           <a href={ds.url} target="_blank" rel="noreferrer" className="muted">
             {ds.url}
@@ -55,21 +55,21 @@ function DevServerPanel({ project, active }: { project: Project; active: boolean
         <span className="spacer" />
         {status === 'stopped' || status === 'error' ? (
           <button className="btn sm" onClick={() => run('start')} disabled={!project.devDetected}>
-            <Play size={13} /> 启动
+            <Play size={13} /> Start
           </button>
         ) : (
           <>
             <button className="btn sm" onClick={() => run('restart')}>
-              <RotateCw size={13} /> 重启
+              <RotateCw size={13} /> Restart
             </button>
             <button className="btn sm" onClick={() => run('stop')}>
-              <Square size={11} /> 停止
+              <Square size={11} /> Stop
             </button>
           </>
         )}
       </div>
       {ds?.error && <div className="dev-error">{ds.error}</div>}
-      <LogTerminal content={logs || '\x1b[90m开发服务器的输出会显示在这里。\x1b[0m\r\n'} active={active} />
+      <LogTerminal content={logs || '\x1b[90mDev server output will appear here.\x1b[0m\r\n'} active={active} />
     </div>
   );
 }
@@ -100,7 +100,7 @@ export function TerminalTab({ project, active }: { project: Project; active: boo
   }, [project.id]);
 
   const add = (command?: string) => {
-    const t: TermTab = { id: newId(), title: command ? command.split(' ').slice(0, 3).join(' ') : `终端 ${tabs.length + 1}`, command };
+    const t: TermTab = { id: newId(), title: command ? command.split(' ').slice(0, 3).join(' ') : `Terminal ${tabs.length + 1}`, command };
     setTabs((cur) => [...cur, t]);
     setCurrent(t.id);
   };
@@ -130,7 +130,7 @@ export function TerminalTab({ project, active }: { project: Project; active: boo
       <div className="term-tabs">
         {hasDev && (
           <button className={cx('term-tab', shown === 'dev' && 'on')} onClick={() => setCurrent('dev')}>
-            <Rocket size={13} /> 开发服务器
+            <Rocket size={13} /> Dev server
           </button>
         )}
         {tabs.map((t) => (
@@ -143,13 +143,13 @@ export function TerminalTab({ project, active }: { project: Project; active: boo
                 e.stopPropagation();
                 close(t.id);
               }}
-              title="关闭"
+              title="Close"
             >
               <X size={11} />
             </button>
           </div>
         ))}
-        <button className="icon-btn sm" title="新终端" onClick={() => add()}>
+        <button className="icon-btn sm" title="New terminal" onClick={() => add()}>
           <Plus size={14} />
         </button>
       </div>
@@ -167,7 +167,7 @@ export function TerminalTab({ project, active }: { project: Project; active: boo
         {!hasDev && !tabs.length && (
           <div className="empty">
             <button className="btn" onClick={() => add()}>
-              <SquareTerminal size={14} /> 打开终端
+              <SquareTerminal size={14} /> Open terminal
             </button>
           </div>
         )}

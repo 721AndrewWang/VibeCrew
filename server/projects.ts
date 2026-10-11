@@ -40,7 +40,7 @@ export class HttpError extends Error {
 
 export function getProject(id: string | null | undefined): Project {
   const p = projects.get(id);
-  if (!p) throw new HttpError(404, '项目不存在');
+  if (!p) throw new HttpError(404, 'Project not found');
   return p;
 }
 
@@ -61,7 +61,7 @@ export function configOf(project: Project): Project {
 export function resolveInProject(project: Project, rel: string): string {
   const root = path.resolve(project.path);
   const abs = path.resolve(root, rel.replace(/^[/\\]+/, ''));
-  if (abs !== root && !abs.startsWith(root + path.sep)) throw new HttpError(400, '路径超出项目目录');
+  if (abs !== root && !abs.startsWith(root + path.sep)) throw new HttpError(400, 'Path is outside the project folder');
   return abs;
 }
 
@@ -100,8 +100,8 @@ export function detectFramework(dir: string): string {
     if (deps['@angular/core']) return 'Angular';
     return 'Node.js';
   }
-  if (fs.existsSync(path.join(dir, 'index.html'))) return '静态网页';
-  return '未知';
+  if (fs.existsSync(path.join(dir, 'index.html'))) return 'Static site';
+  return 'Unknown';
 }
 
 export function packageManager(dir: string): 'npm' | 'pnpm' | 'yarn' | 'bun' {
@@ -172,7 +172,7 @@ export function touchProject(id: string) {
 
 export function openExistingProject(dir: string, name?: string): Project {
   const abs = path.resolve(dir.replace(/^~(?=$|\/)/, process.env.HOME || '~'));
-  if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) throw new HttpError(400, `文件夹不存在：${abs}`);
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) throw new HttpError(400, `Folder doesn't exist: ${abs}`);
   const existing = listProjects().find((p) => path.resolve(p.path) === abs);
   if (existing) return existing;
   const now = Date.now();
@@ -191,7 +191,7 @@ export function openExistingProject(dir: string, name?: string): Project {
 
 export async function createProject(input: { name: string; template: string; parentDir?: string; folder?: string }): Promise<Project> {
   const tpl = PROJECT_TEMPLATES.find((t) => t.id === input.template) || PROJECT_TEMPLATES[0];
-  const title = input.name.trim() || '我的网站';
+  const title = input.name.trim() || 'My site';
   const root = path.resolve(input.parentDir || settings.get().projectsRoot);
   fs.mkdirSync(root, { recursive: true });
   const base = slugify(input.folder || '') || slugify(title) || `site-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
@@ -205,7 +205,7 @@ export async function createProject(input: { name: string; template: string; par
   try {
     await run('git', ['init', '-q'], { cwd: dir });
     await run('git', ['add', '-A'], { cwd: dir });
-    await run('git', ['commit', '-q', '-m', '初始化项目（Crew）'], { cwd: dir });
+    await run('git', ['commit', '-q', '-m', 'Initialize project (Crew)'], { cwd: dir });
   } catch {
     /* git missing or no identity configured; the project still works */
   }
@@ -220,7 +220,7 @@ const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slic
 
 export function updateProject(id: string, patch: ProjectPatch): Project {
   const p = getProject(id);
-  if (p.workspace) throw new HttpError(400, '工作区沿用原项目的设置，请在原项目里修改');
+  if (p.workspace) throw new HttpError(400, "Workspaces use the original project's settings; change them in the original project");
   if (patch.name !== undefined) p.name = patch.name.trim() || p.name;
   if (patch.devCommand !== undefined) p.devCommand = patch.devCommand.trim() || undefined;
   if (patch.staticRoot !== undefined) p.staticRoot = patch.staticRoot.trim() || undefined;
@@ -295,7 +295,7 @@ export function isBinary(buf: Buffer): boolean {
 export function readProjectFile(project: Project, rel: string): { path: string; content?: string; binary?: boolean; size: number; tooLarge?: boolean } {
   const abs = resolveInProject(project, rel);
   const st = fs.statSync(abs);
-  if (st.isDirectory()) throw new HttpError(400, '这是一个文件夹');
+  if (st.isDirectory()) throw new HttpError(400, 'This is a folder');
   if (st.size > 2 * 1024 * 1024) return { path: rel, size: st.size, tooLarge: true };
   const buf = fs.readFileSync(abs);
   if (isBinary(buf)) return { path: rel, size: st.size, binary: true };

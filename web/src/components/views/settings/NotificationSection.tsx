@@ -9,44 +9,48 @@ export function NotificationSection() {
   const supported = typeof window !== 'undefined' && 'Notification' in window;
   const [perm, setPerm] = useState<NotificationPermission | 'unsupported'>(supported ? Notification.permission : 'unsupported');
   const info: Record<string, { cls: string; text: string }> = {
-    granted: { cls: 'green', text: '已允许' },
-    denied: { cls: 'red', text: '已拒绝' },
-    default: { cls: '', text: '未设置' },
-    unsupported: { cls: '', text: '浏览器不支持' },
+    granted: { cls: 'green', text: 'Allowed' },
+    denied: { cls: 'red', text: 'Blocked' },
+    default: { cls: '', text: 'Not set' },
+    unsupported: { cls: '', text: 'Not supported' },
   };
 
   const ask = async () => {
     try {
       setPerm(await Notification.requestPermission());
     } catch (e) {
-      toast('请求通知权限失败', (e as Error).message, 'error');
+      toast('Could not request notification permission', (e as Error).message, 'error');
     }
   };
 
   const test = () => {
     try {
-      new Notification('Crew', { body: '桌面通知已开启：机器人完成任务或需要你确认时会提醒你。', icon: '/icon.svg' });
+      new Notification('Crew', { body: "Desktop notifications are on: you'll be alerted when a bot finishes a task or needs your approval.", icon: '/icon.svg' });
     } catch {
-      toast('无法显示通知', '这个浏览器只允许在后台时显示通知', 'warn');
+      toast('Could not show notification', 'This browser only shows notifications while in the background', 'warn');
     }
   };
 
   return (
-    <Section icon={<Bell size={18} />} title="通知">
+    <Section icon={<Bell size={18} />} title="Notifications">
       <div className="setting-row">
         <div>
           <div className="sr-title">
-            桌面通知 <span className={cx('badge', info[perm].cls)}>{info[perm].text}</span>
+            Desktop notifications <span className={cx('badge', info[perm].cls)}>{info[perm].text}</span>
           </div>
-          <div className="hint">{perm === 'denied' ? '通知被浏览器拦截了，请在地址栏左侧的网站设置里重新允许。' : '页面在后台时，机器人完成任务或等待你确认会弹出通知。'}</div>
+          <div className="hint">
+            {perm === 'denied'
+              ? 'The browser blocked notifications. Allow them again in the site settings left of the address bar.'
+              : 'While the page is in the background, you get a notification when a bot finishes a task or waits for your approval.'}
+          </div>
         </div>
         {perm === 'granted' ? (
           <button className="btn sm" onClick={test}>
-            发送测试通知
+            Send test notification
           </button>
         ) : (
           <button className="btn sm primary" disabled={perm !== 'default'} onClick={ask}>
-            允许桌面通知
+            Allow desktop notifications
           </button>
         )}
       </div>
@@ -70,7 +74,7 @@ function PhonePush() {
       setUrl('');
       toast(done, undefined, 'success');
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -80,9 +84,9 @@ function PhonePush() {
     setBusy(true);
     try {
       await api.testPush();
-      toast('测试推送已发出', '看一下手机', 'success');
+      toast('Test push sent', 'Check your phone', 'success');
     } catch (e) {
-      toast('推送失败', (e as Error).message, 'error');
+      toast('Push failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -91,34 +95,37 @@ function PhonePush() {
   return (
     <div className="field span-all">
       <label>
-        手机推送（Bark） <span className={cx('badge', push.configured && 'green')}>{push.configured ? '已设置' : '未设置'}</span>
+        Phone push (Bark) <span className={cx('badge', push.configured && 'green')}>{push.configured ? 'Set' : 'Not set'}</span>
       </label>
-      <div className="hint">机器人等你确认超过设定的时间还没人处理，就推送到 iPhone。推送里只有谁在等、在做什么，不含命令内容。在 Bark App 里复制形如 https://api.day.app/你的key 的地址填到这里。</div>
+      <div className="hint">
+        When a bot has waited for your approval longer than the set time, a push goes to your iPhone. It only says who is waiting and what they're doing, never the command itself. Copy the address
+        like https://api.day.app/your-key from the Bark app and paste it here.
+      </div>
       <div className="row wrap">
         <input
           className="input mono"
           type="password"
           autoComplete="off"
-          placeholder={push.configured ? '已保存（填新地址可替换）' : 'https://api.day.app/你的key'}
+          placeholder={push.configured ? 'Saved (enter a new address to replace)' : 'https://api.day.app/your-key'}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <button className="btn sm primary" disabled={busy || !url.trim()} onClick={() => save({ barkUrl: url.trim() }, 'Bark 地址已保存')}>
-          保存
+        <button className="btn sm primary" disabled={busy || !url.trim()} onClick={() => save({ barkUrl: url.trim() }, 'Bark address saved')}>
+          Save
         </button>
       </div>
       <div className="row wrap">
         <label className="hint">
-          等待超过 <input className="input sm" type="number" min={1} max={240} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 1)} style={{ width: 70 }} /> 分钟推送
+          Push after waiting <input className="input sm" type="number" min={1} max={240} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 1)} style={{ width: 70 }} /> min
         </label>
-        <button className="btn sm" disabled={busy || minutes === push.afterMinutes} onClick={() => save({ afterMinutes: minutes }, '已保存')}>
-          保存时间
+        <button className="btn sm" disabled={busy || minutes === push.afterMinutes} onClick={() => save({ afterMinutes: minutes }, 'Saved')}>
+          Save time
         </button>
         <button className="btn sm" disabled={busy || !push.configured} onClick={test}>
-          发送测试推送
+          Send test push
         </button>
-        <button className="btn sm" disabled={busy || !push.configured} onClick={() => save({ barkUrl: '' }, '已关闭手机推送')}>
-          关闭
+        <button className="btn sm" disabled={busy || !push.configured} onClick={() => save({ barkUrl: '' }, 'Phone push turned off')}>
+          Turn off
         </button>
       </div>
     </div>

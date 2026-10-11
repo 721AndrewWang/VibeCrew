@@ -1,3 +1,4 @@
+import { createServer } from 'node:net';
 import type { Browser, BrowserContext, Locator, Page } from 'playwright-core';
 import type { ConsoleEntry } from '../shared/types';
 import { findChrome } from './config';
@@ -18,6 +19,8 @@ export const hasBrowser = () => !!findChrome();
 let browser: Browser | null = null;
 let launching: Promise<Browser> | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
+/** Loopback DevTools port of the running browser, so analysis tools (such as the REA plugin) can attach. */
+let cdpPort: number | null = null;
 
 /** Emulated `prefers-color-scheme`: pages with a dark theme switch to it. */
 export type ColorScheme = 'light' | 'dark';
@@ -32,23 +35,37 @@ interface Session {
 }
 const sessions = new Map<string, Session>();
 
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      srv.close(() => (addr && typeof addr === 'object' ? resolve(addr.port) : reject(new Error('No free port'))));
+    });
+  });
+}
+
 async function getBrowser(): Promise<Browser> {
   if (browser?.isConnected()) return browser;
   if (launching) return launching;
   const executablePath = findChrome();
-  if (!executablePath) throw new Error('没有找到 Chrome/Chromium。请安装 Google Chrome，或设置环境变量 CREW_CHROME_PATH。');
+  if (!executablePath) throw new Error('Chrome/Chromium not found. Install Google Chrome, or set the CREW_CHROME_PATH environment variable.');
   launching = (async () => {
     const { chromium } = await import('playwright-core');
+    const port = await freePort();
     const b = await chromium.launch({
       executablePath,
       headless: true,
-      args: ['--no-first-run', '--no-default-browser-check', '--disable-dev-shm-usage', '--hide-scrollbars'],
+      args: ['--no-first-run', '--no-default-browser-check', '--disable-dev-shm-usage', '--hide-scrollbars', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'],
     });
     b.on('disconnected', () => {
       browser = null;
+      cdpPort = null;
       sessions.clear();
     });
     browser = b;
+    cdpPort = port;
     return b;
   })();
   try {
@@ -74,7 +91,7 @@ async function newContext(device: Device, colorScheme: ColorScheme = 'light'): P
     hasTouch: d.mobile,
     userAgent: device === 'mobile' ? MOBILE_UA : undefined,
     reducedMotion: 'reduce',
-    locale: 'zh-CN',
+    locale: 'en-US',
   });
 }
 
@@ -94,7 +111,7 @@ function collect(page: Page, logs: ConsoleEntry[]) {
   page.on('pageerror', (e) => add('error', `Uncaught ${e.name}: ${e.message}${e.stack ? '\n' + e.stack.split('\n').slice(1, 4).join('\n') : ''}`));
   page.on('requestfailed', (r) => {
     if (r.url().includes('/__crew/')) return;
-    add('error', `[network] ${r.method()} ${r.url()} 失败：${r.failure()?.errorText || ''}`);
+    add('error', `[network] ${r.method()} ${r.url()} failed: ${r.failure()?.errorText || ''}`);
   });
   page.on('response', (r) => {
     if (r.status() >= 400 && !r.url().includes('/__crew/') && !/favicon\.ico$/.test(r.url())) add('warn', `[network] ${r.status()} ${r.request().method()} ${r.url()}`);
@@ -208,28 +225,28 @@ function locate(page: Page, s: ActStep, forInput = false): Locator {
       .or(page.getByText(s.text))
       .first();
   }
-  throw new Error('需要 selector 或 text 来定位元素');
+  throw new Error('Needs a selector or text to find the element');
 }
 
 function describe(s: ActStep): string {
-  const target = s.selector || (s.text ? `「${s.text}」` : '');
+  const target = s.selector || (s.text ? `"${s.text}"` : '');
   switch (s.action) {
     case 'goto':
-      return `打开 ${s.value || '/'}`;
+      return `Open ${s.value || '/'}`;
     case 'fill':
-      return `在 ${target} 输入「${s.value ?? ''}」`;
+      return `Type "${s.value ?? ''}" into ${target}`;
     case 'press':
-      return `按键 ${s.key || s.value}${target ? ` @ ${target}` : ''}`;
+      return `Press ${s.key || s.value}${target ? ` @ ${target}` : ''}`;
     case 'select':
-      return `在 ${target} 选择「${s.value}」`;
+      return `Select "${s.value}" in ${target}`;
     case 'wait':
-      return s.selector || s.text ? `等待 ${target} 出现` : `等待 ${s.ms ?? 500}ms`;
+      return s.selector || s.text ? `Wait for ${target} to appear` : `Wait ${s.ms ?? 500}ms`;
     case 'scroll':
-      return `滚动到 ${s.value || 'bottom'}`;
+      return `Scroll to ${s.value || 'bottom'}`;
     case 'eval':
-      return `执行脚本`;
+      return `Run script`;
     case 'expect_text':
-      return `确认页面包含「${s.text || s.value}」`;
+      return `Check the page contains "${s.text || s.value}"`;
     default:
       return `${s.action} ${target}`;
   }
@@ -263,7 +280,7 @@ export async function act(opts: { key: string; projectId: string; path?: string;
     const url = await resolveUrl(opts.projectId, opts.path);
     await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
     await settle(page);
-    lines.push(`✓ 打开 ${opts.path || '/'}`);
+    lines.push(`✓ Open ${opts.path || '/'}`);
   }
   let failed = false;
   for (const s of opts.steps) {
@@ -319,7 +336,7 @@ export async function act(opts: { key: string; projectId: string; path?: string;
             },
             s.value || s.text || 'undefined',
           );
-          lines.push(`✓ 执行脚本 → ${String(r).slice(0, 1500)}`);
+          lines.push(`✓ Run script → ${String(r).slice(0, 1500)}`);
           continue;
         }
         case 'expect_text': {
@@ -329,11 +346,11 @@ export async function act(opts: { key: string; projectId: string; path?: string;
             .first()
             .isVisible()
             .catch(() => false);
-          if (!ok) throw new Error(`页面上没有看到「${want}」`);
+          if (!ok) throw new Error(`Didn't see "${want}" on the page`);
           break;
         }
         default:
-          throw new Error(`未知操作 ${(s as ActStep).action}`);
+          throw new Error(`Unknown action ${(s as ActStep).action}`);
       }
       await page.waitForTimeout(150);
       lines.push(`✓ ${describe(s)}`);
@@ -348,6 +365,23 @@ export async function act(opts: { key: string; projectId: string; path?: string;
   let png: Buffer | undefined;
   if (opts.screenshot || failed) png = await page.screenshot().catch(() => undefined);
   return { lines, failed, url: page.url(), title: await page.title().catch(() => ''), logs: newLogs, png };
+}
+
+/**
+ * Opens (or keeps) the browser_act page for `key` and returns how to attach to it over the
+ * DevTools protocol: the loopback endpoint and the page's target id.
+ */
+export async function debugTarget(opts: { key: string; projectId: string; path?: string; device?: Device; colorScheme?: ColorScheme }) {
+  const r = await act({ ...opts, steps: [] });
+  const sess = sessions.get(opts.key);
+  if (!sess || !cdpPort) throw new Error('The browser is not running');
+  const cdp = await sess.ctx.newCDPSession(sess.page);
+  try {
+    const { targetInfo } = (await cdp.send('Target.getTargetInfo')) as { targetInfo: { targetId: string } };
+    return { endpoint: `http://127.0.0.1:${cdpPort}`, targetId: targetInfo.targetId, url: r.url, title: r.title };
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
 }
 
 export async function resetActSession(key: string) {

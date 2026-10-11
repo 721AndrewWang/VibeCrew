@@ -68,7 +68,7 @@ export async function checkAuth(force = false): Promise<AuthStatus> {
   if (!force && Date.now() - cached.checkedAt < 60_000) return cached;
   if (inflight) return inflight;
   inflight = (async () => {
-    // A forced check (the 重新检测 button) also looks for a CLI installed since the last check.
+    // A forced check (the Re-check button) also looks for a CLI installed since the last check.
     const cli = findClaudeExecutable(force);
     const s = settings.get();
     const next: AuthStatus = { cliFound: !!cli, cliPath: cli || undefined, loggedIn: false, method: 'none', ready: false, checkedAt: Date.now() };
@@ -175,7 +175,7 @@ async function probe(s: Settings): Promise<ConnectionTest | null> {
   const ms = Date.now() - t0;
   if ('error' in r) {
     if (/ENOENT/.test(r.error)) return null; // no curl: let Claude Code tell
-    return { ok: false, text: `连不上 ${base}：${r.error.replace(/^curl: \(\d+\)\s*/, '')}（海外服务可能需要代理）`, ms };
+    return { ok: false, text: `Can't reach ${base}: ${r.error.replace(/^curl: \(\d+\)\s*/, '')} (you may need a proxy)`, ms };
   }
   if (r.status >= 200 && r.status < 300) return { ok: true, text: '', ms };
   let msg = r.body.slice(0, 300);
@@ -186,8 +186,16 @@ async function probe(s: Settings): Promise<ConnectionTest | null> {
     /* not JSON */
   }
   const why =
-    r.status === 401 || r.status === 403 ? 'Key 不对或没有权限' : r.status === 404 ? '地址或模型名不对' : r.status === 429 ? '额度不足或请求太频繁' : r.status >= 500 ? '服务商出错了' : '请求被拒绝';
-  return { ok: false, text: `${why}（HTTP ${r.status}）：${msg}`, ms };
+    r.status === 401 || r.status === 403
+      ? 'Wrong key or no permission'
+      : r.status === 404
+        ? 'Wrong URL or model name'
+        : r.status === 429
+          ? 'Out of quota or too many requests'
+          : r.status >= 500
+            ? 'The provider had an error'
+            : 'Request rejected';
+  return { ok: false, text: `${why} (HTTP ${r.status}): ${msg}`, ms };
 }
 
 /**
@@ -196,15 +204,15 @@ async function probe(s: Settings): Promise<ConnectionTest | null> {
  */
 export async function testConnection(s: Settings): Promise<ConnectionTest> {
   const cli = findClaudeExecutable();
-  if (!cli) return { ok: false, text: '没有找到 Claude Code，请先安装：npm i -g @anthropic-ai/claude-code', ms: 0 };
-  if (s.authMode === 'provider' && !providerConfigured(s)) return { ok: false, text: '请先填写地址、Key 和主力模型', ms: 0 };
+  if (!cli) return { ok: false, text: 'Claude Code not found. Install it first: npm i -g @anthropic-ai/claude-code', ms: 0 };
+  if (s.authMode === 'provider' && !providerConfigured(s)) return { ok: false, text: 'Fill in the URL, key and main model first', ms: 0 };
   const quick = await probe(s);
   if (quick && !quick.ok) return quick;
   const t0 = Date.now();
   let out = '';
   let err = '';
   try {
-    ({ stdout: out } = await run(cli, ['-p', '只回复“连接成功”四个字，不要说别的。', '--output-format', 'json', '--max-turns', '1'], {
+    ({ stdout: out } = await run(cli, ['-p', 'Reply with just the word "Connected" and nothing else.', '--output-format', 'json', '--max-turns', '1'], {
       env: cleanEnv(modelEnv(s)),
       cwd: os.tmpdir(),
       timeout: 120_000,
@@ -213,16 +221,16 @@ export async function testConnection(s: Settings): Promise<ConnectionTest> {
   } catch (e) {
     const x = e as { stdout?: string; stderr?: string; message?: string; killed?: boolean };
     out = String(x.stdout || '');
-    err = x.killed ? '等了 2 分钟没有回应，请检查地址和网络（海外服务可能需要代理）' : String(x.stderr || x.message || '').trim();
+    err = x.killed ? 'No response after 2 minutes. Check the URL and your network (you may need a proxy).' : String(x.stderr || x.message || '').trim();
   }
   const ms = Date.now() - t0;
   try {
     const j = JSON.parse(out.trim().split('\n').pop() || '');
     const text = String(j.result ?? '').trim();
     const models = j.modelUsage ? Object.keys(j.modelUsage) : undefined;
-    if (j.is_error || j.subtype !== 'success') return { ok: false, text: text || err || '请求失败', models, ms };
-    return { ok: true, text: text || '（模型没有回复文字）', models, ms };
+    if (j.is_error || j.subtype !== 'success') return { ok: false, text: text || err || 'Request failed', models, ms };
+    return { ok: true, text: text || '(the model replied with no text)', models, ms };
   } catch {
-    return { ok: false, text: err.split('\n').slice(-3).join(' ') || '请求失败，Claude Code 没有返回结果', ms };
+    return { ok: false, text: err.split('\n').slice(-3).join(' ') || 'Request failed: Claude Code returned no result', ms };
   }
 }

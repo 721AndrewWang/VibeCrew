@@ -77,29 +77,28 @@ export function pluginServers(bot: Bot): Record<string, McpServerConfig> {
 
 export function contextLines(project: Project | null): string[] {
   const now = new Date();
-  const week = '日一二三四五六'[now.getDay()];
-  const lines = [`时间：${now.toLocaleString('zh-CN', { hour12: false })}（周${week}）`];
+  const lines = [`Time: ${now.toLocaleString('en-US', { hour12: false })} (${now.toLocaleDateString('en-US', { weekday: 'long' })})`];
   if (!project) return lines;
   const cmd = devCommand(project);
   const ds = devServer(project.id).state;
-  if (!cmd) lines.push('预览：静态网页，由 Crew 直接提供，保存文件后自动刷新。');
-  else if (ds.status === 'running') lines.push(`开发服务器：运行中 ${ds.url}（命令 ${ds.command}）`);
-  else if (ds.status === 'installing' || ds.status === 'starting') lines.push(`开发服务器：${ds.status === 'installing' ? '正在安装依赖' : '正在启动'}（${cmd}）`);
-  else lines.push(`开发服务器：未运行（需要 ${cmd}，可以用 dev_server 工具启动）${ds.error ? `，上次错误：${ds.error}` : ''}`);
+  if (!cmd) lines.push('Preview: static site served directly by Crew; it refreshes automatically when files are saved.');
+  else if (ds.status === 'running') lines.push(`Dev server: running at ${ds.url} (command: ${ds.command})`);
+  else if (ds.status === 'installing' || ds.status === 'starting') lines.push(`Dev server: ${ds.status === 'installing' ? 'installing dependencies' : 'starting'} (${cmd})`);
+  else lines.push(`Dev server: not running (needs ${cmd}; start it with the dev_server tool)${ds.error ? `. Last error: ${ds.error}` : ''}`);
   const page = previewPages.get(project.id);
-  if (page) lines.push(`用户正在预览的页面：${page}`);
+  if (page) lines.push(`Page the user is previewing: ${page}`);
   const conf = configOf(project);
   const denied = settings.get().denyRules || [];
-  if (denied.length) lines.push(`禁止的操作（系统会直接拒绝，不要尝试，也不要换写法绕过）：${denied.join('、')}`);
+  if (denied.length) lines.push(`Blocked actions (the system refuses them outright; don't try them or work around them with a different command): ${denied.join(', ')}`);
   const sb = settings.get().sandbox;
   if (sb.enabled && sandboxStatus().available) {
     const domains = [...ALWAYS_ALLOWED, ...sb.allowedDomains, ...(conf.allowedDomains || [])];
     lines.push(
-      `你运行的命令在沙盒里：只能访问本机和这些域名：${domains.join('、')}。连不上别的主机是设计如此，不要找办法绕过；需要别的域名就直接告诉用户，让用户在设置里添加。要在命令里访问本机已经在跑的服务（预览、开发服务器、localhost 上的接口），命令前面加 env -u no_proxy -u NO_PROXY，否则会连不上；看页面优先用 Crew 的浏览器工具。`,
+      `Your commands run in a sandbox: they can only reach this machine and these domains: ${domains.join(', ')}. Not being able to reach other hosts is by design, so don't look for a way around it; if you need another domain, tell the user and let them add it in Settings. To reach a service already running on this machine from a command (the preview, the dev server, APIs on localhost), prefix the command with env -u no_proxy -u NO_PROXY, or it won't connect; to look at pages, prefer Crew's browser tools.`,
     );
   }
-  if (conf.commitGuide) lines.push(`这个项目的提交信息要求：${conf.commitGuide}`);
-  if (conf.noAttribution) lines.push('这个项目的提交和 PR 里不要加任何 AI 署名（Co-Authored-By、Generated with 之类）。');
+  if (conf.commitGuide) lines.push(`Commit message rules for this project: ${conf.commitGuide}`);
+  if (conf.noAttribution) lines.push("Don't add any AI attribution (Co-Authored-By, Generated with, and the like) to this project's commits and PRs.");
   return lines;
 }
 

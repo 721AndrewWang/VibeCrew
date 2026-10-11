@@ -7,10 +7,10 @@ import { cx, fmtClock } from '../../utils';
 import { Glyph } from '../ui';
 
 const DEVICES: { id: Device; label: string; icon: typeof Laptop; w?: number; h?: number }[] = [
-  { id: 'fill', label: '自适应', icon: Maximize },
-  { id: 'desktop', label: '桌面 1280', icon: Laptop, w: 1280, h: 800 },
-  { id: 'tablet', label: '平板 820', icon: Tablet, w: 820, h: 1180 },
-  { id: 'mobile', label: '手机 390', icon: Smartphone, w: 390, h: 844 },
+  { id: 'fill', label: 'Fit', icon: Maximize },
+  { id: 'desktop', label: 'Desktop 1280', icon: Laptop, w: 1280, h: 800 },
+  { id: 'tablet', label: 'Tablet 820', icon: Tablet, w: 820, h: 1180 },
+  { id: 'mobile', label: 'Phone 390', icon: Smartphone, w: 390, h: 844 },
 ];
 
 function previewHost() {
@@ -31,34 +31,34 @@ function ConsoleDrawer({ projectId, chatId, entries, onClose }: { projectId: str
     const pick = (problems.length ? problems : entries).slice(-40);
     if (!pick.length) return;
     addAttachment(chatId, { kind: 'console', id: attachmentId(), page: previewOf(projectId).path, entries: pick });
-    toast('已附加到输入框', `${pick.length} 条控制台日志，写一句话发给机器人吧`, 'success');
+    toast('Attached to input', `${pick.length} console log${pick.length === 1 ? '' : 's'}. Add a note and send it to the bot.`, 'success');
   };
   return (
     <div className="console-drawer">
       <div className="console-head">
         <span className="segmented">
           <button className={cx(filter === 'problems' && 'on')} onClick={() => setFilter('problems')}>
-            问题
+            Problems
           </button>
           <button className={cx(filter === 'all' && 'on')} onClick={() => setFilter('all')}>
-            全部 {entries.length}
+            All {entries.length}
           </button>
         </span>
         <span className="spacer" />
         <button className="btn sm" onClick={send} disabled={!entries.length}>
-          <Send size={12} /> 发给机器人修复
+          <Send size={12} /> Send to bot to fix
         </button>
-        <button className="icon-btn sm" title="清空" onClick={() => updatePreview(projectId, { console: [] })}>
+        <button className="icon-btn sm" title="Clear" onClick={() => updatePreview(projectId, { console: [] })}>
           <Trash2 size={13} />
         </button>
-        <button className="icon-btn sm" title="收起" onClick={onClose}>
+        <button className="icon-btn sm" title="Collapse" onClick={onClose}>
           ×
         </button>
       </div>
       <div className="console-list" ref={list}>
         {!shown.length && (
           <div className="muted" style={{ padding: 10 }}>
-            {filter === 'problems' ? '没有错误或警告' : '还没有日志'}
+            {filter === 'problems' ? 'No errors or warnings' : 'No logs yet'}
           </div>
         )}
         {shown.map((e, i) => (
@@ -97,7 +97,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
     api
       .preview(project.id)
       .then((p) => useStore.setState((s) => ({ previews: { ...s.previews, [p.projectId]: p } })))
-      .catch((e) => toast('预览启动失败', e.message, 'error'));
+      .catch((e) => toast('Preview failed to start', e.message, 'error'));
   }, [project.id]);
 
   // Reload when the preview switches between static files and the dev server.
@@ -164,7 +164,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
       }
       if (d.type === 'picked') {
         addAttachment(chat.id, { kind: 'element', id: attachmentId(), ...d.info });
-        toast('已选中元素', `${d.info.tag}${d.info.text ? `「${d.info.text.slice(0, 30)}」` : ''} 已附加到输入框，按住 Shift 可以连续选择`, 'success');
+        toast('Element selected', `${d.info.tag}${d.info.text ? ` "${d.info.text.slice(0, 30)}"` : ''} attached to input. Hold Shift to select more.`, 'success');
         return;
       }
       if (d.type === 'pick_end') {
@@ -233,9 +233,9 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
     try {
       const up = await api.screenshot(project.id, pv.path || '/', pv.device === 'fill' ? 'desktop' : pv.device);
       addAttachment(chat.id, { kind: 'image', id: attachmentId(), name: up.name, mime: up.mime, url: up.url });
-      toast('截图已附加到输入框', undefined, 'success');
+      toast('Screenshot attached to input', undefined, 'success');
     } catch (e) {
-      toast('截图失败', (e as Error).message, 'error');
+      toast('Screenshot failed', (e as Error).message, 'error');
     } finally {
       setShooting(false);
     }
@@ -247,7 +247,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
       if (previewOf(project.id).steps.length) openModal({ kind: 'saveRecording', projectId: project.id });
     } else {
       updatePreview(project.id, { recording: true, steps: [], picking: false });
-      toast('开始录制', '在预览里像平时一样操作，完成后再点一次录制按钮。可以保存为技能，或让机器人写成自动化测试。', 'info');
+      toast('Recording started', 'Use the preview as usual, then click the record button again when done. You can save it as a skill or have a bot turn it into an automated test.', 'info');
     }
   };
 
@@ -258,13 +258,13 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
   return (
     <div className="browser">
       <div className="browser-bar">
-        <button className="icon-btn sm" title="后退" onClick={() => post({ type: 'history', dir: -1 })}>
+        <button className="icon-btn sm" title="Back" onClick={() => post({ type: 'history', dir: -1 })}>
           <ArrowLeft size={15} />
         </button>
-        <button className="icon-btn sm" title="前进" onClick={() => post({ type: 'history', dir: 1 })}>
+        <button className="icon-btn sm" title="Forward" onClick={() => post({ type: 'history', dir: 1 })}>
           <ArrowRight size={15} />
         </button>
-        <button className="icon-btn sm" title="刷新" onClick={reload}>
+        <button className="icon-btn sm" title="Refresh" onClick={reload}>
           <RotateCw size={14} className={cx(loading && devReady && 'spin-slow')} />
         </button>
         <form
@@ -275,7 +275,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
           }}
         >
           <span className="addr-host" title={info?.target}>
-            {info?.mode === 'proxy' ? (ds?.url || '').replace(/^https?:\/\//, '').replace(/\/$/, '') : '静态'}
+            {info?.mode === 'proxy' ? (ds?.url || '').replace(/^https?:\/\//, '').replace(/\/$/, '') : 'static'}
           </span>
           <input value={address} onChange={(e) => setAddress(e.target.value)} spellCheck={false} onFocus={(e) => e.target.select()} />
         </form>
@@ -291,23 +291,23 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
         <button
           className={cx('btn sm', pv.picking && 'primary')}
           onClick={() => updatePreview(project.id, { picking: !pv.picking, recording: false })}
-          title="在页面上点选一个元素，发给机器人（Esc 取消，Shift 连选）"
+          title="Click an element on the page to send it to the bot (Esc to cancel, Shift to select more)"
         >
-          <MousePointerClick size={13} /> {pv.picking ? '点选页面元素…' : '圈选元素'}
+          <MousePointerClick size={13} /> {pv.picking ? 'Click an element…' : 'Pick element'}
         </button>
-        <button className={cx('btn sm', pv.recording && 'danger solid')} onClick={toggleRecord} title="录制你的操作，保存为技能或生成测试（像 Grokbot 的 Teach a task）">
-          <Circle size={11} fill={pv.recording ? 'currentColor' : 'none'} /> {pv.recording ? `停止录制（${pv.steps.length} 步）` : '录制演示'}
+        <button className={cx('btn sm', pv.recording && 'danger solid')} onClick={toggleRecord} title="Record your actions to save as a skill or generate a test (like Grokbot's Teach a task)">
+          <Circle size={11} fill={pv.recording ? 'currentColor' : 'none'} /> {pv.recording ? `Stop recording (${pv.steps.length} step${pv.steps.length === 1 ? '' : 's'})` : 'Record demo'}
         </button>
-        <button className="btn sm" onClick={screenshot} disabled={shooting} title="截图并附加到输入框">
-          {shooting ? <span className="spinner" /> : <Camera size={13} />} 截图
+        <button className="btn sm" onClick={screenshot} disabled={shooting} title="Take a screenshot and attach it to the input">
+          {shooting ? <span className="spinner" /> : <Camera size={13} />} Screenshot
         </button>
         <span className="spacer" />
-        <button className={cx('btn sm', consoleOpen && 'primary')} onClick={() => setConsoleOpen(!consoleOpen)} title="控制台">
-          <AlertTriangle size={13} /> 控制台
+        <button className={cx('btn sm', consoleOpen && 'primary')} onClick={() => setConsoleOpen(!consoleOpen)} title="Console">
+          <AlertTriangle size={13} /> Console
           {problems.length > 0 && <span className={cx('count', errorCount ? 'red' : 'orange')}>{problems.length}</span>}
         </button>
         {frameUrl && (
-          <a className="icon-btn sm" href={`${base}${pv.path || '/'}`} target="_blank" rel="noreferrer" title="在新标签页打开">
+          <a className="icon-btn sm" href={`${base}${pv.path || '/'}`} target="_blank" rel="noreferrer" title="Open in new tab">
             <ExternalLink size={14} />
           </a>
         )}
@@ -315,7 +315,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
       <div className={cx('stage', dev.w ? 'framed' : 'fill')} ref={stage}>
         {frameUrl && devReady && (
           <div className="frame-wrap" style={dev.w ? { width: dev.w, height: dev.h, transform: `scale(${scale})` } : undefined}>
-            <iframe key={src.n} ref={iframe} src={frameUrl} title="预览" onLoad={() => setLoading(false)} allow="clipboard-write; fullscreen" />
+            <iframe key={src.n} ref={iframe} src={frameUrl} title="Preview" onLoad={() => setLoading(false)} allow="clipboard-write; fullscreen" />
           </div>
         )}
         {needsDev && !devReady && (
@@ -323,7 +323,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
             {ds?.status === 'installing' || ds?.status === 'starting' ? (
               <>
                 <div className="spinner" style={{ width: 26, height: 26 }} />
-                <h3>{ds.status === 'installing' ? '正在安装依赖…' : '开发服务器启动中…'}</h3>
+                <h3>{ds.status === 'installing' ? 'Installing dependencies…' : 'Starting dev server…'}</h3>
                 <p className="muted">{ds.command || project.devDetected}</p>
               </>
             ) : (
@@ -331,30 +331,30 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
                 <div className="big">
                   <Glyph emoji="🚀" size={26} />
                 </div>
-                <h3>{ds?.status === 'error' ? '开发服务器出错了' : '开发服务器还没启动'}</h3>
-                <p className="muted">{ds?.error || `这个项目需要运行 ${project.devDetected} 才能预览`}</p>
+                <h3>{ds?.status === 'error' ? 'Dev server error' : 'Dev server not running'}</h3>
+                <p className="muted">{ds?.error || `Run ${project.devDetected} to preview this project`}</p>
                 <div className="row">
-                  <button className="btn primary" onClick={() => api.dev(project.id, 'start').catch((e) => toast('启动失败', e.message, 'error'))}>
-                    启动开发服务器
+                  <button className="btn primary" onClick={() => api.dev(project.id, 'start').catch((e) => toast('Failed to start', e.message, 'error'))}>
+                    Start dev server
                   </button>
                 </div>
               </>
             )}
             <button className="btn sm ghost" onClick={() => setComputer({ tab: 'terminal' })}>
-              <TerminalSquare size={13} /> 查看日志
+              <TerminalSquare size={13} /> View logs
             </button>
           </div>
         )}
       </div>
       {pv.recording && (
         <div className="rec-bar">
-          <span className="rec-dot" /> 正在录制 · 已记录 {pv.steps.length} 步
+          <span className="rec-dot" /> Recording · {pv.steps.length} step{pv.steps.length === 1 ? '' : 's'}
           <span className="spacer" />
           <button className="btn sm" onClick={toggleRecord}>
-            完成
+            Done
           </button>
           <button className="btn sm ghost" onClick={() => updatePreview(project.id, { recording: false, steps: [] })}>
-            放弃
+            Discard
           </button>
         </div>
       )}

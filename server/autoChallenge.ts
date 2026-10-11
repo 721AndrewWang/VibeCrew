@@ -32,14 +32,14 @@ export function ruleReasons(files: ChangedFile[], rules: AutoChallenge): string[
     const hit = files.filter((f) => re.test(f.path));
     if (hit.length)
       reasons.push(
-        `改了 ${hit
+        `Changed ${hit
           .slice(0, 3)
           .map((f) => f.path)
-          .join('、')}${hit.length > 3 ? ` 等 ${hit.length} 个文件` : ''}（规则 ${pattern}）`,
+          .join(', ')}${hit.length > 3 ? ` and others (${hit.length} files)` : ''} (rule ${pattern})`,
       );
   }
   const lines = files.reduce((n, f) => n + f.added + f.removed, 0);
-  if (rules.minLines > 0 && lines >= rules.minLines) reasons.push(`一共改了 ${lines} 行（规则：至少 ${rules.minLines} 行）`);
+  if (rules.minLines > 0 && lines >= rules.minLines) reasons.push(`Changed ${lines} lines in total (rule: at least ${rules.minLines} lines)`);
   return reasons;
 }
 
@@ -81,7 +81,7 @@ export async function currentChange(project: Project): Promise<{ files: ChangedF
 
 /** The reviewer to call: a Skeptic made from the template, else another blind reviewer with a verdict line. */
 export function findSkeptic(all: Bot[]): Bot | undefined {
-  return all.find((b) => b.template === 'skeptic') || all.find((b) => b.blindReview && b.description.includes('结论：'));
+  return all.find((b) => b.template === 'skeptic') || all.find((b) => b.blindReview && b.description.includes('Verdict:'));
 }
 
 interface ChatState {

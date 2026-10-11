@@ -47,24 +47,24 @@ export function DefaultsSection() {
       useStore.setState({ settings: r.settings });
       setMaxHops(r.settings.maxHops);
       setProjectsRoot(r.settings.projectsRoot);
-      toast('默认设置已保存', undefined, 'success');
+      toast('Defaults saved', undefined, 'success');
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Section icon={<SlidersHorizontal size={18} />} title="默认值">
+    <Section icon={<SlidersHorizontal size={18} />} title="Defaults">
       <div className="form-grid">
         <div className="field">
-          <label>默认模型</label>
+          <label>Default model</label>
           <ModelPicker value={defaultModel} onChange={setDefaultModel} />
-          <div className="hint">机器人没有单独指定模型时使用</div>
+          <div className="hint">Used when a bot doesn't set its own model</div>
         </div>
         <div className="field">
-          <label>新机器人的默认权限</label>
+          <label>Default permission for new bots</label>
           <select className="select" value={defaultPermission} onChange={(e) => setDefaultPermission(e.target.value as PermissionLevel)}>
             {(Object.keys(PERMISSION_INFO) as PermissionLevel[]).map((k) => (
               <option key={k} value={k}>
@@ -75,39 +75,44 @@ export function DefaultsSection() {
           <div className="hint">{PERMISSION_INFO[defaultPermission].desc}</div>
         </div>
         <div className="field">
-          <label>自动接力上限</label>
+          <label>Auto hand-off limit</label>
           <input className="input num-input" type="number" min={0} max={30} value={maxHops} onChange={(e) => setMaxHops(Number(e.target.value))} />
-          <div className="hint">群聊里机器人之间互相 @ 的最多次数，防止无限循环</div>
+          <div className="hint">Max times bots can @ each other in a group chat, to prevent endless loops</div>
         </div>
         <div className="field">
-          <label>上下文超过多少换新会话（k token）</label>
+          <label>Start a new session above this context (k tokens)</label>
           <input className="input num-input" type="number" min={0} step={10} value={rotateK} onChange={(e) => setRotateK(Number(e.target.value))} />
-          <div className="hint">续上的会话每次调用都要把全部历史重读一遍，越聊越贵。超过这个大小，下一轮换成新会话，带上最近 12 条消息。新会话本身大约 40k。填 0 就不换。</div>
-        </div>
-        <div className="field">
-          <label>一轮里上下文超过多少提醒收尾（k token）</label>
-          <input className="input num-input" type="number" min={0} step={10} value={wrapUpK} onChange={(e) => setWrapUpK(Number(e.target.value))} />
           <div className="hint">
-            一轮里每调用一次工具，都要把整段上下文重读一遍，长任务越做越贵。超过这个大小，提醒机器人做完手上这一步就收尾：写下做完了什么、还剩什么，交回去，下一轮用新会话接着做。填 0 就不提醒。
+            A resumed session rereads the whole history on every call, so long chats get pricier. Above this size, the next turn starts a new session that carries the last 12 messages. A new session
+            itself is about 40k. Set 0 to never switch.
           </div>
         </div>
         <div className="field">
-          <label>项目文件夹</label>
+          <label>Ask to wrap up above this context in one turn (k tokens)</label>
+          <input className="input num-input" type="number" min={0} step={10} value={wrapUpK} onChange={(e) => setWrapUpK(Number(e.target.value))} />
+          <div className="hint">
+            Every tool call in a turn rereads the whole context, so long tasks get pricier. Above this size, the bot is told to wrap up after its current step: note what's done and what's left, hand
+            back, and continue in a new session next turn. Set 0 to never remind.
+          </div>
+        </div>
+        <div className="field">
+          <label>Projects folder</label>
           <input className="input mono" value={projectsRoot} placeholder="~/CrewProjects" onChange={(e) => setProjectsRoot(e.target.value)} />
-          <div className="hint">新建的项目放在这里</div>
+          <div className="hint">New projects go here</div>
         </div>
         <div className="field span-all">
-          <label>禁止的操作</label>
-          <textarea className="input mono" rows={3} value={denyRules} placeholder={'每行一条，例如\nBash(*prod-server*)\nBash(rm -rf /*)'} onChange={(e) => setDenyRules(e.target.value)} />
+          <label>Forbidden actions</label>
+          <textarea className="input mono" rows={3} value={denyRules} placeholder={'One per line, e.g.\nBash(*prod-server*)\nBash(rm -rf /*)'} onChange={(e) => setDenyRules(e.target.value)} />
           <div className="hint">
-            所有机器人、所有项目、任何权限模式下都直接拒绝，连「全自动」也不行。写法和「必须确认」一样，* 匹配任意内容。这是按命令文字匹配的，只能防误操作；真正挡住网络访问的是下面的沙盒。
+            Always denied for every bot and project in any permission mode, even "Full auto". Same syntax as "Always ask"; * matches anything. This matches command text, so it only guards against
+            mistakes. The sandbox below is what actually blocks network access.
           </div>
         </div>
       </div>
       <div className="row">
         <span className="spacer" />
         <button className="btn primary" disabled={saving || !dirty} onClick={save}>
-          {saving ? <span className="spinner" /> : <Save size={14} />} 保存
+          {saving ? <span className="spinner" /> : <Save size={14} />} Save
         </button>
       </div>
     </Section>

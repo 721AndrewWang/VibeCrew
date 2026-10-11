@@ -70,7 +70,7 @@ export const skills = {
 
   save(input: Partial<Skill> & { name: string }, previousName?: string): Skill {
     const name = input.name.trim().toLowerCase();
-    if (!NAME_RE.test(name)) throw new Error('技能名只能包含小写字母、数字和连字符（最多 40 个字符）');
+    if (!NAME_RE.test(name)) throw new Error('Skill names may only contain lowercase letters, digits and hyphens (up to 40 characters)');
     const s: Skill = {
       name,
       title: input.title?.trim() || name,
@@ -81,7 +81,7 @@ export const skills = {
       builtin: false,
       updatedAt: Date.now(),
     };
-    if (!s.body) throw new Error('技能内容不能为空');
+    if (!s.body) throw new Error("The skill content can't be empty");
     // Renaming: drop the old file and tell clients (a renamed override brings its built-in back).
     if (previousName && previousName !== name) this.remove(previousName);
     fs.writeFileSync(path.join(DATA.skills, `${name}.md`), serialize(s));
@@ -107,7 +107,7 @@ export const skills = {
     const args = (m[2] || '').trim();
     let body = skill.body;
     if (body.includes('{{args}}')) body = body.split('{{args}}').join(args);
-    else if (args) body += `\n\n补充说明：${args}`;
+    else if (args) body += `\n\nAdditional notes: ${args}`;
     return { text: body, skill };
   },
 };
@@ -118,30 +118,30 @@ export function recordingToSkillBody(steps: RecordedStep[], startPage: string, g
     const n = `${i + 1}.`;
     switch (s.type) {
       case 'click':
-        return `${n} 点击 ${s.text ? `「${s.text}」` : ''}（${s.selector}）`;
+        return `${n} Click ${s.text ? `"${s.text}" ` : ''}(${s.selector})`;
       case 'fill':
-        return `${n} 在 ${s.text ? `「${s.text}」` : ''}输入框（${s.selector}）中填写 ${s.value === '******' ? '（密码，向用户询问或使用测试账号）' : `「${s.value}」`}`;
+        return `${n} In the ${s.text ? `"${s.text}" ` : ''}input (${s.selector}), enter ${s.value === '******' ? '(a password: ask the user or use a test account)' : `"${s.value}"`}`;
       case 'select':
-        return `${n} 在下拉框（${s.selector}）中选择「${s.value}」`;
+        return `${n} In the dropdown (${s.selector}), select "${s.value}"`;
       case 'check':
-        return `${n} ${s.value === 'true' ? '勾选' : '取消勾选'} ${s.text ? `「${s.text}」` : ''}（${s.selector}）`;
+        return `${n} ${s.value === 'true' ? 'Check' : 'Uncheck'} ${s.text ? `"${s.text}" ` : ''}(${s.selector})`;
       case 'press':
-        return `${n} 按下 ${s.key}${s.selector ? `（焦点在 ${s.selector}）` : ''}`;
+        return `${n} Press ${s.key}${s.selector ? ` (focus on ${s.selector})` : ''}`;
       case 'submit':
-        return `${n} 提交表单（${s.selector}）`;
+        return `${n} Submit the form (${s.selector})`;
       case 'navigate':
-        return `${n} 页面跳转到 ${s.url}`;
+        return `${n} The page navigates to ${s.url}`;
       default:
         return `${n} ${JSON.stringify(s)}`;
     }
   });
   return [
-    `目标：${goal || '重复我演示的这个操作流程，并确认每一步都成功。'}`,
+    `Goal: ${goal || 'Repeat the flow I demonstrated and confirm every step succeeds.'}`,
     '',
-    `这是我在页面 ${startPage} 上录制的操作演示：`,
+    `Here's a demo I recorded on the page ${startPage}:`,
     ...lines,
     '',
-    '请用 browser_act 按顺序复现这些步骤（先打开起始页面；选择器失效时按文字或语义重新定位元素），',
-    '每个关键步骤后检查页面状态和控制台报错，最后用 preview_screenshot 截图并汇报结果。{{args}}',
+    'Use browser_act to reproduce these steps in order (open the start page first; if a selector no longer works, find the element again by its text or meaning).',
+    'After each key step, check the page state and console errors. Finish by taking a screenshot with preview_screenshot and reporting the result. {{args}}',
   ].join('\n');
 }

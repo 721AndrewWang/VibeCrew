@@ -17,13 +17,13 @@ function cronFor(t: RoutineTrigger): string | null {
 }
 
 export function validateTrigger(t: RoutineTrigger) {
-  if (t.type === 'interval' && !(t.minutes >= 1)) throw new Error('间隔至少 1 分钟');
+  if (t.type === 'interval' && !(t.minutes >= 1)) throw new Error('The interval must be at least 1 minute');
   const expr = cronFor(t);
   if (expr) {
     try {
       new Cron(expr, { paused: true }).stop();
     } catch {
-      throw new Error(`无效的时间表达式：${expr}`);
+      throw new Error(`Invalid schedule expression: ${expr}`);
     }
   }
 }
@@ -89,12 +89,12 @@ export function runRoutine(r: Routine, reason: 'schedule' | 'manual' | 'event' =
 
 export function saveRoutine(input: Partial<Routine> & Pick<Routine, 'name' | 'botId' | 'prompt' | 'trigger'>): Routine {
   validateTrigger(input.trigger);
-  if (!bots.get(input.botId)) throw new Error('机器人不存在');
-  if (!input.prompt.trim()) throw new Error('任务内容不能为空');
+  if (!bots.get(input.botId)) throw new Error('Bot not found');
+  if (!input.prompt.trim()) throw new Error("The task can't be empty");
   const existing = input.id ? routines.get(input.id) : undefined;
   const r: Routine = {
     id: existing?.id || uid('r_'),
-    name: input.name.trim() || '未命名任务',
+    name: input.name.trim() || 'Untitled task',
     enabled: input.enabled ?? existing?.enabled ?? true,
     botId: input.botId,
     chatId: input.chatId ?? null,

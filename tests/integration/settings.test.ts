@@ -54,7 +54,7 @@ describe('a chat’s switches', () => {
 
   it('keeps bot turns working with them set', async () => {
     await crew.api('PATCH', `/chats/${chat.id}`, { permission: 'review', effort: 'high' });
-    const sent = await crew.api('POST', `/chats/${chat.id}/messages`, { text: '你好' });
+    const sent = await crew.api('POST', `/chats/${chat.id}/messages`, { text: 'Hello' });
     expect((await waitTurn(crew.api, chat.id, sent.seq)).status).toBe('done');
   });
 });
@@ -64,7 +64,7 @@ describe('context usage', () => {
     const b = await crew.api('GET', '/bootstrap');
     const dm = b.chats.find((c: any) => c.kind === 'dm');
     const botId = dm.botIds[0];
-    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '在吗' });
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: 'Are you there?' });
     const reply = await waitTurn(crew.api, dm.id, sent.seq);
     expect(reply.meta.model).toBe('claude-opus-5-5');
     const usage = await waitFor(async () => (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.id === dm.id)?.context?.[botId]);

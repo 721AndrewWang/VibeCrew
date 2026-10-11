@@ -25,11 +25,11 @@ const log = logger('permission');
 
 const approvals = new Map<string, PendingApproval>();
 
-/** Why the action is refused outright (Settings → 默认值 → 禁止的操作), or null. Read fresh on every call. */
+/** Why the action is refused outright (Settings → Defaults → Blocked actions), or null. Read fresh on every call. */
 export function deniedReason(toolName: string, input: unknown, cwd: string): string | null {
   const rule = matchingRule(settings.get().denyRules || [], toolName, input, cwd);
   if (!rule) return null;
-  return `这个操作被禁止了（设置 → 默认值 → 禁止的操作：${rule}）。不要换一种写法绕过它；需要的话请用户自己来做。`;
+  return `This action is blocked (Settings → Defaults → Blocked actions: ${rule}). Don't try to get around it with a different command; if it's needed, ask the user to do it themselves.`;
 }
 
 /** The canUseTool hook for one turn of a bot in a chat. */
@@ -45,7 +45,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     }
     // The project's own "must ask" rules apply to every bot working there.
     const projectRules = project ? configOf(project).askRules || [] : [];
-    // The chat's mode switch is read each time: switching to 自动 applies to the running turn too.
+    // The chat's mode switch is read each time: switching to Auto applies to the running turn too.
     const level = effectiveBot(chats.get(chat.id) || chat, current).permission;
     const d = decide(current, level, toolName, input, cwd, { ...opts, projectRules });
     log[d.behavior === 'allow' ? 'debug' : 'info'](`${bot.name} in ${chat.id}: ${d.behavior} ${desc.title} — ${d.because}`);
@@ -67,7 +67,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     part.rule = part.rules?.[0];
     stream.addPart(part);
     setStatus(bot.id, { state: 'waiting', detail: desc.title, chatId: chat.id });
-    notify(`${bot.name} 需要你的确认`, desc.title, { chatId: chat.id, level: 'warn' });
+    notify(`${bot.name} needs your approval`, desc.title, { chatId: chat.id, level: 'warn' });
     // Still open after a few minutes: a push to the phone (Bark), if one is set up.
     const cancelPush = remindLater(bot.name, chat.title || bot.name, desc.title);
     const askedAt = Date.now();
@@ -94,7 +94,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     if (decision.allow) return { behavior: 'allow' as const, updatedInput: input };
     return {
       behavior: 'deny' as const,
-      message: decision.message ? `用户拒绝了这个操作，并说：${decision.message}` : '用户拒绝了这个操作。请换一种做法，或者先问问用户。',
+      message: decision.message ? `The user denied this action and said: ${decision.message}` : 'The user denied this action. Try a different approach, or ask the user first.',
     };
   };
 }
@@ -153,15 +153,15 @@ function noteApprovalFriction(a: {
       ...base,
       kind: 'approval-denied',
       key: a.because,
-      detail: `${a.bot.name}：${a.title}${command ? ` — ${command}` : ''}${a.decision.message ? `（你说：${a.decision.message}）` : ''}`,
+      detail: `${a.bot.name}: ${a.title}${command ? ` — ${command}` : ''}${a.decision.message ? ` (you said: ${a.decision.message})` : ''}`,
     });
   }
   // In "ask every step" mode the user chose to see read-only commands too.
   if (a.decision.allow && command && (a.chat.permission || a.bot.permission) !== 'ask') {
     const segs = splitCommand(command).filter((s) => s.trim());
-    if (segs.length && segs.every(harmless)) recordFriction({ ...base, kind: 'approval-readonly', key: a.because, detail: `${a.bot.name}：${command}` });
+    if (segs.length && segs.every(harmless)) recordFriction({ ...base, kind: 'approval-readonly', key: a.because, detail: `${a.bot.name}: ${command}` });
   }
   if (!a.decision.expired && a.waitedMs >= SLOW_APPROVAL_MS) {
-    recordFriction({ ...base, kind: 'approval-slow', key: a.because, detail: `${a.bot.name} 等了 ${Math.round(a.waitedMs / 60_000)} 分钟：${a.title}` });
+    recordFriction({ ...base, kind: 'approval-slow', key: a.because, detail: `${a.bot.name} waited ${Math.round(a.waitedMs / 60_000)} min: ${a.title}` });
   }
 }

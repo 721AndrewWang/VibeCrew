@@ -129,11 +129,11 @@ export function buildTrace(rows: Row[], from: number): { steps: TraceStep[]; tot
 
 /** The trace of a turn, or why there is none. */
 export function turnTrace(meta: { sessionId: string; cwd: string; from: number; to: number } | undefined): TurnTrace {
-  if (!meta) return { available: false, reason: '这一轮没有记录会话信息（演示模式，或者是旧版本留下的消息）。' };
+  if (!meta) return { available: false, reason: 'No session info was recorded for this turn (demo mode, or a message from an older version).' };
   const file = transcriptPath(meta.cwd, meta.sessionId);
-  if (!fs.existsSync(file)) return { available: false, reason: `找不到 Claude Code 的会话记录（${file}）。它可能被清理了。` };
+  if (!fs.existsSync(file)) return { available: false, reason: `Can't find the Claude Code session log (${file}). It may have been cleaned up.` };
   const rows = readTurnRows(file, meta.sessionId, meta.from, meta.to);
-  if (!rows.length) return { available: false, reason: '会话记录里没有这一轮的内容。' };
+  if (!rows.length) return { available: false, reason: 'The session log has nothing for this turn.' };
   const { steps, totals } = buildTrace(rows, meta.from);
   return { available: true, sessionId: meta.sessionId, file, steps, totals };
 }

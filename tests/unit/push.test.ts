@@ -20,9 +20,9 @@ describe('barkUrlOk', () => {
 
 describe('the approval push', () => {
   it('names who waits, where, and the action, nothing more', () => {
-    const t = approvalPushText('Forge', 'apellespell 小队', '运行命令：清理测试数据', 10);
-    expect(t.title).toBe('Forge 在等你确认');
-    expect(t.body).toBe('「apellespell 小队」里已经等了 10 分钟：运行命令：清理测试数据');
+    const t = approvalPushText('Forge', 'acme-shop team', 'Run command: clean up test data', 10);
+    expect(t.title).toBe('Forge is waiting for your approval');
+    expect(t.body).toBe('Waiting 10 min in "acme-shop team": Run command: clean up test data');
   });
 });
 
@@ -39,18 +39,18 @@ describe('remindLater', () => {
   });
 
   it('pushes once the delay passes with the request still open', async () => {
-    remindLater('Forge', 'apellespell 小队', '运行命令');
+    remindLater('Forge', 'acme-shop team', 'Run command');
     await vi.advanceTimersByTimeAsync(9 * 60_000);
     expect(fetchMock).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.day.app/KEY123');
-    expect(JSON.parse(String(init.body))).toMatchObject({ title: 'Forge 在等你确认', group: 'Crew' });
+    expect(JSON.parse(String(init.body))).toMatchObject({ title: 'Forge is waiting for your approval', group: 'Crew' });
   });
 
   it('does not push once the request is answered', async () => {
-    const cancel = remindLater('Forge', 'g', '运行命令');
+    const cancel = remindLater('Forge', 'g', 'Run command');
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     cancel();
     await vi.advanceTimersByTimeAsync(60 * 60_000);
@@ -59,7 +59,7 @@ describe('remindLater', () => {
 
   it('does nothing without a Bark address', async () => {
     push.barkUrl = '';
-    remindLater('Forge', 'g', '运行命令');
+    remindLater('Forge', 'g', 'Run command');
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(fetchMock).not.toHaveBeenCalled();
     push.barkUrl = 'https://api.day.app/KEY123';

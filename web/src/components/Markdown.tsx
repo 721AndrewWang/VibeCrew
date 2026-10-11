@@ -21,7 +21,7 @@ const md = new Marked({
       } catch {
         html = escapeHtml(token.text);
       }
-      return `<div class="code-block"><div class="code-head"><span>${escapeHtml(lang || 'code')}</span><button class="code-copy" type="button">复制</button></div><pre><code class="hljs">${html}</code></pre></div>`;
+      return `<div class="code-block"><div class="code-head"><span>${escapeHtml(lang || 'code')}</span><button class="code-copy" type="button">Copy</button></div><pre><code class="hljs">${html}</code></pre></div>`;
     },
     link(token: Tokens.Link) {
       const text = this.parser.parseInline(token.tokens);
@@ -44,7 +44,7 @@ function render(text: string, names: string[]): string {
     if (PATH_RE.test(c.textContent || '')) c.classList.add('code-path');
   });
   if (names.length) {
-    const re = new RegExp(`@(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|所有人|all)(?![A-Za-z0-9_-])`, 'gi');
+    const re = new RegExp(`@(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|all|everyone)(?![A-Za-z0-9_-])`, 'gi');
     const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     while (walker.nextNode()) {
@@ -79,8 +79,8 @@ export const Markdown = memo(function Markdown({ text, names = [], projectId, cl
     if (t.classList.contains('code-copy')) {
       const code = t.closest('.code-block')?.querySelector('code')?.textContent || '';
       void copyText(code).then(() => {
-        t.textContent = '已复制';
-        setTimeout(() => (t.textContent = '复制'), 1200);
+        t.textContent = 'Copied';
+        setTimeout(() => (t.textContent = 'Copy'), 1200);
       });
       return;
     }
@@ -89,7 +89,7 @@ export const Markdown = memo(function Markdown({ text, names = [], projectId, cl
       openFileInEditor(projectId, p);
       return;
     }
-    if (t.classList.contains('code-path') && !projectId) toast('这个对话没有绑定项目');
+    if (t.classList.contains('code-path') && !projectId) toast('This chat has no linked project');
   };
   // biome-ignore lint/security/noDangerouslySetInnerHtml: rendered by marked, then run through DOMPurify
   return <div className={className ? `md ${className}` : 'md'} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;

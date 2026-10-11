@@ -11,12 +11,12 @@ export function wrapUpNote(used: number, limit: number, remindedAt: number | nul
   if (!(limit > 0) || used < limit) return null;
   if (remindedAt !== null && used < remindedAt + WRAP_UP_AGAIN) return null;
   const k = Math.round(used / 1000);
-  if (remindedAt !== null) return `【Crew】这一轮的上下文已经到 ${k}k token，请现在就收尾：写下做完了什么、还剩什么、下一步从哪里开始，然后结束这一轮。`;
+  if (remindedAt !== null) return `[Crew] This turn's context has reached ${k}k tokens. Wrap up now: write down what is done, what is left, and where the next step starts, then end this turn.`;
   return [
-    `【Crew】这一轮的上下文已经到 ${k}k token。之后每调用一次工具都要把整段上下文重读一遍，越往后越贵。请把手上这一步做完就收尾，不要再开新的子任务：`,
-    '1. 确认改动都已保存；做到一半的地方说清楚停在哪里。',
-    '2. 用一条回复写清：做完了什么、还剩什么、下一步从哪里开始（文件、命令、要注意的地方）。',
-    '3. 群聊里照常交回（@ 负责人或接手的人）；单聊里告诉用户回一句就能接着做。',
-    '下一轮会换成新会话，带上最近的消息，从你的总结接着做。',
+    `[Crew] This turn's context has reached ${k}k tokens. From here on, every tool call re-reads the whole context, so each one costs more than the last. Finish the step in hand and wrap up; do not start new subtasks:`,
+    '1. Make sure all changes are saved. If something is half done, say exactly where you stopped.',
+    '2. In one reply, write down what is done, what is left, and where the next step starts (files, commands, things to watch for).',
+    '3. In a group chat, hand back as usual (@ the lead or whoever takes over). In a direct chat, tell the user a one-line reply is enough to continue.',
+    'The next turn starts a new session with the recent messages and picks up from your summary.',
   ].join('\n');
 }

@@ -20,7 +20,7 @@ async function save(chat: Chat, patch: Switches) {
     const next = await api.setChatSwitches(chat.id, patch);
     useStore.setState((s) => ({ chats: { ...s.chats, [chat.id]: next } }));
   } catch (e) {
-    toast('没能切换', (e as Error).message, 'error');
+    toast("Couldn't switch", (e as Error).message, 'error');
   }
 }
 
@@ -48,7 +48,7 @@ const item = (label: string, desc: string | undefined, on: boolean, onClick: () 
 });
 
 const resetItem = (chat: Chat, key: keyof Switches): MenuItem[] =>
-  chat[key] === undefined ? [] : [{ separator: true }, { label: '恢复各机器人自己的设置', onClick: () => void save(chat, { [key]: null }) }];
+  chat[key] === undefined ? [] : [{ separator: true }, { label: "Use each bot's own setting", onClick: () => void save(chat, { [key]: null }) }];
 
 export function ModeSwitch({ chat }: { chat: Chat }) {
   const list = useChatBots(chat);
@@ -58,16 +58,21 @@ export function ModeSwitch({ chat }: { chat: Chat }) {
   const value = working.length ? chat.permission || shared(working, (b) => b.permission) : 'plan';
   const Icon = value ? MODE_ICON[value] : ShieldCheck;
   const items = (): MenuItem[] => [
-    { heading: readOnly.length && working.length ? `这个对话里机器人的权限（${readOnly.map((b) => b.name).join('、')} 是只读角色，保持只读）` : '这个对话里机器人的权限' },
+    {
+      heading:
+        readOnly.length && working.length
+          ? `Bot permissions in this chat (${readOnly.map((b) => b.name).join(', ')} ${readOnly.length === 1 ? 'is a read-only role and stays' : 'are read-only roles and stay'} read-only)`
+          : 'Bot permissions in this chat',
+    },
     ...MODE_ORDER.map((m) =>
       item(PERMISSION_INFO[m].label, PERMISSION_INFO[m].desc, chat.permission === m || (!chat.permission && value === m), () => void save(chat, { permission: m }), MODE_ICON[m]),
     ),
     ...resetItem(chat, 'permission'),
   ];
   return (
-    <MenuButton className={cx('switch-pill', value === 'auto' && 'warn')} title="权限模式：机器人什么时候需要问你" items={items} align="left">
+    <MenuButton className={cx('switch-pill', value === 'auto' && 'warn')} title="Permission mode: when bots need to ask you" items={items} align="left">
       <Icon size={14} />
-      <span>{value ? PERMISSION_INFO[value].label : '各自设置'}</span>
+      <span>{value ? PERMISSION_INFO[value].label : 'Per bot'}</span>
       <ChevronDown size={12} className="chev" />
     </MenuButton>
   );
@@ -80,11 +85,11 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
   const providers = useStore((s) => s.providers);
   const viaProvider = settings.authMode === 'provider';
   const models = useMemo(() => {
-    if (!viaProvider) return claudeModels.map((m) => ({ id: m.id, label: m.id ? m.label.replace(/^Claude\s+/, '') : '默认模型' }));
+    if (!viaProvider) return claudeModels.map((m) => ({ id: m.id, label: m.id ? m.label.replace(/^Claude\s+/, '') : 'Default model' }));
     const p = settings.provider;
     const preset = providers.find((x) => x.id === p.preset);
     const ids = [...new Set([p.model, ...(preset?.models || []), p.fastModel].filter(Boolean))];
-    return [{ id: '', label: '默认模型' }, ...ids.map((id) => ({ id, label: id }))];
+    return [{ id: '', label: 'Default model' }, ...ids.map((id) => ({ id, label: id }))];
   }, [viaProvider, claudeModels, settings.provider, providers]);
   const raw = chat.model !== undefined ? chat.model : shared(list, (b) => b.model || '');
   // Another provider ignores a Claude model name and uses its own default.
@@ -95,13 +100,13 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
     (b) => chat.context![b.id].model!,
   );
   const actual = running ? modelLabel(running) : '';
-  const label = value === undefined ? actual || '各自的模型' : value === '' ? (actual ? `默认 · ${actual}` : '默认模型') : models.find((m) => m.id === value)?.label || value;
+  const label = value === undefined ? actual || 'Per-bot model' : value === '' ? (actual ? `Default · ${actual}` : 'Default model') : models.find((m) => m.id === value)?.label || value;
   const items = (): MenuItem[] => [
-    { heading: actual ? `这个对话用的模型（现在是 ${actual}）` : '这个对话用的模型' },
+    { heading: actual ? `Model for this chat (now ${actual})` : 'Model for this chat' },
     ...models.map((m) =>
       item(
         m.label,
-        m.id ? undefined : viaProvider ? `连接设置里的 ${settings.provider.model || '模型'}` : `跟随 Claude Code 的默认${actual && value === '' ? `（现在是 ${actual}）` : ''}`,
+        m.id ? undefined : viaProvider ? `${settings.provider.model || 'Model'} from connection settings` : `Follow Claude Code's default${actual && value === '' ? ` (now ${actual})` : ''}`,
         value === m.id,
         () => void save(chat, { model: m.id }),
       ),
@@ -109,7 +114,7 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
     ...resetItem(chat, 'model'),
   ];
   return (
-    <MenuButton className="switch-pill secondary" title="模型" items={items} align="right">
+    <MenuButton className="switch-pill secondary" title="Model" items={items} align="right">
       <Sparkles size={14} />
       <span>{label}</span>
       <ChevronDown size={12} className="chev" />
@@ -120,14 +125,14 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
 export function EffortSwitch({ chat }: { chat: Chat }) {
   const list = useChatBots(chat);
   const value = chat.effort !== undefined ? chat.effort : shared(list, (b) => b.effort || '');
-  const label = value === undefined ? '各自' : EFFORT_OPTIONS.find((o) => o.id === value)?.label.replace(/（.*）/, '') || '默认';
+  const label = value === undefined ? 'Per bot' : EFFORT_OPTIONS.find((o) => o.id === value)?.label.replace(/\s*\(.*\)/, '') || 'Default';
   const items = (): MenuItem[] => [
-    { heading: '思考强度：越高越仔细，也越慢' },
+    { heading: 'Effort: higher is more thorough, but slower' },
     ...EFFORT_OPTIONS.map((o) => item(o.label, undefined, value === o.id, () => void save(chat, { effort: o.id as Effort }))),
     ...resetItem(chat, 'effort'),
   ];
   return (
-    <MenuButton className="switch-pill secondary" title="思考强度" items={items} align="right">
+    <MenuButton className="switch-pill secondary" title="Effort" items={items} align="right">
       <Brain size={14} />
       <span>{label}</span>
       <ChevronDown size={12} className="chev" />
@@ -152,9 +157,9 @@ export function ContextRing({ chat }: { chat: Chat }) {
   const tone = pct >= 90 ? 'danger' : pct >= 75 ? 'warn' : '';
   const r = 7;
   const c = 2 * Math.PI * r;
-  const title = top ? `上下文已用 ${pct}%（${top.bot.name}：${tokens(top.u.used)} / ${tokens(top.u.max)}）` : '上下文用量：机器人回复后显示';
+  const title = top ? `Context used ${pct}% (${top.bot.name}: ${tokens(top.u.used)} / ${tokens(top.u.max)})` : 'Context usage: shown after a bot replies';
   const items = (): MenuItem[] => [
-    { heading: '上下文用量（快满时会自动压缩旧内容）' },
+    { heading: 'Context usage (older content is compacted automatically when nearly full)' },
     ...(rows.length
       ? rows.map(({ bot, u }) => ({
           label: (
@@ -167,12 +172,18 @@ export function ContextRing({ chat }: { chat: Chat }) {
           ),
           hint: `${Math.min(100, u.percentage)}%`,
         }))
-      : [{ label: '还没有用量，机器人回复后显示', disabled: true }]),
+      : [{ label: 'No usage yet. Shown after a bot replies', disabled: true }]),
     { separator: true },
     {
-      label: '开始新话题（清空上下文）',
+      label: 'Start new topic (clear context)',
       onClick: async () => {
-        if (await confirmDialog({ title: '开始新话题？', body: '机器人会忘记这个对话之前的上下文（聊天记录仍然保留）。切换到不相关的任务时这样做，回复会更快、更省用量。', ok: '开始新话题' }))
+        if (
+          await confirmDialog({
+            title: 'Start new topic?',
+            body: "Bots will forget this chat's earlier context (the chat history is kept). Do this when switching to an unrelated task: replies get faster and use less.",
+            ok: 'Start new topic',
+          })
+        )
           void api.reset(chat.id);
       },
     },

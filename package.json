@@ -3,8 +3,9 @@
   "productName": "Crew",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
-  "description": "Crew — 本地运行的 Web 开发 AI 机器人小队（参考 Grokbot）",
+  "description": "Crew — a local AI agent crew for web development (inspired by Grokbot)",
   "author": {
     "name": "Crew"
   },
@@ -118,7 +119,7 @@
       ],
       "category": "Development",
       "icon": "desktop/icons",
-      "synopsis": "Web 开发 AI 机器人小队",
+      "synopsis": "AI agent crew for web development",
       "artifactName": "Crew-${version}.${ext}"
     },
     "electronDist": "node_modules/electron/dist"

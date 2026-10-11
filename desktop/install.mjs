@@ -31,7 +31,7 @@ const args = new Set(process.argv.slice(2));
 
 function run(cmd, cmdArgs, opts = {}) {
   const r = spawnSync(cmd, cmdArgs, { stdio: 'inherit', cwd: root, ...opts });
-  if (r.status !== 0) throw new Error(`${cmd} ${cmdArgs.join(' ')} 失败（退出码 ${r.status}）`);
+  if (r.status !== 0) throw new Error(`${cmd} ${cmdArgs.join(' ')} failed (exit code ${r.status})`);
 }
 
 function tryRun(cmd, cmdArgs) {
@@ -64,8 +64,8 @@ function desktopEntry(cmd) {
     '[Desktop Entry]',
     'Type=Application',
     'Name=Crew',
-    'GenericName=AI 开发小队',
-    'Comment=Web 开发 AI 机器人小队（基于 Claude Code）',
+    'GenericName=AI Dev Team',
+    'Comment=A team of AI bots for web development (built on Claude Code)',
     `Exec=${cmd} %U`,
     'Icon=crew',
     'Terminal=false',
@@ -75,15 +75,15 @@ function desktopEntry(cmd) {
     // would leave GNOME's busy cursor spinning for ~15 s.
     'StartupNotify=false',
     'Categories=Development;IDE;',
-    'Keywords=AI;Claude;Web;Bot;Agent;前端;机器人;',
+    'Keywords=AI;Claude;Web;Bot;Agent;Frontend;Coding;',
     'Actions=show;quit;',
     '',
     '[Desktop Action show]',
-    'Name=打开窗口',
+    'Name=Open Window',
     `Exec=${cmd}`,
     '',
     '[Desktop Action quit]',
-    'Name=退出 Crew（停止所有机器人）',
+    'Name=Quit Crew (stops all bots)',
     `Exec=${cmd} --quit`,
     '',
   ].join('\n');
@@ -129,7 +129,7 @@ function systemCopyStale() {
  * Makes GNOME pick up new icons without creating a user icon cache: a cache in
  * ~/.local/share/icons/hicolor would hide icons other tools copy there later.
  */
-/** Icons of the logo chosen in Settings → 外观 (the running app keeps them in sync as well). */
+/** Icons of the logo chosen in Settings → Appearance (the running app keeps them in sync as well). */
 function iconDir() {
   let id;
   // Before the first start after the rename, the settings are still in VibeCrew's folder.
@@ -179,16 +179,16 @@ function retireVibeCrew() {
     /* not running */
   }
   if (pid && alive(pid)) {
-    console.log(`正在退出旧版 VibeCrew（进程 ${pid}），它的数据会在 Crew 第一次启动时搬过去…`);
+    console.log(`Quitting the old VibeCrew (process ${pid}); its data moves over when Crew first starts...`);
     if (fs.existsSync(appImage)) spawnSync(appImage, ['--no-sandbox', '--quit'], { stdio: 'ignore', timeout: 15000 });
     else process.kill(pid, 'SIGTERM');
     for (let i = 0; i < 60 && alive(pid); i++) sleepSync(500);
-    if (alive(pid)) throw new Error('旧版 VibeCrew 没有退出。请从托盘菜单退出它，再运行一次安装。');
+    if (alive(pid)) throw new Error('The old VibeCrew did not quit. Quit it from its tray menu, then run the install again.');
   }
   const autostartText = fs.existsSync(autostart) ? fs.readFileSync(autostart, 'utf8') : null;
   for (const f of [appImage, desktopFile, autostart, ...icons]) fs.rmSync(f, { force: true });
   tryRun('update-desktop-database', [path.dirname(desktopFile)]);
-  console.log('已移除旧版 VibeCrew 的程序、菜单项和图标。');
+  console.log('Removed the old VibeCrew app, menu entry and icons.');
   return autostartText;
 }
 
@@ -210,15 +210,15 @@ function uninstall() {
   for (const s of SIZES) fs.rmSync(path.join(ICON_ROOT, `${s}x${s}`, 'apps', 'crew.png'), { force: true });
   tryRun('update-desktop-database', [path.dirname(DESKTOP_FILE)]);
   refreshIcons();
-  console.log('已卸载 Crew 桌面应用。你的数据（~/.crew）和项目都保留着。');
-  if (fs.existsSync(SYSTEM_BIN)) console.log(`系统安装还在 /opt/Crew，用 sudo ${path.join(root, 'desktop', 'install-system.sh')} --remove 删除。`);
+  console.log('Uninstalled the Crew desktop app. Your data (~/.crew) and projects are kept.');
+  if (fs.existsSync(SYSTEM_BIN)) console.log(`The system install in /opt/Crew is still there. Remove it with: sudo ${path.join(root, 'desktop', 'install-system.sh')} --remove`);
 }
 
 function install() {
   if (!args.has('--skip-build')) run('npm', ['run', 'desktop:pack']);
 
   const built = path.join(root, 'release', `Crew-${pkg.version}.AppImage`);
-  if (!fs.existsSync(built)) throw new Error(`找不到 ${built}，请先运行 npm run desktop:pack`);
+  if (!fs.existsSync(built)) throw new Error(`${built} not found. Run npm run desktop:pack first.`);
 
   const legacyAutostart = retireVibeCrew();
   if (legacyAutostart && !fs.existsSync(AUTOSTART_FILE)) {
@@ -254,28 +254,28 @@ function install() {
 
   const usingSystem = cmd === SYSTEM_BIN;
   console.log(`
-✅ Crew ${pkg.version} 已安装
-   启动：  ${usingSystem ? `${SYSTEM_BIN}（系统安装，沙盒已开启）` : APPIMAGE}
-   菜单：  在「显示应用」里搜索 Crew（可右键「固定到 Dock」）
-   数据：  ~/.crew（和 npm start 共用）
+✅ Crew ${pkg.version} installed
+   Launch:  ${usingSystem ? `${SYSTEM_BIN} (system install, sandbox on)` : APPIMAGE}
+   Menu:    search for Crew in "Show Apps" (right-click it to "Pin to Dock")
+   Data:    ~/.crew (shared with npm start)
 `);
   const systemStale = usingSystem && systemCopyStale();
   if (systemStale) {
-    console.log(`⚠️  菜单启动的是 /opt/Crew，但那里还是旧的构建。先更新它：sudo ${path.join(root, 'desktop', 'install-system.sh')}\n`);
+    console.log(`⚠️  The menu launches /opt/Crew, but that is still an old build. Update it first: sudo ${path.join(root, 'desktop', 'install-system.sh')}\n`);
   }
   const pid = runningInstance();
   if (pid && !systemStale) {
-    console.log(`⚠️  Crew 正在运行（可能在托盘里，进程 ${pid}），它还是旧版本。
-   从托盘菜单选择「退出」，再重新打开，就会用上新版本。
+    console.log(`⚠️  Crew is running (maybe in the tray, process ${pid}) and is still the old version.
+   Choose "Quit" from the tray menu, then reopen it to use the new version.
 `);
   }
   if (!usingSystem && !hasLibfuse2()) {
-    console.log(`⚠️  没有找到 libfuse.so.2，AppImage 会打不开。请先安装：sudo apt install libfuse2t64
+    console.log(`⚠️  libfuse.so.2 not found, so the AppImage will not open. Install it first: sudo apt install libfuse2t64
 `);
   }
   if (!sandboxed) {
-    console.log(`ℹ️  Ubuntu 默认限制了 Chromium 沙盒，所以 Crew 以 --no-sandbox 运行（和大多数 Electron 应用一样）。
-   想开启沙盒：sudo ${path.join(root, 'desktop', 'install-system.sh')}，然后重新运行 npm run desktop:install
+    console.log(`ℹ️  Ubuntu restricts the Chromium sandbox by default, so Crew runs with --no-sandbox (like most Electron apps).
+   To enable the sandbox: sudo ${path.join(root, 'desktop', 'install-system.sh')}, then run npm run desktop:install again
 `);
   }
 }

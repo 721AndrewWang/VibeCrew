@@ -13,7 +13,7 @@ export function SettingsView() {
   return (
     <div className="page">
       <div className="page-inner settings-inner">
-        <PageHead title="设置" sub="连接 Claude、默认值、沙盒、手机访问和外观" />
+        <PageHead title="Settings" sub="Claude connection, defaults, sandbox, phone access and appearance" />
         <ConnectionSection />
         <DefaultsSection />
         <SandboxSection />

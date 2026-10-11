@@ -74,7 +74,7 @@ class DevServer {
     const project = getProject(this.projectId);
     const command = devCommand(project);
     if (!command) {
-      this.set({ status: 'error', error: '没有找到启动命令（package.json 里没有 dev/start 脚本）。静态网页不需要开发服务器。' });
+      this.set({ status: 'error', error: "No start command found (package.json has no dev/start script). Static sites don't need a dev server." });
       return this.state;
     }
     this.stopping = false;
@@ -91,7 +91,7 @@ class DevServer {
       if (this.stopping) return this.state;
       if (!ok) {
         this.proc = null;
-        this.set({ status: 'error', error: '依赖安装失败，请查看开发服务器日志' });
+        this.set({ status: 'error', error: 'Installing dependencies failed; check the dev server log' });
         return this.state;
       }
     }
@@ -99,15 +99,15 @@ class DevServer {
     const child = this.spawnStep(command, project);
     this.proc = child;
     this.urlTimer = setTimeout(() => {
-      if (this.state.status === 'starting') this.append('\r\n\x1b[33m[Crew] 没能从输出中识别到访问地址，可以在浏览器地址栏手动输入，例如 http://localhost:3000\x1b[0m\r\n');
+      if (this.state.status === 'starting') this.append("\r\n\x1b[33m[Crew] Couldn't spot the URL in the output; you can type it into the address bar yourself, e.g. http://localhost:3000\x1b[0m\r\n");
     }, 45_000);
     child.on('exit', (code, signal) => {
       if (this.proc !== child) return;
       this.proc = null;
       if (this.urlTimer) clearTimeout(this.urlTimer);
       if (this.stopping) this.set({ status: 'stopped', url: undefined });
-      else this.set({ status: 'error', url: undefined, error: `开发服务器已退出（${signal || `code ${code}`}），请查看日志` });
-      this.append(`\r\n\x1b[90m[进程已退出 ${signal || code}]\x1b[0m\r\n`);
+      else this.set({ status: 'error', url: undefined, error: `The dev server exited (${signal || `code ${code}`}); check the log` });
+      this.append(`\r\n\x1b[90m[process exited ${signal || code}]\x1b[0m\r\n`);
     });
     child.on('error', (e) => {
       this.set({ status: 'error', error: e.message });

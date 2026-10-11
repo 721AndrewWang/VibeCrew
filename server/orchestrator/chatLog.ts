@@ -4,7 +4,7 @@ import { bots, chats, messages, uid } from '../store';
 
 export function preview(text: string): string {
   return text
-    .replace(/```[\s\S]*?```/g, '[代码]')
+    .replace(/```[\s\S]*?```/g, '[code]')
     .replace(/[#>*_`~[\]]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -12,8 +12,8 @@ export function preview(text: string): string {
 }
 
 export function setLastMessage(chat: Chat, msg: ChatMessage) {
-  const author = msg.role === 'user' ? '你' : msg.role === 'system' ? '系统' : bots.get(msg.botId)?.name || '机器人';
-  const text = msg.role === 'bot' && !msg.text && msg.error ? `⚠️ ${msg.error}` : preview(msg.text) || (msg.attachments?.length ? '[附件]' : '');
+  const author = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : bots.get(msg.botId)?.name || 'Bot';
+  const text = msg.role === 'bot' && !msg.text && msg.error ? `⚠️ ${msg.error}` : preview(msg.text) || (msg.attachments?.length ? '[attachment]' : '');
   chat.lastMessage = { text, ts: msg.ts, author };
   chat.updatedAt = msg.ts;
 }
@@ -51,4 +51,4 @@ export function parseMentions(text: string, candidates: Bot[]): Bot[] {
   return found;
 }
 
-export const ALL_RE = /@(所有人|全体|all|everyone)(?![A-Za-z0-9_-])/i;
+export const ALL_RE = /@(all|everyone)(?![A-Za-z0-9_-])/i;

@@ -158,7 +158,7 @@ export class BotSession implements AgentSession {
       includePartialMessages: true,
       permissionMode: cfg.permissionMode,
       canUseTool: async (name, input, opts): Promise<PermissionResult> => {
-        if (!this.active) return { behavior: 'deny', message: '当前没有进行中的任务' };
+        if (!this.active) return { behavior: 'deny', message: 'There is no task in progress' };
         return this.active.hooks.canUseTool(name, input, opts) as Promise<PermissionResult>;
       },
       hooks: {
@@ -251,7 +251,7 @@ export class BotSession implements AgentSession {
           a.resolve(m);
         }
       }
-      this.fail(new Error(this.explain('Claude Code 进程已退出')));
+      this.fail(new Error(this.explain('The Claude Code process exited')));
     } catch (e) {
       this.fail(new Error(this.explain((e as Error)?.message || String(e))));
     }
@@ -270,8 +270,8 @@ export class BotSession implements AgentSession {
   }
 
   run(content: UserContent, hooks: TurnHooks): Promise<SDKResultMessage> {
-    if (this.closed) return Promise.reject(new Error('会话已关闭'));
-    if (this.active) return Promise.reject(new Error('会话正忙'));
+    if (this.closed) return Promise.reject(new Error('The session is closed'));
+    if (this.active) return Promise.reject(new Error('The session is busy'));
     this.lastUsed = Date.now();
     this.remindedAt = null;
     return new Promise((resolve, reject) => {
@@ -299,7 +299,7 @@ export class BotSession implements AgentSession {
     }
     const a = this.active;
     this.active = null;
-    a?.reject(new Error('已停止'));
+    a?.reject(new Error('Stopped'));
   }
 }
 
@@ -349,6 +349,8 @@ export class FakeSession implements AgentSession {
     this.stopped = false;
     this.turns++;
     const prompt = typeof content === 'string' ? content : content.map((c) => ('text' in c ? c.text : '')).join('\n');
+    // The keywords below are matched on the conversation only: the <context> block carries Crew's own wording.
+    const ask = prompt.replace(/<context>[\s\S]*?<\/context>/g, '');
     const emit = (m: unknown) => hooks.onMessage(m as SDKMessage);
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const started = Date.now();
@@ -377,7 +379,7 @@ export class FakeSession implements AgentSession {
       let isError = false;
       const perm = await hooks.canUseTool(name, input, { signal: new AbortController().signal, toolUseID: id, requestId: id } as never);
       if (perm && perm.behavior === 'deny') {
-        result = `权限被拒绝：${perm.message}`;
+        result = `Permission denied: ${perm.message}`;
         isError = true;
       } else {
         try {
@@ -392,51 +394,51 @@ export class FakeSession implements AgentSession {
     };
 
     try {
-      if (prompt.includes('## 要审查的改动')) {
+      if (prompt.includes('## Changes to review')) {
         // A blind review: a table and the verdict line. REFUTE_ME in the change makes it refute one claim.
         const refute = prompt.includes('REFUTE_ME');
         await streamText(
           [
-            '## 证伪结果',
-            '| # | 说法 | 怎么试图推翻 | 结果 |',
+            '## Refutation results',
+            '| # | Claim | How I tried to refute it | Result |',
             '| --- | --- | --- | --- |',
-            `| 1 | 改动做到了用户要的事 | 读改动（演示模式） | ${refute ? '推翻（改动里留着 REFUTE_ME）' : '未推翻'} |`,
+            `| 1 | The change does what the user asked | Read the change (demo mode) | ${refute ? 'Refuted (the change still contains REFUTE_ME)' : 'Not refuted'} |`,
             '',
-            refute ? '结论：推翻 1 条' : '结论：未推翻',
+            refute ? 'Verdict: refuted 1' : 'Verdict: not refuted',
           ].join('\n'),
         );
       } else {
-        await streamText(`收到！我是 ${this.botName}（演示模式，没有调用模型）。我先看看项目结构。`);
+        await streamText(`Got it! I'm ${this.botName} (demo mode, no model called). Let me look at the project structure first.`);
         await runTool('Glob', { pattern: '**/*.{html,css,js,ts,tsx}' }, () => {
           try {
             return fs.readdirSync(this.cfg.cwd).join('\n');
           } catch {
-            return '(空)';
+            return '(empty)';
           }
         });
-        if (/复杂/.test(prompt)) {
+        if (/complex/i.test(ask)) {
           // A complex request: a few more looks around, enough to count as real work.
-          for (const pattern of ['*.html', '*.css', '*.js', '*.md']) await runTool('Glob', { pattern }, () => '(演示)');
+          for (const pattern of ['*.html', '*.css', '*.js', '*.md']) await runTool('Glob', { pattern }, () => '(demo)');
         }
-        if (/改|写|做|创建|add|create|make|build/i.test(prompt) && !this.stopped) {
+        if (/add|create|make|build/i.test(ask) && !this.stopped) {
           const file = path.join(this.cfg.cwd, 'crew-demo.md');
-          await runTool('Bash', { command: 'ls -la', description: '列出项目文件' }, () => 'total 8\n(演示输出)');
-          await runTool('Write', { file_path: file, content: `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n` }, () => {
+          await runTool('Bash', { command: 'ls -la', description: 'List project files' }, () => 'total 8\n(demo output)');
+          await runTool('Write', { file_path: file, content: `# Demo\n\nWritten by ${this.botName} at ${new Date().toLocaleString('en-US')}.\n\nRequest: ${prompt.slice(0, 200)}\n` }, () => {
             hooks.beforeEdit(file);
-            fs.writeFileSync(file, `# 演示\n\n由 ${this.botName} 在 ${new Date().toLocaleString()} 写入。\n\n需求：${prompt.slice(0, 200)}\n`);
+            fs.writeFileSync(file, `# Demo\n\nWritten by ${this.botName} at ${new Date().toLocaleString('en-US')}.\n\nRequest: ${prompt.slice(0, 200)}\n`);
             return `File created successfully at: ${file}`;
           });
         }
         const others = this.mentionables.filter((n) => n !== this.botName);
-        const shouldHandoff = others.length > 0 && /交给|分派|拆分|handoff/i.test(prompt) && !/【@/.test(prompt);
-        // "分两步": the first turn asks for another with the continue line; the second one finishes.
-        const twoSteps = /分两步/.test(prompt) && !/接着给它一轮/.test(prompt);
+        const shouldHandoff = others.length > 0 && /hand off|handoff|assign|split/i.test(ask) && !/\[@/.test(prompt);
+        // "two steps": the first turn asks for another with the continue line; the second one finishes.
+        const twoSteps = /two steps/i.test(ask) && !/another round/.test(ask);
         await streamText(
           shouldHandoff
-            ? `我把任务拆一下：@${others[0]} 请你先实现页面结构，完成后告诉我。`
+            ? `Let me split this up: @${others[0]} please build the page structure first and tell me when it's done.`
             : twoSteps
-              ? '第一步做完了，下一步我自己接着做。\n【继续】'
-              : '完成了。**演示模式**下我只创建了 `crew-demo.md`，用来演示改动追踪和撤销。',
+              ? "Step one is done; I'll take the next step myself.\n[continue]"
+              : 'Done. In **demo mode** I only created `crew-demo.md`, to show change tracking and undo.',
         );
       }
       const result = {

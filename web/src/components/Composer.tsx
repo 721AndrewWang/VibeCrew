@@ -16,14 +16,14 @@ const EMPTY = { text: '', attachments: [] };
 export async function uploadImages(chatId: string, files: File[]) {
   for (const f of files) {
     if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type)) {
-      toast('不支持的文件', `${f.name}：只能附加 PNG / JPEG / GIF / WebP 图片`, 'warn');
+      toast('Unsupported file', `${f.name}: only PNG / JPEG / GIF / WebP images can be attached`, 'warn');
       continue;
     }
     try {
       const up = await api.upload({ name: f.name || 'image.png', mime: f.type, data: await fileToBase64(f) });
       addAttachment(chatId, { kind: 'image', id: attachmentId(), name: up.name, mime: up.mime, url: up.url });
     } catch (e) {
-      toast('上传失败', (e as Error).message, 'error');
+      toast('Upload failed', (e as Error).message, 'error');
     }
   }
 }
@@ -36,7 +36,7 @@ function useSpeech(onText: (text: string, final: boolean) => void) {
   const start = () => {
     if (!SR) return;
     const r = new SR();
-    r.lang = 'zh-CN';
+    r.lang = 'en-US';
     r.interimResults = true;
     r.continuous = true;
     r.onresult = (e: any) => {
@@ -49,7 +49,8 @@ function useSpeech(onText: (text: string, final: boolean) => void) {
       onText(text, final);
     };
     r.onerror = (e: any) => {
-      if (e.error !== 'no-speech' && e.error !== 'aborted') toast('语音输入不可用', e.error === 'network' ? '浏览器的语音识别服务连不上（需要能访问 Google 语音服务）' : e.error, 'warn');
+      if (e.error !== 'no-speech' && e.error !== 'aborted')
+        toast('Voice input unavailable', e.error === 'network' ? "Can't reach the browser's speech recognition service (it needs access to Google's speech service)" : e.error, 'warn');
       setOn(false);
     };
     r.onend = () => setOn(false);
@@ -110,7 +111,7 @@ export function Composer({ chat }: { chat: Chat }) {
     const inChat = members.filter((b) => b.name.toLowerCase().includes(q) || b.title.includes(popup.query));
     const others = Object.values(bots).filter((b) => !chat.botIds.includes(b.id) && b.name.toLowerCase().includes(q));
     const out: { bot?: Bot; all?: boolean; invite?: boolean }[] = inChat.map((bot) => ({ bot }));
-    if (members.length > 1 && ('所有人'.includes(popup.query) || 'all'.includes(q))) out.push({ all: true });
+    if (members.length > 1 && ('all'.includes(q) || 'everyone'.includes(q))) out.push({ all: true });
     out.push(...others.map((bot) => ({ bot, invite: true })));
     return out.slice(0, 8);
   }, [popup, bots, chat.botIds]);
@@ -130,7 +131,7 @@ export function Composer({ chat }: { chat: Chat }) {
     const before = text.slice(0, caret);
     const skill = before.match(/^\/([a-z0-9-]*)$/);
     if (skill) return setPopup({ type: 'skill', query: skill[1], index: 0 });
-    const m = before.match(/(^|[\s，。,.!?！？:：])@([\p{L}\p{N}_-]*)$/u);
+    const m = before.match(/(^|[\s,.!?:;(])@([\p{L}\p{N}_-]*)$/u);
     if (m && chat.kind === 'group') return setPopup({ type: 'mention', query: m[2], start: caret - m[2].length - 1, index: 0 });
     setPopup(null);
   };
@@ -152,7 +153,7 @@ export function Composer({ chat }: { chat: Chat }) {
     }
     const it = mentionItems[i];
     if (!it) return;
-    const name = it.all ? '所有人' : it.bot!.name;
+    const name = it.all ? 'all' : it.bot!.name;
     const caret = el.selectionStart;
     const text = draft.text.slice(0, popup.start) + `@${name} ` + draft.text.slice(caret);
     setDraft(chat.id, { text });
@@ -217,14 +218,14 @@ export function Composer({ chat }: { chat: Chat }) {
   };
 
   const pickElement = () => {
-    if (!project) return toast('先给对话绑定一个项目', '点右上角的项目按钮选择或新建项目', 'warn');
+    if (!project) return toast('Link a project to this chat first', 'Use the project button in the top right to pick or create one', 'warn');
     setComputer({ open: true, tab: 'browser' });
     useStore.setState({ mobilePane: 'computer' });
     updatePreview(project.id, { picking: true });
   };
 
   const screenshot = async () => {
-    if (!project) return toast('先给对话绑定一个项目', undefined, 'warn');
+    if (!project) return toast('Link a project to this chat first', undefined, 'warn');
     setShooting(true);
     try {
       const pv = previewOf(project.id);
@@ -232,7 +233,7 @@ export function Composer({ chat }: { chat: Chat }) {
       const up = await api.screenshot(project.id, pv.path || '/', device);
       addAttachment(chat.id, { kind: 'image', id: attachmentId(), name: up.name, mime: up.mime, url: up.url });
     } catch (e) {
-      toast('截图失败', (e as Error).message, 'error');
+      toast('Screenshot failed', (e as Error).message, 'error');
     } finally {
       setShooting(false);
     }
@@ -240,10 +241,10 @@ export function Composer({ chat }: { chat: Chat }) {
 
   const narrow = window.innerWidth < 600;
   const placeholder = narrow
-    ? `发消息${chat.kind === 'group' ? '，@ 队友' : ''}，/ 技能`
+    ? `Message${chat.kind === 'group' ? ', @ teammate' : ''}, / skill`
     : chat.kind === 'group'
-      ? `发消息给群聊，@ 指定队友，/ 使用技能${auth.ready ? '' : '（模型未连接）'}`
-      : `发消息给 ${members[0]?.name || ''}，/ 使用技能${auth.ready ? '' : '（模型未连接）'}`;
+      ? `Message the group, @ a teammate, / for skills${auth.ready ? '' : ' (model not connected)'}`
+      : `Message ${members[0]?.name || ''}, / for skills${auth.ready ? '' : ' (model not connected)'}`;
 
   return (
     <div
@@ -295,9 +296,9 @@ export function Composer({ chat }: { chat: Chat }) {
                     <Avatar bot={it.bot} size={22} />
                   )}
                   <span className="pi-main">
-                    <b>{it.all ? '所有人' : it.bot!.name}</b> <span className="pi-hint">{it.all ? '群里每个机器人都会回复' : it.bot!.title}</span>
+                    <b>{it.all ? 'all' : it.bot!.name}</b> <span className="pi-hint">{it.all ? 'Every bot in the group replies' : it.bot!.title}</span>
                   </span>
-                  {it.invite && <span className="badge">邀请进群</span>}
+                  {it.invite && <span className="badge">Invite</span>}
                 </button>
               ))}
         </div>
@@ -321,7 +322,7 @@ export function Composer({ chat }: { chat: Chat }) {
         <div className="composer-tools">
           <button
             className="icon-btn"
-            title="使用技能（/）"
+            title="Use a skill (/)"
             onClick={() => {
               setDraft(chat.id, { text: '/' });
               setPopup({ type: 'skill', query: '', index: 0 });
@@ -330,19 +331,19 @@ export function Composer({ chat }: { chat: Chat }) {
           >
             <Slash size={17} />
           </button>
-          <button className="icon-btn" title="附加图片（也可以直接粘贴或拖进来）" onClick={() => fileInput.current?.click()}>
+          <button className="icon-btn" title="Attach image (or paste / drag it in)" onClick={() => fileInput.current?.click()}>
             <ImagePlus size={17} />
           </button>
-          <button className="icon-btn" title="在预览中圈选元素，发给机器人" onClick={pickElement}>
+          <button className="icon-btn" title="Pick an element in the preview to send to the bot" onClick={pickElement}>
             <MousePointerClick size={17} />
           </button>
-          <button className="icon-btn" title="截取当前预览页面" onClick={screenshot} disabled={shooting}>
+          <button className="icon-btn" title="Screenshot the current preview" onClick={screenshot} disabled={shooting}>
             {shooting ? <span className="spinner" /> : <Camera size={17} />}
           </button>
           {speech.supported && (
             <button
               className={cx('icon-btn', speech.on && 'active rec')}
-              title={speech.on ? '停止语音输入' : '语音输入'}
+              title={speech.on ? 'Stop voice input' : 'Voice input'}
               onClick={() => {
                 if (speech.on) speech.stop();
                 else {
@@ -361,11 +362,11 @@ export function Composer({ chat }: { chat: Chat }) {
             <EffortSwitch chat={chat} />
             <ContextRing chat={chat} />
             {busy && !draft.text.trim() && !draft.attachments.length ? (
-              <button className="send-btn stop" title="停止" onClick={() => void api.stop(chat.id)}>
+              <button className="send-btn stop" title="Stop" onClick={() => void api.stop(chat.id)}>
                 <Square size={13} fill="currentColor" />
               </button>
             ) : (
-              <button className="send-btn" title="发送" disabled={!draft.text.trim() && !draft.attachments.length} onClick={send}>
+              <button className="send-btn" title="Send" disabled={!draft.text.trim() && !draft.attachments.length} onClick={send}>
                 <ArrowUp size={18} />
               </button>
             )}

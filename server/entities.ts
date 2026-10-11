@@ -15,10 +15,10 @@ const log = logger('init');
 const NAME_RE = /^[\p{L}\p{N}_-]{1,24}$/u;
 
 function checkName(name: string, selfId?: string) {
-  if (!NAME_RE.test(name)) throw new HttpError(400, '名字只能包含字母、数字、中文、下划线或连字符（最多 24 个字符），不能有空格');
-  if (/^(所有人|全体|all|everyone)$/i.test(name)) throw new HttpError(400, '这个名字被 @所有人 占用了');
+  if (!NAME_RE.test(name)) throw new HttpError(400, 'Names can only contain letters, numbers, underscores or hyphens (up to 24 characters), with no spaces');
+  if (/^(all|everyone)$/i.test(name)) throw new HttpError(400, 'That name is reserved for @all / @everyone');
   const clash = bots.all().find((b) => b.id !== selfId && b.name.toLowerCase() === name.toLowerCase());
-  if (clash) throw new HttpError(400, `已经有叫 ${name} 的机器人了`);
+  if (clash) throw new HttpError(400, `There's already a bot called ${name}`);
 }
 
 function newChat(partial: Partial<Chat> & Pick<Chat, 'kind' | 'title' | 'botIds'>): Chat {
@@ -44,7 +44,7 @@ function newChat(partial: Partial<Chat> & Pick<Chat, 'kind' | 'title' | 'botIds'
  */
 export function assertWorkspaceIdle(chat: Chat | undefined) {
   if (chat?.workspaceId && isChatBusy(chat.id)) {
-    throw new HttpError(409, `「${chat.title}」的机器人正在独立工作区里工作（或正在合并），等这一轮结束再操作`);
+    throw new HttpError(409, `The bots in "${chat.title}" are working in its own workspace (or merging); wait for this turn to end`);
   }
 }
 
@@ -73,7 +73,7 @@ type BotInput = Partial<Omit<Bot, 'monthlyBudgetUsd'>> & { monthlyBudgetUsd?: nu
 export function createBot(input: BotInput & { template?: string }): Bot {
   const tpl = BOT_TEMPLATES.find((t) => t.id === input.template);
   let name = (input.name ?? tpl?.name ?? '').trim();
-  if (!name) throw new HttpError(400, '请填写名字');
+  if (!name) throw new HttpError(400, 'Enter a name');
   if (tpl && !input.name) {
     // Templates may be added more than once: Pixel, Pixel2, …
     for (let i = 2; bots.all().some((b) => b.name.toLowerCase() === name.toLowerCase()); i++) name = `${tpl.name}${i}`;
@@ -85,7 +85,7 @@ export function createBot(input: BotInput & { template?: string }): Bot {
     name,
     emoji: input.emoji || tpl?.emoji || '🤖',
     color: input.color || tpl?.color || '#0a84ff',
-    title: input.title?.trim() || tpl?.title || 'Web 开发助手',
+    title: input.title?.trim() || tpl?.title || 'Web dev assistant',
     description: input.description?.trim() || tpl?.description || '',
     model: input.model ?? tpl?.model ?? '',
     effort: input.effort ?? tpl?.effort ?? '',
@@ -112,7 +112,7 @@ export function createBot(input: BotInput & { template?: string }): Bot {
 
 export function updateBot(id: string, patch: BotInput): Bot {
   const bot = bots.get(id);
-  if (!bot) throw new HttpError(404, '机器人不存在');
+  if (!bot) throw new HttpError(404, 'Bot not found');
   const renamed = patch.name !== undefined && patch.name.trim() !== bot.name;
   if (renamed) checkName(patch.name!.trim(), id);
   if (patch.projectId !== undefined && patch.projectId !== bot.projectId) assertWorkspaceIdle(dmOf(bot.id));
@@ -166,7 +166,7 @@ export function updateBot(id: string, patch: BotInput): Bot {
     dmChanged = true;
     invalidateChat(dm.id);
     const p = projects.get(bot.projectId);
-    systemMessage(dm, p ? `已切换到项目「${p.name}」` : '已解除项目绑定');
+    systemMessage(dm, p ? `Switched to project "${p.name}"` : 'Unlinked from the project');
   }
   if (dmChanged) {
     chats.set(dm);
@@ -189,7 +189,7 @@ export function deleteBot(id: string) {
       delete c.cursors[id];
       chats.set(c);
       bus.emit({ t: 'chat', chat: c });
-      systemMessage(c, `${bot.name} 离开了群聊`);
+      systemMessage(c, `${bot.name} left the group`);
       invalidateChat(c.id);
     }
   }
@@ -207,10 +207,10 @@ export function deleteBot(id: string) {
 
 export function createGroup(input: { title?: string; botIds: string[]; leadBotId?: string | null; projectId?: string | null }): Chat {
   const ids = [...new Set(input.botIds)].filter((id) => bots.has(id));
-  if (ids.length < 1) throw new HttpError(400, '至少选择一个机器人');
+  if (ids.length < 1) throw new HttpError(400, 'Pick at least one bot');
   const chat = newChat({
     kind: 'group',
-    title: input.title?.trim() || ids.map((id) => bots.get(id)!.name).join('、'),
+    title: input.title?.trim() || ids.map((id) => bots.get(id)!.name).join(', '),
     botIds: ids,
     leadBotId: input.leadBotId && ids.includes(input.leadBotId) ? input.leadBotId : ids[0],
     projectId: input.projectId ?? listProjects()[0]?.id ?? null,
@@ -232,12 +232,12 @@ const EFFORTS: Effort[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export function updateChat(id: string, patch: ChatPatch): Chat {
   const chat = chats.get(id);
-  if (!chat) throw new HttpError(404, '对话不存在');
+  if (!chat) throw new HttpError(404, 'Chat not found');
   let switches = false;
   if (patch.permission !== undefined) {
     if (patch.permission === null) delete chat.permission;
     else if (LEVELS.includes(patch.permission)) chat.permission = patch.permission;
-    else throw new HttpError(400, '未知的权限模式');
+    else throw new HttpError(400, 'Unknown permission mode');
     switches = true;
   }
   if (patch.model !== undefined) {
@@ -248,7 +248,7 @@ export function updateChat(id: string, patch: ChatPatch): Chat {
   if (patch.effort !== undefined) {
     if (patch.effort === null) delete chat.effort;
     else if (EFFORTS.includes(patch.effort)) chat.effort = patch.effort;
-    else throw new HttpError(400, '未知的思考强度');
+    else throw new HttpError(400, 'Unknown thinking effort');
     switches = true;
   }
   if (switches) applyChatSettings(chat.id);
@@ -258,7 +258,7 @@ export function updateChat(id: string, patch: ChatPatch): Chat {
   if (patch.maxHops !== undefined) chat.maxHops = Math.max(0, Math.min(30, Math.round(patch.maxHops)));
   if (patch.botIds && chat.kind === 'group') {
     const ids = [...new Set(patch.botIds)].filter((b) => bots.has(b));
-    if (!ids.length) throw new HttpError(400, '群聊里至少要有一个机器人');
+    if (!ids.length) throw new HttpError(400, 'A group needs at least one bot');
     const added = ids.filter((b) => !chat.botIds.includes(b));
     const removed = chat.botIds.filter((b) => !ids.includes(b));
     chat.botIds = ids;
@@ -269,8 +269,8 @@ export function updateChat(id: string, patch: ChatPatch): Chat {
       if (chat.context) delete chat.context[b];
     }
     if (!ids.includes(chat.leadBotId || '')) chat.leadBotId = ids[0];
-    if (added.length) systemMessage(chat, `${added.map((b) => bots.get(b)!.name).join('、')} 加入了群聊`);
-    if (removed.length) systemMessage(chat, `${removed.map((b) => bots.get(b)?.name || '').join('、')} 离开了群聊`);
+    if (added.length) systemMessage(chat, `${added.map((b) => bots.get(b)!.name).join(', ')} joined the group`);
+    if (removed.length) systemMessage(chat, `${removed.map((b) => bots.get(b)?.name || '').join(', ')} left the group`);
     invalidateChat(chat.id);
   }
   if (patch.leadBotId !== undefined && chat.botIds.includes(patch.leadBotId || '')) chat.leadBotId = patch.leadBotId;
@@ -282,7 +282,7 @@ export function updateChat(id: string, patch: ChatPatch): Chat {
     chat.context = {};
     invalidateChat(chat.id);
     const p = projects.get(patch.projectId);
-    systemMessage(chat, p ? `已切换到项目「${p.name}」` : '已解除项目绑定');
+    systemMessage(chat, p ? `Switched to project "${p.name}"` : 'Unlinked from the project');
     if (chat.kind === 'dm') {
       const bot = bots.get(chat.botIds[0]);
       if (bot) {
@@ -322,9 +322,9 @@ export async function initIfNeeded() {
   let project = listProjects()[0];
   if (!project) {
     try {
-      project = await createProject({ name: '我的第一个网站', template: 'static', folder: 'my-first-site' });
+      project = await createProject({ name: 'My first site', template: 'static', folder: 'my-first-site' });
     } catch (e) {
-      log.warn('无法创建示例项目：', (e as Error).message);
+      log.warn('Could not create the sample project:', (e as Error).message);
     }
   }
   const team: Bot[] = [];
@@ -333,10 +333,10 @@ export async function initIfNeeded() {
     team.push(existing || createBot({ template: t, projectId: project?.id ?? null }));
   }
   if (!chats.all().some((c) => c.kind === 'group')) {
-    const group = createGroup({ title: 'Web 小队', botIds: team.map((b) => b.id), leadBotId: team[0]?.id, projectId: project?.id ?? null });
+    const group = createGroup({ title: 'Web team', botIds: team.map((b) => b.id), leadBotId: team[0]?.id, projectId: project?.id ?? null });
     systemMessage(
       group,
-      '欢迎来到 Crew！这是你的 Web 开发小队。直接说需求，Chief 会拆解任务并 @ 队友分工；也可以 @Pixel、@Probe、@Lens 直接找人。输入 / 可以使用技能，右侧是项目的实时预览、文件和终端。',
+      "Welcome to Crew! This is your web dev team. Just say what you need: Chief will break it down and @ teammates to split the work. You can also @Pixel, @Probe or @Lens directly. Type / to use skills; on the right are the project's live preview, files and terminal.",
       { uiOnly: true },
     );
   }

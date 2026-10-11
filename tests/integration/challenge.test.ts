@@ -46,14 +46,14 @@ describe('the Skeptic template', () => {
 describe('/challenge in a workspace', () => {
   it('brings Skeptic in, records "not refuted" against the commit it saw, and lets the merge through', async () => {
     await crew.api('PATCH', `/projects/${projectId}`, { requireChallenge: true });
-    await say('帮我做一个页面'); // Pixel (demo) writes crew-demo.md
+    await say('Make me a page'); // Pixel (demo) writes crew-demo.md
     const blocked = await crew.api('POST', `/chats/${chatId}/workspace/merge`, { message: 'x' });
     expect(blocked.status).toBe(409);
-    expect(blocked.error).toContain('还没做过');
+    expect(blocked.error).toContain("hasn't been one yet");
 
     const out = await say('/challenge');
     const verdict = out.find((m: any) => m.role === 'bot' && m.botId === skeptic.id);
-    expect(verdict.text).toContain('结论：未推翻');
+    expect(verdict.text).toContain('Verdict: not refuted');
     expect(verdict.meta.verdict).toEqual({ refuted: 0 });
     expect((await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.id === chatId).botIds).toContain(skeptic.id);
 
@@ -65,17 +65,17 @@ describe('/challenge in a workspace', () => {
 
   it('blocks the merge after a refutation, and again after new commits', async () => {
     fs.writeFileSync(path.join(worktree, 'index.html'), '<h1>hi</h1>\n<!-- REFUTE_ME -->\n');
-    const out = await say('/challenge 看看首页');
+    const out = await say('/challenge check the home page');
     expect(out.find((m: any) => m.botId === skeptic.id).meta.verdict).toEqual({ refuted: 1 });
     const refused = await crew.api('POST', `/chats/${chatId}/workspace/merge`, { message: 'x' });
     expect(refused.status).toBe(409);
-    expect(refused.error).toContain('推翻了 1 条');
+    expect(refused.error).toContain('refuted 1 claim');
 
     fs.writeFileSync(path.join(worktree, 'index.html'), '<h1>hi</h1>\n');
     await say('/challenge');
-    await say('再改一下'); // Pixel commits again after the review
+    await say('Make one more change'); // Pixel commits again after the review
     const stale = await crew.api('POST', `/chats/${chatId}/workspace/merge`, { message: 'x' });
     expect(stale.status).toBe(409);
-    expect(stale.error).toContain('新提交');
+    expect(stale.error).toContain('new commits');
   });
 });

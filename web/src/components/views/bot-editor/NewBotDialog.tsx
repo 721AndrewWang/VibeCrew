@@ -31,7 +31,7 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
   const nameOk = BOT_NAME_RE.test(form.name.trim());
 
   const afterCreate = async (bot: Bot) => {
-    toast(`已添加 ${bot.name}`, bot.title, 'success');
+    toast(`Added ${bot.name}`, bot.title, 'success');
     // The direct chat arrives over the websocket; give it a moment.
     for (let i = 0; i < 20; i++) {
       const dm = dmOf(bot.id);
@@ -53,7 +53,7 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
       const bot = await api.createBot({ template: t.id });
       await afterCreate(bot);
     } catch (e) {
-      toast('添加失败', (e as Error).message, 'error');
+      toast('Could not add bot', (e as Error).message, 'error');
       setBusy(null);
     }
   };
@@ -71,14 +71,14 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
       });
       await afterCreate(bot);
     } catch (e) {
-      toast('创建失败', (e as Error).message, 'error');
+      toast('Could not create bot', (e as Error).message, 'error');
       setBusy(null);
     }
   };
 
   return (
     <Modal
-      title="添加机器人"
+      title="Add bot"
       icon={<Sparkles size={20} className="modal-icon" />}
       onClose={onClose}
       wide
@@ -86,14 +86,14 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
         mode === 'blank' ? (
           <>
             <button className="btn foot-left" onClick={() => setMode('gallery')}>
-              <ArrowLeft size={15} /> 返回模板
+              <ArrowLeft size={15} /> Back to templates
             </button>
             <span className="spacer" />
             <button className="btn" onClick={onClose}>
-              取消
+              Cancel
             </button>
             <button className="btn primary" disabled={!nameOk || !!busy} onClick={createBlank}>
-              {busy ? <span className="spinner" /> : <Plus size={15} />} 创建
+              {busy ? <span className="spinner" /> : <Plus size={15} />} Create
             </button>
           </>
         ) : undefined
@@ -102,7 +102,7 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
       {mode === 'gallery' ? (
         <>
           <div className="hint" style={{ marginBottom: 12 }}>
-            选一个角色模板，马上就能在单聊里和它对话；之后可以随时修改它的角色说明、权限和插件。
+            Pick a role template and start chatting with it right away. You can change its role description, permissions and plugins any time.
           </div>
           <div className="tpl-grid">
             {templates.map((t) => {
@@ -126,8 +126,8 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
                       {modelLabel(models, t.model || '')}
                       {tierMark(models, t.model || '')}
                     </span>
-                    {t.editScope?.length ? <span className="badge">只改 {t.editScope[0]}…</span> : null}
-                    {usage[t.id] ? <span className="badge green">队伍里已有 {usage[t.id]} 位</span> : null}
+                    {t.editScope?.length ? <span className="badge">Only edits {t.editScope[0]}…</span> : null}
+                    {usage[t.id] ? <span className="badge green">{usage[t.id]} on team</span> : null}
                   </div>
                 </button>
               );
@@ -138,11 +138,11 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
                   <Plus size={22} />
                 </span>
                 <div className="tpl-id">
-                  <div className="tpl-name">空白机器人</div>
-                  <div className="tpl-title">从零定义角色</div>
+                  <div className="tpl-name">Blank bot</div>
+                  <div className="tpl-title">Define a role from scratch</div>
                 </div>
               </div>
-              <div className="tpl-desc">自己写名字、头像和角色说明，打造专属队友。</div>
+              <div className="tpl-desc">Write your own name, avatar and role description to build a custom teammate.</div>
             </button>
           </div>
         </>
@@ -151,38 +151,38 @@ export function NewBotDialog({ onClose }: { onClose: () => void }) {
           <div className="identity-row">
             <Avatar bot={{ emoji: form.emoji || '🤖', color: form.color, name: form.name }} size={56} />
             <div className="field emoji-field">
-              <label>头像</label>
+              <label>Avatar</label>
               <input className="input emoji-input" value={form.emoji} maxLength={8} onChange={(e) => setForm({ ...form, emoji: e.target.value })} />
             </div>
             <div className="field grow">
-              <label>名字</label>
+              <label>Name</label>
               <input
                 className="input"
                 autoFocus
                 value={form.name}
-                placeholder="例如 Nova"
+                placeholder="e.g. Nova"
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 onKeyDown={(e) => e.key === 'Enter' && void createBlank()}
               />
-              <div className={cx('hint', form.name && !nameOk && 'error-text')}>用于 @提及，不能有空格（字母、数字、中文、_ 或 -，最多 24 个字符）</div>
+              <div className={cx('hint', form.name && !nameOk && 'error-text')}>Used for @mentions, no spaces (letters, digits, _ or -, up to 24 characters)</div>
             </div>
           </div>
           <div className="field">
-            <label>颜色</label>
+            <label>Color</label>
             <ColorPicker value={form.color} onChange={(color) => setForm({ ...form, color })} />
             <MonoAvatarHint />
           </div>
           <div className="field">
-            <label>职位</label>
-            <input className="input" value={form.title} placeholder="例如 动效工程师 · 过渡与微交互" onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            <label>Title</label>
+            <input className="input" value={form.title} placeholder="e.g. Motion engineer · transitions and micro-interactions" onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
           <div className="field">
-            <label>角色说明（会成为它的系统提示词）</label>
+            <label>Role description (becomes its system prompt)</label>
             <textarea
               className="textarea"
               rows={7}
               value={form.description}
-              placeholder={'你是……，负责……\n工作方式：\n- 先……\n- 完成后……'}
+              placeholder={'You are ..., responsible for ...\nHow you work:\n- First ...\n- When done ...'}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
           </div>

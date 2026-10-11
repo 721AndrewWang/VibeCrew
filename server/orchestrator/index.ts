@@ -227,7 +227,7 @@ function rotateSession(chat: Chat, bot: Bot): number | null {
     .slice(-RECAP_MESSAGES);
   if (recent.length) chat.cursors[bot.id] = recent[0].seq - 1;
   chats.save();
-  systemMessage(chat, `${bot.name} 的会话上下文到了 ${Math.round(tokens / 1000)}k token，这一轮换成新会话，带上最近 ${recent.length} 条消息。`, { uiOnly: true });
+  systemMessage(chat, `${bot.name}'s session context reached ${Math.round(tokens / 1000)}k tokens, so this turn starts a fresh session with the last ${recent.length} messages.`, { uiOnly: true });
   return tokens;
 }
 
@@ -325,9 +325,9 @@ export function holdTurns(chatId: string, work: Promise<unknown>) {
  * meanwhile stay queued). Refuses when a turn is running or another operation is in progress.
  */
 export async function withChatLocked<T>(chatId: string, what: string, fn: () => Promise<T>): Promise<T> {
-  if (preparing.has(chatId)) throw new HttpError(409, `工作区还在准备，等准备好再${what}`);
-  if (running.has(chatId) || queues.get(chatId)?.length) throw new HttpError(409, `机器人正在工作，等这一轮结束再${what}`);
-  if (locked.has(chatId)) throw new HttpError(409, '上一个操作还没完成，请稍等');
+  if (preparing.has(chatId)) throw new HttpError(409, `The workspace is still being prepared; wait until it's ready before ${what}`);
+  if (running.has(chatId) || queues.get(chatId)?.length) throw new HttpError(409, `A bot is working; wait for this turn to end before ${what}`);
+  if (locked.has(chatId)) throw new HttpError(409, "The previous operation hasn't finished yet, please wait");
   locked.add(chatId);
   try {
     // Git operations on the workspace (and a merge into its parent's checkout) are Crew's writes.
@@ -370,7 +370,10 @@ async function runTurn(job: Job) {
       const key = `${chat.id}:${bot.id}`;
       if (Date.now() - (budgetNotices.get(key) || 0) > 3600_000) {
         budgetNotices.set(key, Date.now());
-        systemMessage(chat, `${bot.name} 这个月的预算（$${bot.monthlyBudgetUsd.toFixed(2)}）已经用完（已用 $${spent.toFixed(2)}），先不接任务。可以在它的设置里提高预算或去掉上限。`);
+        systemMessage(
+          chat,
+          `${bot.name} has used up this month's budget ($${bot.monthlyBudgetUsd.toFixed(2)}; spent $${spent.toFixed(2)}), so it won't take tasks for now. You can raise the budget or remove the limit in its settings.`,
+        );
       }
       return;
     }
@@ -497,7 +500,7 @@ async function runTurn(job: Job) {
   let commitError: string | undefined;
   if (project?.workspace) {
     try {
-      unresolved = (await autoCommit(project.workspace.worktree, `${bot.name}：${commitSubject(msg.text, '更新文件')}`)).unresolved;
+      unresolved = (await autoCommit(project.workspace.worktree, `${bot.name}: ${commitSubject(msg.text, 'Update files')}`)).unresolved;
     } catch (e) {
       commitError = gitError(e);
       log.warn('workspace auto-commit failed:', commitError);
@@ -516,16 +519,24 @@ async function runTurn(job: Job) {
   setLastMessage(fresh, msg);
   fresh.unread = (fresh.unread || 0) + 1;
   emitChat(fresh);
-  if (unresolved?.length) systemMessage(fresh, `合并还没完成：${unresolved.join('、')} 还有冲突没处理（冲突标记，或者需要 git add / git rm 的文件）。处理完之后才会提交。`);
+  if (unresolved?.length)
+    systemMessage(
+      fresh,
+      `The merge isn't finished: ${unresolved.join(', ')} still have unresolved conflicts (conflict markers, or files that need git add / git rm). Nothing will be committed until they're resolved.`,
+    );
   if (commitError && project?.workspace) {
-    systemMessage(fresh, `没能把这一轮的改动提交到分支 ${project.workspace.branch}：${commitError}。改动还在工作区的文件里，但在解决这个问题之前没法合并。`, { uiOnly: true });
+    systemMessage(
+      fresh,
+      `Couldn't commit this turn's changes to branch ${project.workspace.branch}: ${commitError}. The changes are still in the workspace files, but they can't be merged until this is fixed.`,
+      { uiOnly: true },
+    );
   }
   settleStatus(bot.id, msg.status === 'error' ? msg.error?.slice(0, 80) : undefined);
   if (msg.status === 'error') {
-    notify(`${bot.name} 出错了`, msg.error?.slice(0, 140) || '', { chatId: chat.id, level: 'error' });
-    const what = (msg.error || '未知错误').split('\n')[0].slice(0, 80);
-    recordFriction({ kind: 'turn-error', key: `${bot.name}：${what}`, detail: msg.error || '', chatId: chat.id, chatTitle: chat.title, botName: bot.name });
-  } else if (msg.status === 'done') notify(`${bot.name} 完成了`, preview(msg.text).slice(0, 100) || '任务完成', { chatId: chat.id, level: 'success' });
+    notify(`${bot.name} hit an error`, msg.error?.slice(0, 140) || '', { chatId: chat.id, level: 'error' });
+    const what = (msg.error || 'Unknown error').split('\n')[0].slice(0, 80);
+    recordFriction({ kind: 'turn-error', key: `${bot.name}: ${what}`, detail: msg.error || '', chatId: chat.id, chatTitle: chat.title, botName: bot.name });
+  } else if (msg.status === 'done') notify(`${bot.name} is done`, preview(msg.text).slice(0, 100) || 'Task complete', { chatId: chat.id, level: 'success' });
 
   // Bot-to-bot handoffs.
   let mentioned: Bot[] = [];
@@ -536,8 +547,8 @@ async function runTurn(job: Job) {
       if (job.hopsLeft > 0) {
         for (const m of mentioned) enqueue({ chatId: fresh.id, botId: m.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: job.hopsLeft - 1 });
       } else {
-        systemMessage(fresh, `自动接力已达到上限（${fresh.maxHops} 次）。回复一条消息即可让大家继续。`, { uiOnly: true });
-        recordFriction({ kind: 'hop-limit', key: `「${fresh.title}」上限 ${fresh.maxHops} 次`, detail: `${bot.name} 之后停住`, chatId: fresh.id, chatTitle: fresh.title, botName: bot.name });
+        systemMessage(fresh, `The auto-relay hit its limit (${fresh.maxHops} hops). Reply with a message to let everyone continue.`, { uiOnly: true });
+        recordFriction({ kind: 'hop-limit', key: `"${fresh.title}" limit ${fresh.maxHops} hops`, detail: `Stopped after ${bot.name}`, chatId: fresh.id, chatTitle: fresh.title, botName: bot.name });
       }
     }
   }
@@ -558,7 +569,7 @@ async function runTurn(job: Job) {
     });
     if (lead) {
       systemMessage(fresh, stallNote(bot.name, lead.name), { notice: 'stall' });
-      recordFriction({ kind: 'stall', key: `${bot.name} 交回后没人接手`, detail: msg.text.replace(/\s+/g, ' ').slice(0, 120), chatId: fresh.id, chatTitle: fresh.title, botName: bot.name });
+      recordFriction({ kind: 'stall', key: `Nobody picked up after ${bot.name}`, detail: msg.text.replace(/\s+/g, ' ').slice(0, 120), chatId: fresh.id, chatTitle: fresh.title, botName: bot.name });
       // As a handoff from the teammate, so the lead reads its report in full.
       enqueue({ chatId: fresh.id, botId: lead.id, trigger: { type: 'mention', by: bot.id }, hopsLeft: fresh.maxHops });
     } else if (leadContinues({ chat: fresh, bot, msg, mentioned, history: messages.sorted(fresh.id) })) {
@@ -586,10 +597,10 @@ async function maybeAutoChallenge(chat: Chat, project: Project) {
   if (!chat.botIds.includes(skeptic.id)) {
     chat.botIds.push(skeptic.id);
     invalidateChat(chat.id);
-    systemMessage(chat, `${skeptic.name} 加入了对话`);
+    systemMessage(chat, `${skeptic.name} joined the chat`);
   }
   chat.cursors[skeptic.id] = Math.min(chat.cursors[skeptic.id] ?? from, from);
-  systemMessage(chat, `这次的改动符合项目的自动对抗审查规则，请 ${skeptic.name} 审一次：\n${reasons.map((r) => `- ${r}`).join('\n')}`);
+  systemMessage(chat, `This change matches the project's auto adversarial review rules, so ${skeptic.name}, please review it:\n${reasons.map((r) => `- ${r}`).join('\n')}`);
   enqueue({ chatId: chat.id, botId: skeptic.id, trigger: { type: 'system' }, hopsLeft: chat.maxHops });
 }
 
@@ -616,9 +627,9 @@ async function recordVerdict(msg: ChatMessage, project: Project | null) {
 
 export function sendUserMessage(chatId: string, input: { text: string; attachments?: Attachment[] }): ChatMessage {
   const chat = chats.get(chatId);
-  if (!chat) throw new Error('对话不存在');
+  if (!chat) throw new Error('Chat not found');
   const text = input.text.trim();
-  if (!text && !input.attachments?.length) throw new Error('消息不能为空');
+  if (!text && !input.attachments?.length) throw new Error("Message can't be empty");
   const expanded = skills.expand(text);
   const msg: ChatMessage = {
     id: uid('m_'),
@@ -658,7 +669,7 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
       for (const b of outsiders) chat.cursors[b.id] = msg.seq - 1;
       invalidateChat(chat.id);
       emitChat(chat);
-      systemMessage(chat, `${outsiders.map((b) => b.name).join('、')} 加入了群聊`);
+      systemMessage(chat, `${outsiders.map((b) => b.name).join(', ')} joined the group`);
     }
     const members = allBots.filter((b) => chat.botIds.includes(b.id));
     targets = ALL_RE.test(text) ? members : parseMentions(routing, members);
@@ -677,7 +688,7 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
 /** Runs a routine: posts its prompt into the chat and queues the bot. */
 export function runInChat(chatId: string, botId: string, prompt: string, trigger: MessageTrigger, routineName?: string): ChatMessage {
   const chat = chats.get(chatId);
-  if (!chat) throw new Error('对话不存在');
+  if (!chat) throw new Error('Chat not found');
   const expanded = skills.expand(prompt.trim());
   const msg: ChatMessage = {
     id: uid('m_'),
@@ -707,7 +718,7 @@ export async function stopChat(chatId: string) {
   const r = running.get(chatId);
   if (!r) return;
   r.stream.stopped = true;
-  denyApprovals(chatId, '用户停止了任务');
+  denyApprovals(chatId, 'The user stopped the task');
   await r.session.interrupt();
   // Kill the process if the turn does not wind down on its own.
   setTimeout(() => {
@@ -731,7 +742,7 @@ export function resetChat(chatId: string) {
   }
   chat.sessions = {};
   chat.context = {};
-  const msg = systemMessage(chat, '—— 新话题 ——', { uiOnly: true });
+  const msg = systemMessage(chat, '—— New topic ——', { uiOnly: true });
   for (const b of chat.botIds) chat.cursors[b] = msg.seq;
   for (const b of chat.botIds) void resetActSession(`${chatId}:${b}`);
   emitChat(chat);

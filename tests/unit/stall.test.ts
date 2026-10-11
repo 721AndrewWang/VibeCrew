@@ -10,7 +10,7 @@ let seq = 0;
 const m = (role: string, text = '', extra: object = {}) => ({ id: `m${++seq}`, seq, role, text, status: 'done', ...extra }) as any;
 
 function ask(opts: { history: any[]; msg?: any; bot?: any; mentioned?: any[]; trigger?: any; chat?: any }) {
-  const msg = opts.msg ?? m('bot', '审完了，没有必须修的问题。', { botId: (opts.bot ?? lens).id });
+  const msg = opts.msg ?? m('bot', 'Review done, nothing that must be fixed.', { botId: (opts.bot ?? lens).id });
   return stalledLead({
     chat: opts.chat ?? chat,
     bot: opts.bot ?? lens,
@@ -24,39 +24,39 @@ function ask(opts: { history: any[]; msg?: any; bot?: any; mentioned?: any[]; tr
 
 describe('stalledLead', () => {
   it('wakes the lead when a teammate it handed work to reports back to no one', () => {
-    expect(ask({ history: [m('user', '做第 1 批'), m('bot', '@Lens 审一下', { botId: 'b_chief' })] })).toBe(chief);
+    expect(ask({ history: [m('user', 'Do batch 1'), m('bot', '@Lens please review', { botId: 'b_chief' })] })).toBe(chief);
   });
 
   it('stays quiet when the teammate handed on, or is the lead, or the turn did not finish', () => {
-    const history = [m('user', '做第 1 批')];
+    const history = [m('user', 'Do batch 1')];
     expect(ask({ history, mentioned: [chief] })).toBeNull();
-    expect(ask({ history, bot: chief, msg: m('bot', '汇总如下', { botId: 'b_chief' }) })).toBeNull();
+    expect(ask({ history, bot: chief, msg: m('bot', 'Here is the summary', { botId: 'b_chief' }) })).toBeNull();
     expect(ask({ history, msg: m('bot', '', { botId: 'b_lens', status: 'error' }) })).toBeNull();
   });
 
   it('lets an automatic review that refuted nothing end the chain, and wakes the lead for one that refuted something', () => {
-    const history = [m('user', '做一个页面')];
-    const review = (refuted: number) => m('bot', `结论：${refuted ? `推翻 ${refuted} 条` : '未推翻'}`, { botId: 'b_lens', meta: { verdict: { refuted } } });
+    const history = [m('user', 'Make a page')];
+    const review = (refuted: number) => m('bot', `Verdict: ${refuted ? `refuted ${refuted}` : 'not refuted'}`, { botId: 'b_lens', meta: { verdict: { refuted } } });
     expect(ask({ history, trigger: { type: 'system' }, msg: review(0) })).toBeNull();
     expect(ask({ history, trigger: { type: 'system' }, msg: review(2) })).toBe(chief);
   });
 
   it('needs a group with a lead', () => {
-    const history = [m('user', '看看')];
+    const history = [m('user', 'Take a look')];
     expect(ask({ history, chat: { kind: 'dm' } })).toBeNull();
     expect(ask({ history, chat: { kind: 'group' } })).toBeNull();
   });
 
   it('lets a teammate the user addressed answer the user, unless the user asked the lead to follow up', () => {
-    expect(ask({ history: [m('user', '@Lens 看看这个')], trigger: { type: 'user' } })).toBeNull();
-    expect(ask({ history: [m('user', '@Lens 看看这个，报完 @Chief 核对')], trigger: { type: 'user' } })).toBe(chief);
+    expect(ask({ history: [m('user', '@Lens look at this')], trigger: { type: 'user' } })).toBeNull();
+    expect(ask({ history: [m('user', '@Lens look at this, then report to @Chief to double-check')], trigger: { type: 'user' } })).toBe(chief);
   });
 
   it('gives up after a few nudges per user request, and starts over with the next one', () => {
-    const asked = m('user', '做第 1 批');
+    const asked = m('user', 'Do batch 1');
     const nudges = Array.from({ length: MAX_STALL_NUDGES }, () => m('system', stallNote('Lens', 'Chief'), { notice: 'stall' }));
     expect(ask({ history: [asked, ...nudges] })).toBeNull();
-    expect(ask({ history: [asked, ...nudges, m('user', '继续')] })).toBe(chief);
+    expect(ask({ history: [asked, ...nudges, m('user', 'Go on')] })).toBe(chief);
   });
 });
 
@@ -66,20 +66,20 @@ describe('leadContinues', () => {
     leadContinues({ chat: opts.chat ?? chat, bot: opts.bot ?? chief, msg, mentioned: opts.mentioned ?? [], history: [...history, msg] });
 
   it('gives the lead another turn when it ends with the continue line on its own', () => {
-    expect(go(lead(`已提交。下一轮派 Lens。\n${CONTINUE_MARK}`), [m('user', '收尾')])).toBe(true);
-    expect(go(lead(`已提交。\n  ${CONTINUE_MARK}  `), [m('user', '收尾')])).toBe(true);
+    expect(go(lead(`Committed. Sending Lens next.\n${CONTINUE_MARK}`), [m('user', 'Wrap it up')])).toBe(true);
+    expect(go(lead(`Committed.\n  ${CONTINUE_MARK}  `), [m('user', 'Wrap it up')])).toBe(true);
   });
 
   it('not for the mark inside a sentence, a teammate, a handoff, or a group without that lead', () => {
-    const history = [m('user', '收尾')];
-    expect(go(lead(`写了${CONTINUE_MARK}就会继续`), history)).toBe(false);
+    const history = [m('user', 'Wrap it up')];
+    expect(go(lead(`Writing ${CONTINUE_MARK} keeps it going`), history)).toBe(false);
     expect(go(m('bot', CONTINUE_MARK, { botId: 'b_lens' }), history, { bot: lens })).toBe(false);
-    expect(go(lead(`@Lens 审一下\n${CONTINUE_MARK}`), history, { mentioned: [lens] })).toBe(false);
+    expect(go(lead(`@Lens please review\n${CONTINUE_MARK}`), history, { mentioned: [lens] })).toBe(false);
     expect(go(lead(CONTINUE_MARK), history, { chat: { kind: 'group', leadBotId: 'b_lens' } })).toBe(false);
   });
 
   it('shares the per-request budget with stall nudges', () => {
-    const asked = m('user', '收尾');
+    const asked = m('user', 'Wrap it up');
     const used = Array.from({ length: MAX_STALL_NUDGES }, () => m('system', continueNote('Chief'), { notice: 'stall' }));
     expect(go(lead(CONTINUE_MARK), [asked, ...used])).toBe(false);
   });
@@ -87,8 +87,8 @@ describe('leadContinues', () => {
 
 describe('the lead is told about the continue line', () => {
   const team = [
-    { id: 'b_chief', name: 'Chief', title: '负责人', description: 'x', permission: 'edits' },
-    { id: 'b_lens', name: 'Lens', title: '审查', description: 'x', permission: 'plan' },
+    { id: 'b_chief', name: 'Chief', title: 'Lead', description: 'x', permission: 'edits' },
+    { id: 'b_lens', name: 'Lens', title: 'Review', description: 'x', permission: 'plan' },
   ] as any[];
   const group = { kind: 'group', title: 'g', botIds: ['b_chief', 'b_lens'], leadBotId: 'b_chief' } as any;
   it('only in its own system prompt', () => {

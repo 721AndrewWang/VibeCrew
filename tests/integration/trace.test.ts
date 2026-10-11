@@ -17,7 +17,7 @@ describe.skipIf(!claudeCli())('turn traces', () => {
       reply: (r) =>
         r.tools.includes('Bash') && !mock.toolResults.some((t) => t.includes('trace-marker'))
           ? { tool: { id: 'toolu_tr1', name: 'Bash', input: { command: 'echo trace-marker', description: 'Say hello' } } }
-          : { text: '好的。' },
+          : { text: 'OK.' },
     });
     // The transcript folder is keyed by the config dir, which startServer isolates; point it at the real one is not needed: the server reads what the CLI it spawned wrote.
     crew = await startServer({ fakeAgent: false });
@@ -38,7 +38,7 @@ describe.skipIf(!claudeCli())('turn traces', () => {
   });
 
   it('records where the turn is, and reads back its calls, tool result and prompt', async () => {
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '打个招呼' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Say hello' });
     const reply = await waitTurn(crew.api, chatId, sent.seq, 120_000);
     expect(reply.status).toBe('done');
     expect(reply.meta.trace).toMatchObject({ sessionId: expect.any(String), cwd: expect.any(String) });
@@ -46,7 +46,7 @@ describe.skipIf(!claudeCli())('turn traces', () => {
     expect(t.available, t.reason).toBe(true);
     const kinds = t.steps.map((s: any) => s.kind);
     expect(kinds[0]).toBe('prompt');
-    expect(t.steps[0].text).toContain('打个招呼');
+    expect(t.steps[0].text).toContain('Say hello');
     expect(kinds.filter((k: string) => k === 'model').length).toBeGreaterThanOrEqual(2);
     const call = t.steps.find((s: any) => s.kind === 'model' && s.blocks.some((b: any) => b.type === 'tool_use'));
     expect(call.model).toBe('mock-model');

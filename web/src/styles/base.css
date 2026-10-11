@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------- tokens */
 /*
  * Black, white and grey by default: grey neutrals, and an accent that is near-black in light mode
- * and near-white in dark mode (--on-accent is the text drawn on it). Settings → 外观 can switch the
+ * and near-white in dark mode (--on-accent is the text drawn on it). Settings → Appearance can switch the
  * accent to a cool colour (the [data-accent] presets at the end of this block). Everything else
  * derives from these variables.
  */
@@ -149,7 +149,7 @@
 }
 
 /*
- * Colour accents (Settings → 外观). They come after the theme blocks so they win in both modes;
+ * Colour accents (Settings → Appearance). They come after the theme blocks so they win in both modes;
  * their glow, logo and a faint ambient light take the accent's colour, and avatars show the bots'
  * own colours and emoji again.
  */

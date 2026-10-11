@@ -20,11 +20,22 @@ const BARE = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--
 
 export async function oneShot(prompt: string, opts: { model?: string; timeoutMs?: number; system?: string } = {}): Promise<OneShotResult> {
   const cli = findClaudeExecutable();
-  if (!cli) throw new Error('没有找到 Claude Code');
+  if (!cli) throw new Error('Claude Code not found');
   const timeoutMs = opts.timeoutMs ?? 120_000;
   return new Promise<OneShotResult>((resolve, reject) => {
     // In a neutral folder, so no project's own Claude Code hooks or settings run for this.
-    const args = ['-p', '--output-format', 'json', '--max-turns', '1', '--model', opts.model || 'sonnet', ...BARE, '--system-prompt', opts.system || '按要求回答，只输出要求的内容。'];
+    const args = [
+      '-p',
+      '--output-format',
+      'json',
+      '--max-turns',
+      '1',
+      '--model',
+      opts.model || 'sonnet',
+      ...BARE,
+      '--system-prompt',
+      opts.system || 'Answer as asked, and output only what was asked for.',
+    ];
     const child = spawn(cli, args, {
       cwd: os.tmpdir(),
       env: cleanEnv(modelEnv()),
@@ -43,10 +54,10 @@ export async function oneShot(prompt: string, opts: { model?: string; timeoutMs?
       clearTimeout(timer);
       try {
         const j = JSON.parse(stdout.trim().split('\n').pop() || '');
-        if (j.is_error || j.subtype !== 'success') return reject(new Error(String(j.result || '模型没有给出结果')));
+        if (j.is_error || j.subtype !== 'success') return reject(new Error(String(j.result || 'The model gave no result')));
         resolve({ text: String(j.result || ''), costUsd: Number(j.total_cost_usd) || 0 });
       } catch {
-        reject(new Error(code === null ? `等了 ${Math.round(timeoutMs / 60_000)} 分钟没有回应` : stderr.trim().split('\n').slice(-2).join(' ') || `Claude Code 退出码 ${code}`));
+        reject(new Error(code === null ? `No response after ${Math.round(timeoutMs / 60_000)} min` : stderr.trim().split('\n').slice(-2).join(' ') || `Claude Code exit code ${code}`));
       }
     });
     child.stdin.on('error', () => {});

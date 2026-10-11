@@ -12,13 +12,13 @@ import { logger } from './log';
 const log = logger('friction');
 
 export const FRICTION_LABEL: Record<FrictionKind, string> = {
-  stall: '接力停住，靠卡住检测叫醒负责人',
-  'hop-limit': '自动接力达到上限',
-  'approval-denied': '你拒绝的审批',
-  'approval-readonly': '只读命令也来问你（规则可能太宽）',
-  'approval-slow': '审批等了 10 分钟以上',
-  'outside-edit': '「聊天之外改了文件」通知',
-  'turn-error': '机器人这一轮出错',
+  stall: 'Handoff chain stalled; stall detection woke the lead',
+  'hop-limit': 'Automatic handoffs hit the limit',
+  'approval-denied': 'Approvals you denied',
+  'approval-readonly': 'Read-only commands asked for approval (a rule may be too broad)',
+  'approval-slow': 'Approvals that waited over 10 minutes',
+  'outside-edit': '"Files changed outside the chat" notices',
+  'turn-error': 'Bot turns that errored',
 };
 
 /** Approvals answered later than this count as slow. */
@@ -83,19 +83,19 @@ export const GUARDED_FILES = ['server/agents/permissions.ts', 'server/orchestrat
 export function frictionBrief(days: number, kinds: FrictionReport['kinds']): string {
   if (!kinds.length) return '';
   const lines = kinds.flatMap((k) => [
-    `- ${k.label}：${k.count} 次`,
-    ...k.groups.slice(0, 3).map((g) => `  - ${g.key}（${g.count} 次）例：${g.examples[0].detail}${g.examples[0].chatTitle ? `（「${g.examples[0].chatTitle}」）` : ''}`),
+    `- ${k.label}: ${k.count}x`,
+    ...k.groups.slice(0, 3).map((g) => `  - ${g.key} (${g.count}x) e.g. ${g.examples[0].detail}${g.examples[0].chatTitle ? ` ("${g.examples[0].chatTitle}")` : ''}`),
   ]);
   return [
-    `@{lead} 这是 Crew 最近 ${days} 天的摩擦报告，按次数从多到少：`,
+    `@{lead} Here's Crew's friction report for the last ${days} days, most frequent first:`,
     '',
     ...lines,
     '',
-    '请挑一条影响最大、一个分支里修得完的问题来修：',
-    '1. 先复述问题和证据（需要时用 chat_history 读原对话），说清楚根因，再动手。修不了或不该修（比如是用户自己的选择），就说明理由，换下一条。',
-    '2. 在这个对话的独立工作区（分支）里改，补上能复现问题的测试，跑 npm run check 全部通过。',
-    '3. 交给 Lens 审查、Skeptic 证伪，推翻的都修掉。',
-    `4. 改到 ${GUARDED_FILES.join('、')} 之前先停下来问用户：这些文件决定机器人能做什么。`,
-    '5. 不要合并、推送、打包、重启 Crew，也不要改 ~/.crew 里的数据；最后把分支名、改动、测试结果和还不确定的地方汇总给用户，由用户决定。',
+    'Please pick the problem with the biggest impact that can be fixed within one branch:',
+    "1. First restate the problem and the evidence (use chat_history to read the original chat if needed) and explain the root cause before changing anything. If it can't or shouldn't be fixed (for example, it's the user's own choice), say why and move on to the next one.",
+    "2. Make the change in this chat's own workspace (branch), add a test that reproduces the problem, and get npm run check fully passing.",
+    '3. Hand it to Lens for review and Skeptic to refute, and fix everything they refute.',
+    `4. Before touching ${GUARDED_FILES.join(', ')}, stop and ask the user: these files decide what bots are allowed to do.`,
+    "5. Don't merge, push, package or restart Crew, and don't touch the data in ~/.crew. At the end, sum up the branch name, the changes, the test results and anything still uncertain for the user, who decides.",
   ].join('\n');
 }

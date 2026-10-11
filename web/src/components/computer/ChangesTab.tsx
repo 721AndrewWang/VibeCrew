@@ -8,7 +8,7 @@ import { closeWorkspace } from '../../workspace';
 import { Avatar, confirmDialog, Glyph } from '../ui';
 import { DiffView, UnifiedDiff } from './DiffView';
 
-const STATUS_LABEL = { added: '新增', modified: '修改', deleted: '删除', unknown: '命令改动', renamed: '重命名' } as const;
+const STATUS_LABEL = { added: 'Added', modified: 'Modified', deleted: 'Deleted', unknown: 'Changed by command', renamed: 'Renamed' } as const;
 
 function TurnFileDiff({ chatId, turnId, path }: { chatId: string; turnId: string; path: string }) {
   const [d, setD] = useState<TurnDiff | null>(null);
@@ -26,13 +26,14 @@ function TurnFileDiff({ chatId, turnId, path }: { chatId: string; turnId: string
         <span className="spinner" />
       </div>
     );
-  if (d.binary || d.tooLarge) return <div className="muted pad">{d.binary ? '二进制文件，无法显示差异' : '文件太大，没有保存快照'}</div>;
-  if (d.before === undefined) return <div className="muted pad">这个文件是被命令（比如 npm install 或脚本）修改的，没有修改前的快照，无法显示差异或自动撤销。</div>;
+  if (d.binary || d.tooLarge) return <div className="muted pad">{d.binary ? 'Binary file, no diff available' : 'File too large, no snapshot saved'}</div>;
+  if (d.before === undefined)
+    return <div className="muted pad">This file was changed by a command (like npm install or a script). There is no snapshot from before, so no diff or automatic revert is available.</div>;
   return (
     <>
       {d.current !== undefined && d.after !== undefined && d.current !== d.after && (
         <div className="diff-note">
-          <Glyph emoji="⚠️" size={12} /> 这个文件在这一轮之后又被修改过，下面显示的是这一轮本身的改动。
+          <Glyph emoji="⚠️" size={12} /> This file was changed again after this turn. Below are only the changes from this turn.
         </div>
       )}
       <DiffView before={d.before ?? ''} after={d.after ?? ''} />
@@ -54,18 +55,34 @@ function TurnCard({ turn, chat, project, focus }: { turn: TurnSummary; chat: Cha
   }, [focus?.nonce]);
 
   const revert = async () => {
-    if (!(await confirmDialog({ title: '撤销这一轮的改动？', body: `恢复 ${turn.files.length} 个文件到 ${bot?.name || '机器人'} 修改之前的样子。`, ok: '撤销', danger: true }))) return;
+    if (
+      !(await confirmDialog({
+        title: "Revert this turn's changes?",
+        body: `Restore ${turn.files.length} file${turn.files.length === 1 ? '' : 's'} to how they were before ${bot?.name || 'the bot'} changed them.`,
+        ok: 'Revert',
+        danger: true,
+      }))
+    )
+      return;
     setBusy(true);
     try {
       let r = await api.revertTurn(chat.id, turn.id);
       if (r.conflicts.length) {
-        if (!(await confirmDialog({ title: '有文件之后又被改过', body: `${r.conflicts.join('、')} 在这一轮之后又被修改过，强制撤销会覆盖之后的修改。`, ok: '强制撤销', danger: true }))) return;
+        if (
+          !(await confirmDialog({
+            title: 'Some files changed since',
+            body: `${r.conflicts.join(', ')} changed again after this turn. Force revert will overwrite those later changes.`,
+            ok: 'Force revert',
+            danger: true,
+          }))
+        )
+          return;
         r = await api.revertTurn(chat.id, turn.id, true);
       }
-      toast('已撤销', `恢复了 ${r.reverted.length} 个文件`, 'success');
+      toast('Reverted', `Restored ${r.reverted.length} file${r.reverted.length === 1 ? '' : 's'}`, 'success');
       void loadTurns(chat.id);
     } catch (e) {
-      toast('撤销失败', (e as Error).message, 'error');
+      toast('Revert failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -75,16 +92,16 @@ function TurnCard({ turn, chat, project, focus }: { turn: TurnSummary; chat: Cha
     <div className={cx('turn-card', turn.reverted && 'reverted')} ref={ref}>
       <div className="turn-head">
         <Avatar bot={bot} size={22} />
-        <b>{bot?.name || '机器人'}</b>
+        <b>{bot?.name || 'Bot'}</b>
         <span className="muted">
-          {fmtWhen(turn.startedAt)} · {turn.files.length} 个文件
+          {fmtWhen(turn.startedAt)} · {turn.files.length} file{turn.files.length === 1 ? '' : 's'}
         </span>
         <span className="spacer" />
         {turn.reverted ? (
-          <span className="badge">已撤销</span>
+          <span className="badge">Reverted</span>
         ) : (
           <button className="btn sm ghost" disabled={busy} onClick={revert}>
-            <Undo2 size={13} /> 撤销
+            <Undo2 size={13} /> Revert
           </button>
         )}
       </div>
@@ -98,7 +115,7 @@ function TurnCard({ turn, chat, project, focus }: { turn: TurnSummary; chat: Cha
               <span
                 className="icon-btn sm"
                 role="button"
-                title="在编辑器中打开"
+                title="Open in editor"
                 onClick={(e) => {
                   e.stopPropagation();
                   openFileInEditor(project.id, f.path);
@@ -150,9 +167,9 @@ function GitSection({ project, active }: { project: Project; active: boolean }) 
     try {
       setSt(await api.commit(project.id, msg.trim()));
       setMsg('');
-      toast('已提交', undefined, 'success');
+      toast('Committed', undefined, 'success');
     } catch (e) {
-      toast('提交失败', (e as Error).message, 'error');
+      toast('Commit failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -164,14 +181,14 @@ function GitSection({ project, active }: { project: Project; active: boolean }) 
       <div className="section-title">
         <GitBranch size={14} /> Git {st.repo && st.branch ? <span className="badge">{st.branch}</span> : null}
         <span className="spacer" />
-        <button className="icon-btn sm" title="刷新" onClick={refresh}>
+        <button className="icon-btn sm" title="Refresh" onClick={refresh}>
           <RefreshCw size={13} />
         </button>
       </div>
       {!st.repo ? (
-        <div className="muted pad">这个项目还不是 Git 仓库。提交一次就会自动初始化，之后可以随时回退。</div>
+        <div className="muted pad">This project is not a Git repo yet. Your first commit sets it up, and you can roll back any time after that.</div>
       ) : !st.files?.length ? (
-        <div className="muted pad">工作区很干净，没有未提交的改动。</div>
+        <div className="muted pad">Working tree is clean. No uncommitted changes.</div>
       ) : (
         <div className="turn-files">
           {st.files.map((f) => (
@@ -188,9 +205,15 @@ function GitSection({ project, active }: { project: Project; active: boolean }) 
       )}
       {(!st.repo || !!st.files?.length) && (
         <div className="commit-box">
-          <input className="input" placeholder="提交说明，例如：完成首页布局" value={msg} onChange={(e) => setMsg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && msg.trim() && commit()} />
+          <input
+            className="input"
+            placeholder="Commit message, e.g. Finish home page layout"
+            value={msg}
+            onChange={(e) => setMsg(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && msg.trim() && commit()}
+          />
           <button className="btn primary" disabled={!msg.trim() || busy} onClick={commit}>
-            <GitCommitHorizontal size={14} /> 提交全部
+            <GitCommitHorizontal size={14} /> Commit all
           </button>
         </div>
       )}
@@ -233,9 +256,9 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
     try {
       const r = await api.suggestCommitMessage(chat.id);
       setMsg(r.message);
-      if (review) toast('已按项目要求写好提交说明', '看一下没问题，再点一次合并', 'info');
+      if (review) toast('Commit message written to project rules', 'Check it, then click Merge again', 'info');
     } catch (e) {
-      toast('没能生成提交说明', (e as Error).message, 'error');
+      toast('Could not generate commit message', (e as Error).message, 'error');
     } finally {
       setBusy('');
     }
@@ -272,25 +295,25 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
       if (kind === 'merge') {
         const r = await api.mergeWorkspace(chat.id, msg.trim() || undefined);
         if (r.ok) {
-          toast(`已合并到 ${base}`, `${r.files} 个文件 · 提交 ${r.commit}`, 'success');
+          toast(`Merged into ${base}`, `${r.files} file${r.files === 1 ? '' : 's'} · commit ${r.commit}`, 'success');
           setMsg('');
           setConflicts(null);
         } else setConflicts(r.conflicts);
       } else if (kind === 'sync') {
         const r = await api.syncWorkspace(chat.id);
-        if (r.ok) toast(`已同步 ${base} 的最新改动`, `${r.files} 个文件`, 'success');
+        if (r.ok) toast(`Synced latest changes from ${base}`, `${r.files} file${r.files === 1 ? '' : 's'}`, 'success');
         else setConflicts(r.conflicts);
       } else if (kind === 'resolve') {
         const r = await api.resolveConflicts(chat.id);
         setConflicts(null);
-        if (r.started) toast('已交给机器人解决冲突', r.conflicts.join('、'), 'info');
-        else toast('没有冲突了', `已同步 ${base} 的最新改动`, 'success');
+        if (r.started) toast('A bot is resolving the conflicts', r.conflicts.join(', '), 'info');
+        else toast('No conflicts left', `Synced latest changes from ${base}`, 'success');
       } else {
         await api.abortSync(chat.id);
         setConflicts(null);
       }
     } catch (e) {
-      toast({ merge: '合并失败', sync: '同步失败', resolve: '操作失败', abort: '操作失败' }[kind], (e as Error).message, 'error');
+      toast({ merge: 'Merge failed', sync: 'Sync failed', resolve: 'Action failed', abort: 'Action failed' }[kind], (e as Error).message, 'error');
     } finally {
       setBusy('');
       void refresh();
@@ -306,10 +329,10 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
   return (
     <div className="ws-section">
       <div className="section-title">
-        <GitBranch size={14} /> 独立工作区 <span className="badge accent">{info.branch}</span>
-        <span className="muted ws-base">从 {base} 分出</span>
+        <GitBranch size={14} /> Isolated workspace <span className="badge accent">{info.branch}</span>
+        <span className="muted ws-base">from {base}</span>
         <span className="spacer" />
-        <button className="icon-btn sm" title="刷新" onClick={refresh}>
+        <button className="icon-btn sm" title="Refresh" onClick={refresh}>
           <RefreshCw size={13} />
         </button>
       </div>
@@ -322,27 +345,27 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
       ) : (
         <>
           <div className="ws-meta muted">
-            {st.files.length ? `${st.files.length} 个文件和 ${base} 不同` : pending ? `有还没合并到 ${base} 的提交` : `和 ${base} 没有区别`}
-            {st.behind > 0 && ` · ${base} 有 ${st.behind} 个新提交`}
-            {st.mergedAt ? ` · 上次合并于 ${fmtWhen(st.mergedAt)}` : ''}
+            {st.files.length ? `${st.files.length} file${st.files.length === 1 ? '' : 's'} differ from ${base}` : pending ? `Commits not yet merged into ${base}` : `No differences from ${base}`}
+            {st.behind > 0 && ` · ${base} has ${st.behind} new commit${st.behind === 1 ? '' : 's'}`}
+            {st.mergedAt ? ` · last merged ${fmtWhen(st.mergedAt)}` : ''}
           </div>
           {(st.requireChallenge || st.challenge) && <ChallengeLine st={st} chatId={chat.id} blocked={blocked} />}
           {(st.merging || (conflicts && conflicts.length > 0)) && (
             <div className="ws-alert">
               {st.merging
-                ? `正在同步 ${base}，${conflicts?.length ? `${conflicts.join('、')} 里` : ''}还有冲突需要处理。`
-                : `${conflicts!.join('、')} 在 ${base} 上也被改过了，需要先把两边的改动合在一起。`}
+                ? `Syncing ${base}. There are still conflicts to resolve${conflicts?.length ? ` in ${conflicts.join(', ')}` : ''}.`
+                : `${conflicts!.join(', ')} also changed on ${base}. Both sides need to be combined first.`}
               <div className="row">
                 <button className="btn sm primary" disabled={blocked} onClick={() => act('resolve')}>
-                  {busy === 'resolve' ? <span className="spinner tiny" /> : <Sparkles size={13} />} 让机器人解决冲突
+                  {busy === 'resolve' ? <span className="spinner tiny" /> : <Sparkles size={13} />} Let a bot resolve conflicts
                 </button>
                 {st.merging ? (
                   <button className="btn sm" disabled={blocked} onClick={() => act('abort')}>
-                    放弃这次同步
+                    Abort this sync
                   </button>
                 ) : (
                   <button className="btn sm ghost" onClick={() => setConflicts(null)}>
-                    稍后
+                    Later
                   </button>
                 )}
               </div>
@@ -360,7 +383,7 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
                       <span
                         className="icon-btn sm"
                         role="button"
-                        title="在编辑器中打开"
+                        title="Open in editor"
                         onClick={(e) => {
                           e.stopPropagation();
                           openFileInEditor(project.id, projectPath(f.path));
@@ -380,45 +403,45 @@ function WorkspaceSection({ chat, project, active }: { chat: Chat; project: Proj
               <textarea
                 className="input mono"
                 rows={msg ? Math.min(8, msg.split('\n').length + 1) : 2}
-                placeholder={`提交说明，要按项目要求写：${guide}`}
+                placeholder={`Commit message, following project rules: ${guide}`}
                 value={msg}
                 onChange={(e) => setMsg(e.target.value)}
               />
             ) : (
               <input
                 className="input"
-                placeholder={`合并说明（默认用对话名「${chat.title}」）`}
+                placeholder={`Merge message (defaults to chat name "${chat.title}")`}
                 value={msg}
                 onChange={(e) => setMsg(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && pending && !blocked && !st.merging && act('merge')}
               />
             )}
             <div className="commit-actions">
-              <button className="btn" disabled={!pending || blocked || st.merging} onClick={() => suggest(false)} title="让模型根据这个分支的改动写提交说明">
-                {busy === 'suggest' ? <span className="spinner tiny" /> : <Sparkles size={14} />} 生成
+              <button className="btn" disabled={!pending || blocked || st.merging} onClick={() => suggest(false)} title="Have the model write a commit message from this branch's changes">
+                {busy === 'suggest' ? <span className="spinner tiny" /> : <Sparkles size={14} />} Generate
               </button>
               <button
                 className="btn primary"
                 disabled={!pending || blocked || st.merging}
                 onClick={() => (guide && !msg.trim() ? suggest(true) : act('merge'))}
-                title={`把这个分支的改动合成一个提交，放进 ${base}`}
+                title={`Squash this branch's changes into one commit on ${base}`}
               >
-                {busy === 'merge' ? <span className="spinner tiny" /> : <GitMerge size={14} />} 合并到 {base}
+                {busy === 'merge' ? <span className="spinner tiny" /> : <GitMerge size={14} />} Merge into {base}
               </button>
             </div>
           </div>
           <div className="ws-actions">
             {st.behind > 0 && !st.merging && (
-              <button className="btn sm" disabled={blocked} onClick={() => act('sync')} title={`把 ${base} 的新提交合进这个分支`}>
-                {busy === 'sync' ? <span className="spinner tiny" /> : <RefreshCw size={13} />} 同步 {base} 的新提交
+              <button className="btn sm" disabled={blocked} onClick={() => act('sync')} title={`Bring new commits from ${base} into this branch`}>
+                {busy === 'sync' ? <span className="spinner tiny" /> : <RefreshCw size={13} />} Sync from {base}
               </button>
             )}
             <span className="spacer" />
             <button className="btn sm ghost danger-text" disabled={blocked} onClick={() => void closeWorkspace(chat, { discard: true })}>
-              <Trash2 size={13} /> 丢弃分支
+              <Trash2 size={13} /> Discard branch
             </button>
           </div>
-          {working && <div className="hint">机器人正在工作，这一轮结束后才能合并或同步。</div>}
+          {working && <div className="hint">A bot is working. You can merge or sync after this turn ends.</div>}
         </>
       )}
     </div>
@@ -434,13 +457,13 @@ export function ChangesTab({ chat, project, active }: { chat: Chat; project: Pro
   return (
     <div className="changes">
       {project.workspace && <WorkspaceSection chat={chat} project={project} active={active} />}
-      <div className="section-title">机器人在这个对话里的改动</div>
+      <div className="section-title">Bot changes in this chat</div>
       {!turns ? (
         <div className="pad">
           <span className="spinner" />
         </div>
       ) : !turns.length ? (
-        <div className="muted pad">还没有改动。机器人每一轮修改的文件都会记录在这里，可以查看差异、一键撤销。</div>
+        <div className="muted pad">No changes yet. Files bots change in each turn are logged here, where you can view diffs and revert in one click.</div>
       ) : (
         turns.map((t) => <TurnCard key={t.id} turn={t} chat={chat} project={project} focus={focus && focus.turnId === t.id && focus.chatId === chat.id ? focus : undefined} />)
       )}
@@ -454,17 +477,21 @@ function ChallengeLine({ st, chatId, blocked }: { st: WorkspaceStatus; chatId: s
   const c = st.challenge;
   // The status lists files, not the head; the verdict is current when nothing changed after it.
   const stale = !!c && !!st.dirty;
-  const text = !c ? '还没做过对抗审查' : c.refuted > 0 ? `对抗审查推翻了 ${c.refuted} 条（${fmtWhen(c.at)}）` : `对抗审查未推翻（${fmtWhen(c.at)}）${stale ? '，之后又有改动' : ''}`;
+  const text = !c
+    ? 'No adversarial review yet'
+    : c.refuted > 0
+      ? `Adversarial review refuted ${c.refuted} claim${c.refuted === 1 ? '' : 's'} (${fmtWhen(c.at)})`
+      : `Adversarial review found nothing to refute (${fmtWhen(c.at)})${stale ? ', changed since' : ''}`;
   return (
     <div className={cx('ws-challenge', c && c.refuted > 0 && 'refuted')}>
       <Scale size={13} />
       <span>
         {text}
-        {st.requireChallenge && (!c || c.refuted > 0) ? ' · 这个项目要求通过后才能合并' : ''}
+        {st.requireChallenge && (!c || c.refuted > 0) ? ' · this project requires passing before merge' : ''}
       </span>
       <span className="spacer" />
-      <button className="btn sm" disabled={blocked} onClick={() => void sendMessage(chatId, '/challenge')} title="让 Skeptic 只看需求和改动，尽力证伪">
-        {c ? '再审一次' : '对抗审查'}
+      <button className="btn sm" disabled={blocked} onClick={() => void sendMessage(chatId, '/challenge')} title="Have the Skeptic look only at the requirements and changes, and try to disprove them">
+        {c ? 'Review again' : 'Adversarial review'}
       </button>
     </div>
   );

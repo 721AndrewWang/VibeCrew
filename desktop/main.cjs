@@ -18,7 +18,7 @@ const STATE_FILE = path.join(HOME_DIR, 'desktop.json');
 const LOG_DIR = path.join(HOME_DIR, 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'server.log');
 const SETTINGS_FILE = path.join(HOME_DIR, 'settings.json');
-/** Icons of every logo in Settings → 外观 (npm run icons); icons/ has the default one. */
+/** Icons of every logo in Settings → Appearance (npm run icons); icons/ has the default one. */
 const LOGOS_DIR = path.join(__dirname, 'logos');
 const LOADING_PAGE = path.join(__dirname, 'loading.html');
 const AUTOSTART_FILE = path.join(os.homedir(), '.config', 'autostart', 'crew.desktop');
@@ -56,7 +56,7 @@ let lastExternalOpen = 0;
 let loadedFrom = null;
 const crashes = [];
 let attachedMisses = 0;
-/** The logo chosen in Settings → 外观; null for the default icons. */
+/** The logo chosen in Settings → Appearance; null for the default icons. */
 let logo = null;
 
 // ---------------------------------------------------------------- small helpers
@@ -415,10 +415,10 @@ async function onServerLost() {
   while (crashes.length && now - crashes[0] > 60_000) crashes.shift();
   crashes.push(now);
   if (crashes.length > 3) {
-    showError('Crew 服务多次意外退出', logTail());
+    showError('The Crew server keeps exiting unexpectedly', logTail());
     return;
   }
-  showLoading('服务意外退出，正在重新启动…');
+  showLoading('The server exited unexpectedly. Restarting...');
   await boot();
 }
 
@@ -469,18 +469,18 @@ async function boot() {
         return;
       }
       // A port the server could not bind although nothing answers on 127.0.0.1 (e.g. a
-      // listener on a LAN address while 手机访问 binds 0.0.0.0) is treated as taken.
+      // listener on a LAN address while phone access binds 0.0.0.0) is treated as taken.
       if (found.kind === 'other' || found.kind === 'foreign' || portRejected) {
         const free = await findFreePort(port + 1);
         if (!free) {
-          showError(`端口 ${port} 被其他程序占用，也没有找到可用的端口`, '');
+          showError(`Port ${port} is used by another program, and no free port was found`, '');
           return;
         }
         log(`port ${port} is used by another program, using ${free}`);
         port = free;
       }
       if (!fs.existsSync(SERVER_ENTRY)) {
-        showError('找不到 Crew 服务文件', `缺少 ${SERVER_ENTRY}\n请先运行 npm run build:desktop`);
+        showError('Crew server files not found', `Missing ${SERVER_ENTRY}\nRun npm run build:desktop first.`);
         return;
       }
       portRejected = false;
@@ -495,22 +495,22 @@ async function boot() {
       }
       if (result === 'timeout') {
         await stopServer();
-        showError('Crew 服务启动超时', logTail());
+        showError('The Crew server took too long to start', logTail());
         return;
       }
       // It exited. Code 3 means the port could not be bound: look again, and if nothing
       // answers there, move on to another port.
       lostDuringBoot = false;
       if (proc.exitCode !== 3) {
-        showError('Crew 服务没能启动', logTail());
+        showError('The Crew server failed to start', logTail());
         return;
       }
       portRejected = true;
     }
-    if (!quitting) showError('Crew 服务没能启动', logTail());
+    if (!quitting) showError('The Crew server failed to start', logTail());
   } catch (e) {
     log(`boot failed: ${e?.stack}`);
-    if (!quitting) showError('Crew 服务没能启动', String(e?.message || e));
+    if (!quitting) showError('The Crew server failed to start', String(e?.message || e));
   } finally {
     booting = false;
     if (lostDuringBoot && !quitting && !attached && !childAlive()) {
@@ -630,8 +630,8 @@ function createWindow() {
       state.trayNoticeShown = true;
       saveState();
       new Notification({
-        title: 'Crew 仍在后台运行',
-        body: attached ? '窗口已隐藏，可以从托盘图标重新打开。' : '机器人和定时任务会继续工作。从托盘图标可以重新打开或退出。',
+        title: 'Crew is still running in the background',
+        body: attached ? 'The window is hidden. Reopen it from the tray icon.' : 'Bots and scheduled tasks keep working. Reopen or quit from the tray icon.',
         icon: iconPath('512x512.png'),
       }).show();
     }
@@ -651,7 +651,7 @@ function createWindow() {
     const m = String(title).match(/^\((\d+)\)/);
     const unread = m ? Number(m[1]) : 0;
     app.setBadgeCount(unread);
-    if (tray) tray.setToolTip(unread ? `Crew · ${unread} 条未读` : 'Crew');
+    if (tray) tray.setToolTip(unread ? `Crew · ${unread} unread` : 'Crew');
   });
   wc.on('render-process-gone', (_e, details) => {
     log(`renderer gone: ${details.reason}`);
@@ -715,7 +715,7 @@ function setAutostart(on) {
           '[Desktop Entry]',
           'Type=Application',
           'Name=Crew',
-          'Comment=在后台启动 Crew，机器人和定时任务开机即可工作',
+          'Comment=Start Crew in the background so bots and scheduled tasks work from login',
           `Exec=${launchCommand()} --hidden`,
           'Icon=crew',
           'Terminal=false',
@@ -727,7 +727,7 @@ function setAutostart(on) {
       fs.rmSync(AUTOSTART_FILE, { force: true });
     }
   } catch (e) {
-    dialog.showErrorBox('无法修改开机启动', String(e?.message));
+    dialog.showErrorBox('Could not change the login item', String(e?.message));
   }
   updateTray();
   return autostartEnabled();
@@ -736,13 +736,13 @@ function setAutostart(on) {
 function updateTray() {
   if (!tray) return;
   const menu = Menu.buildFromTemplate([
-    { label: '打开 Crew', click: showWindow },
-    { label: '在浏览器中打开', enabled: !!serverPort, click: () => void shell.openExternal(`${appOrigin()}/`) },
+    { label: 'Open Crew', click: showWindow },
+    { label: 'Open in Browser', enabled: !!serverPort, click: () => void shell.openExternal(`${appOrigin()}/`) },
     { type: 'separator' },
-    { label: '开机自动启动（后台运行）', type: 'checkbox', checked: autostartEnabled(), click: (item) => setAutostart(item.checked) },
-    { label: '查看服务日志', click: () => void shell.openPath(LOG_FILE) },
+    { label: 'Start at Login (in Background)', type: 'checkbox', checked: autostartEnabled(), click: (item) => setAutostart(item.checked) },
+    { label: 'View Server Log', click: () => void shell.openPath(LOG_FILE) },
     { type: 'separator' },
-    { label: attached ? '退出（服务由其他进程运行，会继续工作）' : '退出 Crew（停止所有机器人）', click: () => void quitApp() },
+    { label: attached ? 'Quit (the server runs in another process and keeps working)' : 'Quit Crew (stops all bots)', click: () => void quitApp() },
   ]);
   tray.setContextMenu(menu);
 }
@@ -785,7 +785,7 @@ function syncDockIcons() {
   if (fs.existsSync(path.join(ICON_THEME, 'icon-theme.cache'))) spawn('gtk-update-icon-cache', ['-f', '-t', ICON_THEME], { stdio: 'ignore' }).on('error', () => {});
 }
 
-/** Follows Settings → 外观 → 应用图标: window, tray and Dock icons. */
+/** Follows Settings → Appearance → App icon: window, tray and Dock icons. */
 function applyLogo() {
   const next = chosenLogo();
   if (next === logo) return;
@@ -802,35 +802,35 @@ function createMenu() {
       {
         label: 'Crew',
         submenu: [
-          { label: '隐藏窗口', accelerator: 'CmdOrCtrl+W', click: () => win?.hide() },
-          { label: '在浏览器中打开', click: () => serverPort && void shell.openExternal(`${appOrigin()}/`) },
+          { label: 'Hide Window', accelerator: 'CmdOrCtrl+W', click: () => win?.hide() },
+          { label: 'Open in Browser', click: () => serverPort && void shell.openExternal(`${appOrigin()}/`) },
           { type: 'separator' },
-          { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => void quitApp() },
+          { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => void quitApp() },
         ],
       },
       {
-        label: '编辑',
+        label: 'Edit',
         submenu: [
-          { role: 'undo', label: '撤销' },
-          { role: 'redo', label: '重做' },
+          { role: 'undo', label: 'Undo' },
+          { role: 'redo', label: 'Redo' },
           { type: 'separator' },
-          { role: 'cut', label: '剪切' },
-          { role: 'copy', label: '复制' },
-          { role: 'paste', label: '粘贴' },
-          { role: 'selectAll', label: '全选' },
+          { role: 'cut', label: 'Cut' },
+          { role: 'copy', label: 'Copy' },
+          { role: 'paste', label: 'Paste' },
+          { role: 'selectAll', label: 'Select All' },
         ],
       },
       {
-        label: '视图',
+        label: 'View',
         submenu: [
-          { role: 'reload', label: '重新加载' },
-          { role: 'toggleDevTools', label: '开发者工具' },
+          { role: 'reload', label: 'Reload' },
+          { role: 'toggleDevTools', label: 'Developer Tools' },
           { type: 'separator' },
-          { role: 'resetZoom', label: '实际大小' },
-          { role: 'zoomIn', label: '放大' },
-          { role: 'zoomOut', label: '缩小' },
+          { role: 'resetZoom', label: 'Actual Size' },
+          { role: 'zoomIn', label: 'Zoom In' },
+          { role: 'zoomOut', label: 'Zoom Out' },
           { type: 'separator' },
-          { role: 'togglefullscreen', label: '全屏' },
+          { role: 'togglefullscreen', label: 'Toggle Full Screen' },
         ],
       },
     ]),
@@ -911,7 +911,7 @@ if (wantsQuit) {
   app.exit(0);
 } else if (legacyInstance()) {
   // The old VibeCrew holds the port and the data; running both would mix them up.
-  dialog.showErrorBox('旧版 VibeCrew 还在运行', 'VibeCrew 已改名为 Crew。请先从托盘菜单退出旧版 VibeCrew，再打开 Crew。');
+  dialog.showErrorBox('The old VibeCrew is still running', 'VibeCrew has been renamed to Crew. Quit the old VibeCrew from its tray menu first, then open Crew.');
   app.exit(0);
 } else if (!app.requestSingleInstanceLock({ quit: false })) {
   app.exit(0);
@@ -938,7 +938,7 @@ if (wantsQuit) {
     createMenu();
     createWindow();
     createTray();
-    showLoading('正在启动 Crew…');
+    showLoading('Starting Crew...');
     void boot();
     syncDockIcons();
     // The server writes settings.json (atomically) when the logo is changed on any device.

@@ -107,7 +107,7 @@
         var t = ev.target;
         if (t && t !== window && t.tagName) {
           var url = t.src || t.href || '';
-          sendConsole('error', '资源加载失败: ' + describeNode(t) + (url ? ' ' + url : ''));
+          sendConsole('error', 'Failed to load resource: ' + describeNode(t) + (url ? ' ' + url : ''));
           return;
         }
         var loc = ev.filename ? ev.filename.replace(location.origin, '') + ':' + ev.lineno + ':' + ev.colno : '';
@@ -134,7 +134,7 @@
           return res;
         },
         (err) => {
-          sendConsole('error', '[network] ' + method.toUpperCase() + ' ' + url + ' 失败: ' + fmt(err));
+          sendConsole('error', '[network] ' + method.toUpperCase() + ' ' + url + ' failed: ' + fmt(err));
           throw err;
         },
       );
@@ -151,7 +151,7 @@
     XMLHttpRequest.prototype.send = function () {
       this.addEventListener('loadend', () => {
         if (!this.__vc) return;
-        if (this.status === 0) sendConsole('error', '[network] ' + this.__vc.m + ' ' + this.__vc.u + ' 失败');
+        if (this.status === 0) sendConsole('error', '[network] ' + this.__vc.m + ' ' + this.__vc.u + ' failed');
         else if (this.status >= 400) sendConsole('warn', '[network] ' + this.status + ' ' + this.__vc.m + ' ' + this.__vc.u);
       });
       return xs.apply(this, arguments);
@@ -596,7 +596,7 @@
       if (!badge) {
         badge = document.createElement('div');
         badge.setAttribute('data-crew', 'badge');
-        badge.textContent = '● 正在录制演示';
+        badge.textContent = '● Recording demo';
         badge.style.cssText =
           'position:fixed;top:8px;right:8px;z-index:2147483647;background:#ff3b30;color:#fff;font:600 12px/1.8 -apple-system,system-ui,sans-serif;padding:2px 10px;border-radius:999px;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.25);';
       }

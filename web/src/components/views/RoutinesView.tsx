@@ -10,23 +10,23 @@ import { PageHead } from './BotsView';
 type TriggerType = RoutineTrigger['type'];
 
 const TRIGGER_TYPES: { id: TriggerType; label: string; icon: typeof Clock }[] = [
-  { id: 'interval', label: '间隔', icon: Timer },
-  { id: 'daily', label: '每天', icon: Clock },
+  { id: 'interval', label: 'Interval', icon: Timer },
+  { id: 'daily', label: 'Daily', icon: Clock },
   { id: 'cron', label: 'Cron', icon: CalendarClock },
-  { id: 'file_change', label: '文件变化', icon: FileClock },
-  { id: 'git_commit', label: 'Git 提交', icon: GitCommitHorizontal },
-  { id: 'manual', label: '手动', icon: Hand },
+  { id: 'file_change', label: 'File change', icon: FileClock },
+  { id: 'git_commit', label: 'Git commit', icon: GitCommitHorizontal },
+  { id: 'manual', label: 'Manual', icon: Hand },
 ];
 
 /** Weekday chips in Monday-first order, mapped to cron day numbers. */
 const WEEK: { day: number; label: string }[] = [
-  { day: 1, label: '一' },
-  { day: 2, label: '二' },
-  { day: 3, label: '三' },
-  { day: 4, label: '四' },
-  { day: 5, label: '五' },
-  { day: 6, label: '六' },
-  { day: 0, label: '日' },
+  { day: 1, label: 'Mon' },
+  { day: 2, label: 'Tue' },
+  { day: 3, label: 'Wed' },
+  { day: 4, label: 'Thu' },
+  { day: 5, label: 'Fri' },
+  { day: 6, label: 'Sat' },
+  { day: 0, label: 'Sun' },
 ];
 const ORDER = WEEK.map((w) => w.day);
 
@@ -34,38 +34,38 @@ function weekdaysText(days?: number[]): string {
   if (!days?.length) return '';
   const uniq = [...new Set(days)].filter((d) => ORDER.includes(d)).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
   if (!uniq.length || uniq.length === 7) return '';
-  if (uniq.length === 2 && uniq[0] === 6 && uniq[1] === 0) return '（周末）';
+  if (uniq.length === 2 && uniq[0] === 6 && uniq[1] === 0) return ' (weekends)';
   const idx = uniq.map((d) => ORDER.indexOf(d));
   const contiguous = idx.every((v, i) => i === 0 || v === idx[i - 1] + 1);
   const label = (d: number) => WEEK.find((w) => w.day === d)!.label;
-  if (contiguous && uniq.length >= 3) return `（周${label(uniq[0])}至周${label(uniq[uniq.length - 1])}）`;
-  return `（周${uniq.map(label).join('、')}）`;
+  if (contiguous && uniq.length >= 3) return ` (${label(uniq[0])}–${label(uniq[uniq.length - 1])})`;
+  return ` (${uniq.map(label).join(', ')})`;
 }
 
 export function describeTrigger(t: RoutineTrigger): string {
   switch (t.type) {
     case 'interval':
-      return t.minutes >= 60 && t.minutes % 60 === 0 ? `每 ${t.minutes / 60} 小时` : `每 ${t.minutes} 分钟`;
+      return t.minutes >= 60 && t.minutes % 60 === 0 ? `Every ${t.minutes / 60} hour${t.minutes === 60 ? '' : 's'}` : `Every ${t.minutes} minute${t.minutes === 1 ? '' : 's'}`;
     case 'daily':
-      return `每天 ${t.time || '09:00'}${weekdaysText(t.days)}`;
+      return `Daily at ${t.time || '09:00'}${weekdaysText(t.days)}`;
     case 'cron':
-      return `Cron：${t.expr}`;
+      return `Cron: ${t.expr}`;
     case 'file_change':
-      return `你保存文件后（等待 ${t.debounceSec} 秒）`;
+      return `After you save a file (wait ${t.debounceSec}s)`;
     case 'git_commit':
-      return '每次 Git 提交后';
+      return 'After every Git commit';
     case 'manual':
-      return '仅手动运行';
+      return 'Manual only';
     default:
       return '';
   }
 }
 
 const STATUS_BADGE: Record<NonNullable<Routine['lastStatus']>, { cls: string; text: string }> = {
-  ok: { cls: 'green', text: '成功' },
-  error: { cls: 'red', text: '失败' },
-  running: { cls: 'accent', text: '运行中' },
-  skipped: { cls: '', text: '已跳过' },
+  ok: { cls: 'green', text: 'Success' },
+  error: { cls: 'red', text: 'Failed' },
+  running: { cls: 'accent', text: 'Running' },
+  skipped: { cls: '', text: 'Skipped' },
 };
 
 // ---------------------------------------------------------------- editor
@@ -90,9 +90,13 @@ interface Preset {
 }
 
 const PRESETS: Preset[] = [
-  { label: '每天 9 点检查控制台报错', icon: '🩺', form: { name: '每天检查控制台报错', type: 'daily', time: '09:00', days: [], prompt: '/fix-console' } },
-  { label: '每次提交后代码审查', icon: '🔍', form: { name: '提交后代码审查', type: 'git_commit', prompt: '/review' } },
-  { label: '保存文件后检查页面', icon: '👀', form: { name: '保存后检查页面', type: 'file_change', debounceSec: 10, prompt: '用 preview_console 检查当前页面有没有新的报错，有就修复并告诉我' } },
+  { label: 'Check console errors daily at 9', icon: '🩺', form: { name: 'Daily console error check', type: 'daily', time: '09:00', days: [], prompt: '/fix-console' } },
+  { label: 'Code review after each commit', icon: '🔍', form: { name: 'Post-commit code review', type: 'git_commit', prompt: '/review' } },
+  {
+    label: 'Check page after saving',
+    icon: '👀',
+    form: { name: 'Check page after save', type: 'file_change', debounceSec: 10, prompt: 'Use preview_console to check the current page for new errors. If there are any, fix them and tell me.' },
+  },
 ];
 
 function formFrom(r: Routine | undefined, defaultBot: string): Form {
@@ -131,10 +135,10 @@ function triggerFrom(f: Form): RoutineTrigger {
 }
 
 const CRON_EXAMPLES = [
-  { expr: '0 9 * * 1-5', label: '工作日 9 点' },
-  { expr: '*/30 * * * *', label: '每 30 分钟' },
-  { expr: '0 18 * * 5', label: '每周五 18 点' },
-  { expr: '0 0 1 * *', label: '每月 1 号零点' },
+  { expr: '0 9 * * 1-5', label: 'Weekdays at 9' },
+  { expr: '*/30 * * * *', label: 'Every 30 min' },
+  { expr: '0 18 * * 5', label: 'Fridays at 18:00' },
+  { expr: '0 0 1 * *', label: '1st of month, midnight' },
 ];
 
 function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset?: Preset; onClose: () => void }) {
@@ -152,10 +156,10 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
   const targetProject = targetChat?.projectId ? projects[targetChat.projectId] : undefined;
 
   const save = async () => {
-    if (!bot) return toast('请选择机器人', undefined, 'error');
-    if (!f.prompt.trim()) return toast('请填写任务内容', '告诉机器人每次要做什么', 'error');
-    if (f.type === 'cron' && !f.expr.trim()) return toast('请填写 Cron 表达式', undefined, 'error');
-    if (f.type === 'interval' && !(f.minutes >= 1)) return toast('间隔至少 1 分钟', undefined, 'error');
+    if (!bot) return toast('Choose a bot', undefined, 'error');
+    if (!f.prompt.trim()) return toast('Enter the task', 'Tell the bot what to do each time', 'error');
+    if (f.type === 'cron' && !f.expr.trim()) return toast('Enter a cron expression', undefined, 'error');
+    if (f.type === 'interval' && !(f.minutes >= 1)) return toast('Interval must be at least 1 minute', undefined, 'error');
     const payload: Partial<Routine> = {
       name: f.name.trim() || f.prompt.trim().split('\n')[0].slice(0, 24),
       botId: f.botId,
@@ -167,10 +171,10 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
     try {
       if (routine) await api.updateRoutine(routine.id, payload);
       else await api.saveRoutine({ ...payload, enabled: true });
-      toast(routine ? '任务已保存' : '已创建定时任务', payload.name, 'success');
+      toast(routine ? 'Routine saved' : 'Routine created', payload.name, 'success');
       onClose();
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -178,24 +182,24 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
 
   return (
     <Modal
-      title={routine ? '编辑定时任务' : '新建定时任务'}
+      title={routine ? 'Edit routine' : 'New routine'}
       icon={<Clock size={20} className="modal-icon" />}
       onClose={onClose}
       wide
       footer={
         <>
           <button className="btn" onClick={onClose}>
-            取消
+            Cancel
           </button>
           <button className="btn primary" disabled={saving || !botList.length} onClick={save}>
-            {saving ? <span className="spinner" /> : <Save size={15} />} {routine ? '保存' : '创建'}
+            {saving ? <span className="spinner" /> : <Save size={15} />} {routine ? 'Save' : 'Create'}
           </button>
         </>
       }
     >
       {!routine && (
         <div className="field">
-          <label>快速开始</label>
+          <label>Quick start</label>
           <div className="preset-row">
             {PRESETS.map((p) => (
               <button key={p.label} className="preset-chip" onClick={() => set(p.form)}>
@@ -207,13 +211,13 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
       )}
 
       <div className="field">
-        <label>任务名称</label>
-        <input className="input" value={f.name} placeholder="例如 每天检查控制台报错" onChange={(e) => set({ name: e.target.value })} />
+        <label>Name</label>
+        <input className="input" value={f.name} placeholder="e.g. Daily console error check" onChange={(e) => set({ name: e.target.value })} />
       </div>
 
       <div className="form-grid">
         <div className="field">
-          <label>由谁来做</label>
+          <label>Bot</label>
           <select
             className="select"
             value={f.botId}
@@ -231,29 +235,29 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
           </select>
         </div>
         <div className="field">
-          <label>在哪个对话里运行</label>
+          <label>Run in chat</label>
           <select className="select" value={f.chatId || ''} onChange={(e) => set({ chatId: e.target.value || null })}>
-            <option value="">{bot ? `${bot.name} 的单聊` : '单聊'}</option>
+            <option value="">{bot ? `Direct chat with ${bot.name}` : 'Direct chat'}</option>
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
-                群聊：{g.title}
+                Group chat: {g.title}
               </option>
             ))}
           </select>
-          <div className="hint">{targetProject ? `项目：${targetProject.name}` : '这个对话还没有绑定项目'}</div>
+          <div className="hint">{targetProject ? `Project: ${targetProject.name}` : 'This chat has no project bound yet'}</div>
         </div>
       </div>
 
       <div className="field">
-        <label>任务内容</label>
-        <textarea className="textarea" rows={4} value={f.prompt} placeholder="每次运行时发给机器人的话" onChange={(e) => set({ prompt: e.target.value })} />
+        <label>Task</label>
+        <textarea className="textarea" rows={4} value={f.prompt} placeholder="Message sent to the bot on each run" onChange={(e) => set({ prompt: e.target.value })} />
         <div className="hint">
-          可以直接写 /技能名，例如 <code className="inline-code">/fix-console</code>
+          You can write /skill-name directly, e.g. <code className="inline-code">/fix-console</code>
         </div>
       </div>
 
       <div className="field">
-        <label>什么时候运行</label>
+        <label>When to run</label>
         <div className="segmented wrap">
           {TRIGGER_TYPES.map((t) => (
             <button key={t.id} className={cx(f.type === t.id && 'on')} onClick={() => set({ type: t.id })}>
@@ -266,19 +270,19 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
       <div className="trigger-box">
         {f.type === 'interval' && (
           <div className="row wrap">
-            <span>每隔</span>
+            <span>Every</span>
             <input className="input num-input" type="number" min={1} value={f.minutes} onChange={(e) => set({ minutes: Number(e.target.value) })} />
-            <span>分钟运行一次</span>
+            <span>minutes</span>
           </div>
         )}
         {f.type === 'daily' && (
           <>
             <div className="row wrap">
-              <span>时间</span>
+              <span>Time</span>
               <input className="input time-input" type="time" value={f.time} onChange={(e) => set({ time: e.target.value })} />
             </div>
             <div className="row wrap" style={{ marginTop: 10 }}>
-              <span>星期</span>
+              <span>Days</span>
               <div className="day-chips">
                 {WEEK.map((w) => {
                   const on = f.days.includes(w.day);
@@ -291,18 +295,18 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
               </div>
               {f.days.length > 0 && (
                 <button className="btn ghost sm" onClick={() => set({ days: [] })}>
-                  每天
+                  Every day
                 </button>
               )}
             </div>
             <div className="hint" style={{ marginTop: 8 }}>
-              {f.days.length ? describeTrigger(triggerFrom(f)) : '不选表示每天'}
+              {f.days.length ? describeTrigger(triggerFrom(f)) : 'None selected means every day'}
             </div>
           </>
         )}
         {f.type === 'cron' && (
           <>
-            <input className="input mono" value={f.expr} placeholder="分 时 日 月 周，例如 0 9 * * 1-5" onChange={(e) => set({ expr: e.target.value })} />
+            <input className="input mono" value={f.expr} placeholder="min hour day month weekday, e.g. 0 9 * * 1-5" onChange={(e) => set({ expr: e.target.value })} />
             <div className="preset-row" style={{ marginTop: 8 }}>
               {CRON_EXAMPLES.map((c) => (
                 <button key={c.expr} className="preset-chip sm" onClick={() => set({ expr: c.expr })}>
@@ -315,17 +319,17 @@ function RoutineEditor({ routine, preset, onClose }: { routine?: Routine; preset
         {f.type === 'file_change' && (
           <>
             <div className="row wrap">
-              <span>你保存文件后，等待</span>
+              <span>After you save a file, wait</span>
               <input className="input num-input" type="number" min={2} value={f.debounceSec} onChange={(e) => set({ debounceSec: Number(e.target.value) })} />
-              <span>秒再运行</span>
+              <span>seconds, then run</span>
             </div>
             <div className="hint" style={{ marginTop: 8 }}>
-              监听目标对话所绑定的项目；机器人自己改的文件不会触发，这段时间内连续保存只运行一次。
+              Watches the project bound to the target chat. Files changed by bots don't trigger it, and repeated saves within the wait run only once.
             </div>
           </>
         )}
-        {f.type === 'git_commit' && <div className="hint">目标对话所绑定的项目每产生一次 Git 提交就运行一次，适合做代码审查或更新文档。</div>}
-        {f.type === 'manual' && <div className="hint">不会自动运行，在任务列表里点「立即运行」时才执行。适合保存常用的一键流程。</div>}
+        {f.type === 'git_commit' && <div className="hint">Runs once for every Git commit in the project bound to the target chat. Good for code review or updating docs.</div>}
+        {f.type === 'manual' && <div className="hint">Never runs automatically; only when you click "Run now" in the list. Good for saving one-click workflows.</div>}
       </div>
     </Modal>
   );
@@ -344,7 +348,7 @@ function RoutineCard({ routine, bot, chat, onEdit }: { routine: Routine; bot?: B
       await api.updateRoutine(routine.id, { enabled });
     } catch (e) {
       useStore.setState((s) => ({ routines: { ...s.routines, [routine.id]: routine } }));
-      toast('切换失败', (e as Error).message, 'error');
+      toast('Toggle failed', (e as Error).message, 'error');
     }
   };
 
@@ -352,10 +356,10 @@ function RoutineCard({ routine, bot, chat, onEdit }: { routine: Routine; bot?: B
     setBusy(true);
     try {
       const r = await api.runRoutine(routine.id);
-      if (r?.lastStatus === 'error') toast('运行失败', '找不到目标对话，或机器人已经不在那个群聊里了', 'error');
-      else toast('已开始运行', `${bot?.name || '机器人'} 正在处理「${routine.name}」`, 'success');
+      if (r?.lastStatus === 'error') toast('Run failed', 'Target chat not found, or the bot is no longer in that group chat', 'error');
+      else toast('Run started', `${bot?.name || 'Bot'} is working on "${routine.name}"`, 'success');
     } catch (e) {
-      toast('运行失败', (e as Error).message, 'error');
+      toast('Run failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -364,17 +368,17 @@ function RoutineCard({ routine, bot, chat, onEdit }: { routine: Routine; bot?: B
   const view = () => {
     const id = chat?.id || dmOf(routine.botId)?.id;
     if (id) openChat(id);
-    else toast('找不到对话', undefined, 'warn');
+    else toast('Chat not found', undefined, 'warn');
   };
 
   const remove = async () => {
-    const ok = await confirmDialog({ title: `删除任务「${routine.name}」？`, body: '已经运行产生的聊天记录会保留。', ok: '删除', danger: true });
+    const ok = await confirmDialog({ title: `Delete routine "${routine.name}"?`, body: 'Chat history from past runs will be kept.', ok: 'Delete', danger: true });
     if (!ok) return;
     try {
       await api.deleteRoutine(routine.id);
-      toast('已删除任务', routine.name, 'success');
+      toast('Routine deleted', routine.name, 'success');
     } catch (e) {
-      toast('删除失败', (e as Error).message, 'error');
+      toast('Delete failed', (e as Error).message, 'error');
     }
   };
 
@@ -388,7 +392,7 @@ function RoutineCard({ routine, bot, chat, onEdit }: { routine: Routine; bot?: B
           <div className="rc-name">{routine.name}</div>
           <div className="rc-trigger">{describeTrigger(routine.trigger)}</div>
         </div>
-        <Toggle on={routine.enabled} onChange={setEnabled} title={routine.enabled ? '已启用' : '已暂停'} />
+        <Toggle on={routine.enabled} onChange={setEnabled} title={routine.enabled ? 'Enabled' : 'Paused'} />
       </div>
 
       <div className={cx('rc-prompt', routine.prompt.startsWith('/') && 'mono')}>{routine.prompt}</div>
@@ -396,34 +400,38 @@ function RoutineCard({ routine, bot, chat, onEdit }: { routine: Routine; bot?: B
       <div className="rc-meta">
         <span className="rc-bot">
           <Avatar bot={bot} size={20} />
-          {bot?.name || '（机器人已删除）'}
-          <span className="muted">· {chat ? chat.title : '单聊'}</span>
+          {bot?.name || '(bot deleted)'}
+          <span className="muted">· {chat ? chat.title : 'Direct chat'}</span>
         </span>
-        {routine.enabled && routine.nextRunAt ? <span>下次：{fmtRelative(routine.nextRunAt)}</span> : null}
-        {!routine.enabled && <span className="muted">已暂停</span>}
+        {routine.enabled && routine.nextRunAt ? <span>Next: {fmtRelative(routine.nextRunAt)}</span> : null}
+        {!routine.enabled && <span className="muted">Paused</span>}
         {routine.lastRunAt ? (
           <span className="rc-last">
-            上次：{fmtShort(routine.lastRunAt)}
+            Last: {fmtShort(routine.lastRunAt)}
             {status && <span className={cx('badge', status.cls)}>{status.text}</span>}
           </span>
         ) : (
-          <span className="muted">还没有运行过</span>
+          <span className="muted">Never run</span>
         )}
-        {routine.runCount > 0 && <span className="muted">已运行 {routine.runCount} 次</span>}
+        {routine.runCount > 0 && (
+          <span className="muted">
+            Ran {routine.runCount} time{routine.runCount === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
       <div className="rc-actions">
         <button className="btn sm primary" disabled={busy || !bot} onClick={run}>
-          {busy ? <span className="spinner tiny" /> : <Play size={13} />} 立即运行
+          {busy ? <span className="spinner tiny" /> : <Play size={13} />} Run now
         </button>
         <button className="btn sm" onClick={view}>
-          <MessageCircle size={13} /> 查看对话
+          <MessageCircle size={13} /> View chat
         </button>
         <button className="btn sm" onClick={onEdit}>
-          <Pencil size={13} /> 编辑
+          <Pencil size={13} /> Edit
         </button>
         <span className="spacer" />
-        <button className="icon-btn sm danger-hover" title="删除" onClick={remove}>
+        <button className="icon-btn sm danger-hover" title="Delete" onClick={remove}>
           <Trash2 size={14} />
         </button>
       </div>
@@ -444,9 +452,9 @@ export function RoutinesView() {
   return (
     <div className="page">
       <div className="page-inner">
-        <PageHead title="定时任务" sub="让机器人按时间表或在事件发生时自动工作（像 Grokbot 的 Routines）">
+        <PageHead title="Routines" sub="Have bots work automatically on a schedule or when events happen">
           <button className="btn primary" disabled={!hasBots} onClick={() => setEditing({})}>
-            <Plus size={15} /> 新建任务
+            <Plus size={15} /> New routine
           </button>
         </PageHead>
 
@@ -455,11 +463,11 @@ export function RoutinesView() {
             <div className="big">
               <Glyph emoji="⏰" size={26} />
             </div>
-            <h3>还没有定时任务</h3>
+            <h3>No routines yet</h3>
             <div>
-              定时任务会在固定时间、每隔一段时间、你保存文件后或每次 Git 提交后，自动让机器人做一件事，
+              Routines have a bot do something automatically at a set time, on an interval, after you save a file, or after each Git commit,
               <br className="wide-only" />
-              比如每天早上检查报错、提交后做代码审查。结果会出现在对应的对话里。
+              like checking for errors every morning or reviewing code after a commit. Results show up in the matching chat.
             </div>
             {hasBots ? (
               <div className="preset-row center">
@@ -470,7 +478,7 @@ export function RoutinesView() {
                 ))}
               </div>
             ) : (
-              <div className="muted">先添加一个机器人吧。</div>
+              <div className="muted">Add a bot first.</div>
             )}
           </div>
         ) : (

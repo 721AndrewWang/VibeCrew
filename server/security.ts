@@ -95,7 +95,7 @@ export function guard(req: Request, res: Response, next: NextFunction) {
   }
   const isApi = req.path.startsWith('/api/');
   if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
-    res.status(403).json({ error: '跨站请求被拒绝' });
+    res.status(403).json({ error: 'Cross-site request rejected' });
     return;
   }
   const local = isLoopback(req) && isLocalHostname(hostname(req.headers.host));
@@ -111,14 +111,14 @@ export function guard(req: Request, res: Response, next: NextFunction) {
     return next();
   }
   if (isApi) {
-    res.status(401).json({ error: '需要访问令牌' });
+    res.status(401).json({ error: 'Access token required' });
     return;
   }
   res
     .status(401)
     .type('html')
     .send(
-      '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crew</title><body style="font-family:system-ui;padding:40px;text-align:center"><h2>需要访问链接</h2><p>请在电脑上打开 Crew 的「设置 → 手机访问」，扫描二维码或使用其中的链接。</p></body>',
+      '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crew</title><body style="font-family:system-ui;padding:40px;text-align:center"><h2>Access link required</h2><p>On your computer, open Crew\'s Settings → Phone access and scan the QR code or use the link there.</p></body>',
     );
 }
 

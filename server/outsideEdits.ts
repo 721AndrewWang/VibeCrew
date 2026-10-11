@@ -95,13 +95,13 @@ export function lineChange(before: string, after: string): { line: number; remov
 }
 
 function describe(rel: string, before: string | null, after: string | null): string {
-  if (after === null) return `- ${rel}：改了（不是文本文件，或者太大）`;
+  if (after === null) return `- ${rel}: changed (not a text file, or too large)`;
   // Neither seen before nor committed: a new file, or one Crew has no earlier copy of.
-  if (before === null) return `- ${rel}：新文件，或者之前没有记录过的文件（${after.split('\n').length} 行）`;
+  if (before === null) return `- ${rel}: new file, or one not seen before (${after.split('\n').length} lines)`;
   const c = lineChange(before, after);
-  if (!c) return `- ${rel}：内容没变`;
-  const cut = (xs: string[], sign: string) => [...xs.slice(0, MAX_LINES).map((l) => `    ${sign} ${l}`), ...(xs.length > MAX_LINES ? [`    …另外 ${xs.length - MAX_LINES} 行`] : [])];
-  return [`- ${rel} 第 ${c.line} 行起：`, ...cut(c.removed, '-'), ...cut(c.added, '+')].join('\n');
+  if (!c) return `- ${rel}: content unchanged`;
+  const cut = (xs: string[], sign: string) => [...xs.slice(0, MAX_LINES).map((l) => `    ${sign} ${l}`), ...(xs.length > MAX_LINES ? [`    …and ${xs.length - MAX_LINES} more lines`] : [])];
+  return [`- ${rel}, from line ${c.line}:`, ...cut(c.removed, '-'), ...cut(c.added, '+')].join('\n');
 }
 
 function flush(projectId: string) {
@@ -115,16 +115,18 @@ function flush(projectId: string) {
   entries.slice(0, MAX_FILES).forEach(([rel, f], i) => {
     const after = readText(path.join(root, rel));
     const gone = !fs.existsSync(path.join(root, rel));
-    if (i < MAX_DIFFS) lines.push(gone ? `- ${rel}：删除了` : describe(rel, f.before, after));
-    else lines.push(`- ${rel}${gone ? '（删除了）' : ''}`);
+    if (i < MAX_DIFFS) lines.push(gone ? `- ${rel}: deleted` : describe(rel, f.before, after));
+    else lines.push(`- ${rel}${gone ? ' (deleted)' : ''}`);
   });
-  if (entries.length > MAX_FILES) lines.push(`…另外 ${entries.length - MAX_FILES} 个文件`);
+  if (entries.length > MAX_FILES) lines.push(`…and ${entries.length - MAX_FILES} more files`);
   const byEditor = entries.every(([, f]) => f.editor);
-  const who = byEditor ? '用户在 Crew 的编辑器里改了文件' : '有文件在聊天之外被改了（不是这个对话里的机器人改的，可能是用户手动改的，或者别的程序、git 操作）';
-  const text = `${who}：\n${lines.join('\n')}\n以文件现在的内容为准；如果和聊天里之前的要求不一致，按现在的文件来，拿不准就先问用户。`;
+  const who = byEditor
+    ? "The user edited files in Crew's editor"
+    : 'Files were changed outside the chat (not by a bot in this chat; maybe the user edited them by hand, or another program or a git operation did)';
+  const text = `${who}:\n${lines.join('\n')}\nTreat the files as they are now as the source of truth. If they disagree with earlier requests in the chat, go with the current files, and if you're unsure, ask the user first.`;
   for (const chat of chats.all()) if (chatProjectId(chat) === projectId) systemMessage(chat, text, { notice: 'outside-edit' });
   // One event per path, so a path that keeps showing up (a placeholder Crew should skip) stands out.
-  if (!byEditor) for (const [rel] of entries.slice(0, MAX_FILES)) recordFriction({ kind: 'outside-edit', key: rel, detail: `${project.name}：${rel}` });
+  if (!byEditor) for (const [rel] of entries.slice(0, MAX_FILES)) recordFriction({ kind: 'outside-edit', key: rel, detail: `${project.name}: ${rel}` });
 }
 
 function onFiles(projectId: string, paths: string[]) {

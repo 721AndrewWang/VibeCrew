@@ -23,44 +23,47 @@ export function SandboxSection() {
       const r = await api.updateSettings({ sandbox: { enabled, allowedDomains: list } });
       useStore.setState({ settings: r.settings });
       setDomains(r.settings.sandbox.allowedDomains.join('\n'));
-      toast('沙盒设置已保存', '下一轮开始生效', 'success');
+      toast('Sandbox settings saved', 'Takes effect from the next turn', 'success');
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Section icon={<Shield size={18} />} title="沙盒">
+    <Section icon={<Shield size={18} />} title="Sandbox">
       <div className="setting-row">
         <div>
-          <div className="sr-title">把机器人运行的命令关进沙盒</div>
-          <div className="hint">命令只能写项目目录，网络只能连本机和下面列出的域名。这是真正的边界：「禁止的操作」只能防误操作，沙盒连绕过都做不到。机器人自己关不掉它。</div>
+          <div className="sr-title">Run bot commands in a sandbox</div>
+          <div className="hint">
+            Commands can only write to the project folder, and the network can only reach this machine and the domains listed below. This is a real boundary: "Forbidden actions" only guard against
+            mistakes, while the sandbox can't be bypassed at all. Bots can't turn it off themselves.
+          </div>
         </div>
         <Toggle on={enabled} onChange={setEnabled} />
       </div>
       {enabled && !status.available && (
         <div className="notice warn" data-testid="sandbox-unavailable">
-          <div>这台机器上沙盒还用不了，机器人的命令目前没有被隔离。{status.hint}</div>
+          <div>The sandbox isn't available on this machine yet, so bot commands are not isolated right now. {status.hint}</div>
           {status.missing.length > 0 && <CodeLine code={`sudo apt install ${status.missing.join(' ')}`} />}
         </div>
       )}
       <div className="field span-all">
-        <label>允许访问的域名</label>
+        <label>Allowed domains</label>
         <textarea
           className="input mono"
           rows={5}
           value={domains}
-          placeholder={'每行一个，例如\nregistry.npmjs.org\n*.githubusercontent.com\n10.0.0.5:8080'}
+          placeholder={'One per line, e.g.\nregistry.npmjs.org\n*.githubusercontent.com\n10.0.0.5:8080'}
           onChange={(e) => setDomains(e.target.value)}
         />
-        <div className="hint">本机（localhost）始终允许。每个项目还可以在自己的设置里追加域名。写法：域名、*.域名、IP，可以带端口。</div>
+        <div className="hint">This machine (localhost) is always allowed. Each project can add more domains in its own settings. Format: domain, *.domain or IP, optionally with a port.</div>
       </div>
       <div className="row">
         <span className="spacer" />
         <button className="btn primary" disabled={saving || !dirty} onClick={save}>
-          {saving ? <span className="spinner" /> : <Save size={14} />} 保存
+          {saving ? <span className="spinner" /> : <Save size={14} />} Save
         </button>
       </div>
     </Section>
