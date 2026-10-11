@@ -152,8 +152,7 @@ describe('decide', () => {
 
     it("Claude Code's own match of one of these rules defers to the check above, even with git log in the command", () => {
       // Approval #295 on 2026-10-07, which asked with "ask rule [object Object]".
-      const cmd =
-        'cd /home/dev/acme-shop && grep -n "450fc09\\|orphan" docs/m4-deploy-checklist.md | cut -c1-200; grep -n "47\\|48" docs/m4-pr.md | cut -c1-160; git log --oneline main..HEAD | wc -l';
+      const cmd = 'cd /home/dev/acme-shop && grep -n "450fc09\\|orphan" docs/m4-deploy-checklist.md | cut -c1-200; grep -n "47\\|48" docs/m4-pr.md | cut -c1-160; git log --oneline main..HEAD | wc -l';
       expect(run(cmd, { toolName: 'Bash', ruleContent: '*deploy*' } as any).behavior).toBe('allow');
       // In Auto-edit files a command outside the read-only list still asks, for the mode's reason.
       expect(decide(b, 'edits', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule: { toolName: 'Bash', ruleContent: '*deploy*' } }).because).toBe(
