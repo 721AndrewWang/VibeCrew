@@ -210,7 +210,7 @@ export function Avatar({ bot, size = 36, status }: { bot?: Pick<Bot, 'emoji' | '
 }
 
 /**
- * The Crew logo chosen in Settings → 外观 (or the one given), drawn in the theme's logo colours
+ * The Crew logo chosen in Settings → Appearance (or the one given), drawn in the theme's logo colours
  * (black / white by default, or the accent).
  */
 export function Logo({ size = 26, className, id }: { size?: number; className?: string; id?: LogoId }) {
@@ -275,7 +275,7 @@ export function Modal({ title, icon, onClose, children, footer, wide }: { title:
           {icon}
           <h2>{title}</h2>
           <span className="spacer" />
-          <button className="icon-btn" onClick={onClose} aria-label="关闭">
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
@@ -304,10 +304,10 @@ export function confirmDialog(opts: { title: string; body?: ReactNode; ok?: stri
         footer={
           <>
             <button className="btn" onClick={() => done(false)}>
-              取消
+              Cancel
             </button>
             <button className={cx('btn', opts.danger ? 'danger solid' : 'primary')} autoFocus onClick={() => done(true)}>
-              {opts.ok || '确定'}
+              {opts.ok || 'OK'}
             </button>
           </>
         }
@@ -338,10 +338,10 @@ export function promptDialog(opts: { title: string; label?: string; value?: stri
           footer={
             <>
               <button className="btn" onClick={() => done(null)}>
-                取消
+                Cancel
               </button>
               <button className="btn primary" onClick={() => done(v)}>
-                {opts.ok || '确定'}
+                {opts.ok || 'OK'}
               </button>
             </>
           }

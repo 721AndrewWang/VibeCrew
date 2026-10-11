@@ -26,27 +26,33 @@ import { cx, fmtShort, statusLabel } from '../utils';
 import { Avatar, confirmDialog, GroupAvatar, Logo, Menu, MenuButton, type MenuItem, useNow } from './ui';
 
 const NAV: { view: View; label: string; icon: typeof MessageCircle }[] = [
-  { view: 'chat', label: '对话', icon: MessageCircle },
-  { view: 'bots', label: '机器人', icon: BotIcon },
-  { view: 'skills', label: '技能', icon: Zap },
-  { view: 'routines', label: '定时', icon: Clock },
-  { view: 'projects', label: '项目', icon: FolderGit2 },
-  { view: 'settings', label: '设置', icon: Settings },
+  { view: 'chat', label: 'Chats', icon: MessageCircle },
+  { view: 'bots', label: 'Bots', icon: BotIcon },
+  { view: 'skills', label: 'Skills', icon: Zap },
+  { view: 'routines', label: 'Routines', icon: Clock },
+  { view: 'projects', label: 'Projects', icon: FolderGit2 },
+  { view: 'settings', label: 'Settings', icon: Settings },
 ];
 
 export function chatMenuItems(chat: Chat): MenuItem[] {
   const items: MenuItem[] = [
     {
-      label: chat.pinned ? '取消置顶' : '置顶',
+      label: chat.pinned ? 'Unpin' : 'Pin',
       icon: chat.pinned ? <PinOff size={15} /> : <Pin size={15} />,
       onClick: () => void api.updateChat(chat.id, { pinned: !chat.pinned }),
     },
-    { label: '对话设置', icon: <SlidersHorizontal size={15} />, onClick: () => openModal({ kind: 'chatSettings', chatId: chat.id }) },
+    { label: 'Chat settings', icon: <SlidersHorizontal size={15} />, onClick: () => openModal({ kind: 'chatSettings', chatId: chat.id }) },
     {
-      label: '开始新话题',
+      label: 'Start new topic',
       icon: <RotateCcw size={15} />,
       onClick: async () => {
-        if (await confirmDialog({ title: '开始新话题？', body: '机器人会忘记这个对话之前的上下文（聊天记录仍然保留），适合切换到不相关的任务，也能节省用量。', ok: '开始新话题' }))
+        if (
+          await confirmDialog({
+            title: 'Start new topic?',
+            body: "Bots will forget this chat's earlier context (the chat history is kept). Good when switching to an unrelated task, and it saves usage.",
+            ok: 'Start new topic',
+          })
+        )
           void api.reset(chat.id);
       },
     },
@@ -54,12 +60,14 @@ export function chatMenuItems(chat: Chat): MenuItem[] {
   if (chat.kind === 'group') {
     items.push({ separator: true });
     items.push({
-      label: '删除群聊',
+      label: 'Delete group chat',
       icon: <Trash2 size={15} />,
       danger: true,
       onClick: async () => {
-        if (await confirmDialog({ title: `删除群聊「${chat.title}」？`, body: '聊天记录和改动记录会被删除，项目文件不受影响。', ok: '删除', danger: true })) {
-          await api.deleteChat(chat.id).catch((e) => toast('删除失败', e.message, 'error'));
+        if (
+          await confirmDialog({ title: `Delete group chat "${chat.title}"?`, body: 'The chat history and change records will be deleted. Project files are not affected.', ok: 'Delete', danger: true })
+        ) {
+          await api.deleteChat(chat.id).catch((e) => toast('Delete failed', e.message, 'error'));
         }
       },
     });
@@ -91,7 +99,7 @@ function ChatItem({ chat, active }: { chat: Chat; active: boolean }) {
       <div className="ci-main">
         <div className="ci-top">
           <span className="ci-title">{chat.title}</span>
-          {chat.workspaceId && <GitBranch size={11} className="ci-pin" aria-label="独立工作区" />}
+          {chat.workspaceId && <GitBranch size={11} className="ci-pin" aria-label="Isolated workspace" />}
           {chat.pinned && <Pin size={11} className="ci-pin" />}
           <span className="ci-time">{chat.lastMessage ? fmtShort(chat.lastMessage.ts) : ''}</span>
         </div>
@@ -114,13 +122,13 @@ function ChatItem({ chat, active }: { chat: Chat; active: boolean }) {
             <span className="ci-preview">
               {chat.lastMessage ? (
                 <>
-                  {chat.kind === 'group' || chat.lastMessage.author === '你' ? <b>{chat.lastMessage.author}：</b> : null}
+                  {chat.kind === 'group' || chat.lastMessage.author === 'You' ? <b>{chat.lastMessage.author}: </b> : null}
                   {chat.lastMessage.text}
                 </>
               ) : dm ? (
                 dm.title
               ) : (
-                `${members.length} 位成员`
+                `${members.length} member${members.length === 1 ? '' : 's'}`
               )}
             </span>
           )}
@@ -160,12 +168,12 @@ export function Sidebar() {
           <span>Crew</span>
         </div>
         <MenuButton
-          title="新建"
+          title="New"
           align="right"
           items={[
-            { label: '新建群聊', icon: <Users size={15} />, onClick: () => openModal({ kind: 'newGroup' }) },
-            { label: '新建机器人', icon: <UserPlus size={15} />, onClick: () => openModal({ kind: 'newBot' }) },
-            { label: '新建 / 打开项目', icon: <FolderPlus size={15} />, onClick: () => openModal({ kind: 'newProject' }) },
+            { label: 'New group chat', icon: <Users size={15} />, onClick: () => openModal({ kind: 'newGroup' }) },
+            { label: 'New bot', icon: <UserPlus size={15} />, onClick: () => openModal({ kind: 'newBot' }) },
+            { label: 'New / open project', icon: <FolderPlus size={15} />, onClick: () => openModal({ kind: 'newProject' }) },
           ]}
         >
           <SquarePen size={18} />
@@ -173,13 +181,13 @@ export function Sidebar() {
       </div>
       <div className="sb-search">
         <Search size={14} />
-        <input placeholder="搜索对话" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input placeholder="Search chats" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <div className="sb-list">
         {list.map((c) => (
           <ChatItem key={c.id} chat={c} active={view === 'chat' && c.id === activeChatId} />
         ))}
-        {!list.length && <div className="empty">没有匹配的对话</div>}
+        {!list.length && <div className="empty">No matching chats</div>}
       </div>
       <nav className="sb-nav">
         {NAV.map((n) => (

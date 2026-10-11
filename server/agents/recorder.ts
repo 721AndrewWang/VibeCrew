@@ -140,7 +140,7 @@ export function turnFileDiff(chatId: string, turnId: string, rel: string) {
  */
 export function revertTurn(chatId: string, turnId: string, root: string, force = false) {
   const t = loadTurn(chatId, turnId);
-  if (!t) throw new Error('找不到这一轮的记录');
+  if (!t) throw new Error('No record found for this turn');
   const reverted: string[] = [];
   const conflicts: string[] = [];
   const skipped: string[] = [];

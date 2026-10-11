@@ -71,16 +71,16 @@ describe('suggestRules', () => {
 });
 
 describe('decide', () => {
-  it('runs read-only compounds without asking in 自动改文件', () => {
+  it('runs read-only compounds without asking in Auto-edit files', () => {
     expect(decide(bot(), 'edits', 'Bash', bash('cd src && cat a.ts | head -40'), cwd, {}).behavior).toBe('allow');
   });
-  it('asks for real commands in 自动改文件', () => {
+  it('asks for real commands in Auto-edit files', () => {
     expect(decide(bot(), 'edits', 'Bash', bash('cd src && npm test'), cwd, {}).behavior).toBe('ask');
   });
-  it('asks for everything in 每步确认', () => {
+  it('asks for everything in Ask every step', () => {
     expect(decide(bot(), 'ask', 'Bash', bash('cat a.ts'), cwd, {}).behavior).toBe('ask');
   });
-  it('must-ask rules win over helpers and over 全自动', () => {
+  it('must-ask rules win over helpers and over Full auto', () => {
     expect(decide(bot(), 'edits', 'Bash', bash('cat a; git push'), cwd, {}).behavior).toBe('ask');
     expect(decide(bot(), 'auto', 'Bash', bash('git push origin main'), cwd, {}).behavior).toBe('ask');
   });
@@ -91,7 +91,7 @@ describe('decide', () => {
     expect(decide(b, 'auto', 'Bash', bash("ssh test-server 'uptime'"), cwd, {}).behavior).toBe('allow');
   });
   describe('a command that only reads is held only to the rules about files', () => {
-    // The bots' default rules and the apellespell project's rules, as they were on 2026-10-07.
+    // The bots' default rules and the acme-shop project's rules, as they were on 2026-10-07.
     const defaults = ['Bash(git push*)', 'Bash(sudo *)', 'Bash(rm -rf *)', 'Bash(npm publish*)', 'Bash(*deploy*)'];
     const project = [
       'Bash(bash server/deploy.sh:*)',
@@ -151,18 +151,19 @@ describe('decide', () => {
     });
 
     it("Claude Code's own match of one of these rules defers to the check above, even with git log in the command", () => {
-      // Approval #295 on 2026-10-07, which asked with "ask 规则 [object Object]".
-      const cmd =
-        'cd /home/ubuntu24/apellespell && grep -n "450fc09\\|orphan" docs/m4-deploy-checklist.md | cut -c1-200; grep -n "47\\|48" docs/m4-pr.md | cut -c1-160; git log --oneline main..HEAD | wc -l';
+      // Approval #295 on 2026-10-07, which asked with "ask rule [object Object]".
+      const cmd = 'cd /home/dev/acme-shop && grep -n "450fc09\\|orphan" docs/m4-deploy-checklist.md | cut -c1-200; grep -n "47\\|48" docs/m4-pr.md | cut -c1-160; git log --oneline main..HEAD | wc -l';
       expect(run(cmd, { toolName: 'Bash', ruleContent: '*deploy*' } as any).behavior).toBe('allow');
-      // In 自动改文件 a command outside the read-only list still asks, for the mode's reason.
-      expect(decide(b, 'edits', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule: { toolName: 'Bash', ruleContent: '*deploy*' } }).because).toBe('权限是「自动改文件」，运行命令要先问');
+      // In Auto-edit files a command outside the read-only list still asks, for the mode's reason.
+      expect(decide(b, 'edits', 'Bash', bash(cmd), cwd, { projectRules: project, matchedAskRule: { toolName: 'Bash', ruleContent: '*deploy*' } }).because).toBe(
+        'permission mode is "Auto-edit files", and running commands needs asking first',
+      );
     });
 
     it('a rule Claude Code matched from somewhere else still asks, and is named readably', () => {
       const d = run('make release', { toolName: 'Bash', ruleContent: 'make release*' } as any);
       expect(d.behavior).toBe('ask');
-      expect(d.because).toBe('Claude Code 设置里的 ask 规则 Bash(make release*)');
+      expect(d.because).toBe('ask rule in Claude Code settings Bash(make release*)');
       expect(ruleText('Bash(x)')).toBe('Bash(x)');
       expect(ruleText({ toolName: 'WebFetch' })).toBe('WebFetch');
     });
@@ -178,16 +179,16 @@ describe('decide', () => {
   });
   it('says what settled it, naming the rule and where it came from', () => {
     const why = (d: ReturnType<typeof decide>) => d.because;
-    expect(why(decide(bot(), 'auto', 'Bash', bash('git push origin main'), cwd, {}))).toBe('机器人的「必须确认」规则 Bash(git push:*)');
-    expect(why(decide(bot({ askRules: [] }), 'auto', 'Bash', bash('git push'), cwd, { projectRules: ['Bash(git push*)'] }))).toBe('项目的「必须确认」规则 Bash(git push*)');
-    expect(why(decide(bot(), 'auto', 'Bash', bash('git push'), cwd, { matchedAskRule: 'Bash(git push:*)' }))).toContain('机器人的');
-    expect(why(decide(bot(), 'ask', 'Bash', bash('npm test'), cwd, {}))).toBe('权限是「每步确认」');
-    expect(why(decide(bot(), 'edits', 'Bash', bash('npm test'), cwd, {}))).toBe('权限是「自动改文件」，运行命令要先问');
-    expect(why(decide(bot(), 'edits', 'Bash', bash('cat a | head'), cwd, {}))).toContain('只读取和打印');
-    expect(why(decide(bot(), 'edits', 'Write', { file_path: '/etc/hosts' }, cwd, {}))).toContain('项目外');
-    expect(why(decide(bot({ allowRules: ['Bash(npm test*)'] }), 'ask', 'Bash', bash('npm test'), cwd, {}))).toBe('「总是允许」规则 Bash(npm test*)');
-    expect(why(decide(bot({ allowRules: ['Bash(npm test*)'] }), 'ask', 'Bash', bash('npm test && rm -rf dist'), cwd, {}))).toContain('只覆盖了命令的一部分');
-    expect(why(decide(bot(), 'auto', 'Read', { file_path: 'a' }, cwd, {}))).toBe('只读操作');
+    expect(why(decide(bot(), 'auto', 'Bash', bash('git push origin main'), cwd, {}))).toBe('bot "always ask" rule Bash(git push:*)');
+    expect(why(decide(bot({ askRules: [] }), 'auto', 'Bash', bash('git push'), cwd, { projectRules: ['Bash(git push*)'] }))).toBe('project "always ask" rule Bash(git push*)');
+    expect(why(decide(bot(), 'auto', 'Bash', bash('git push'), cwd, { matchedAskRule: 'Bash(git push:*)' }))).toContain('bot "always ask" rule');
+    expect(why(decide(bot(), 'ask', 'Bash', bash('npm test'), cwd, {}))).toBe('permission mode is "Ask every step"');
+    expect(why(decide(bot(), 'edits', 'Bash', bash('npm test'), cwd, {}))).toBe('permission mode is "Auto-edit files", and running commands needs asking first');
+    expect(why(decide(bot(), 'edits', 'Bash', bash('cat a | head'), cwd, {}))).toContain('only reads and prints');
+    expect(why(decide(bot(), 'edits', 'Write', { file_path: '/etc/hosts' }, cwd, {}))).toContain('outside the project');
+    expect(why(decide(bot({ allowRules: ['Bash(npm test*)'] }), 'ask', 'Bash', bash('npm test'), cwd, {}))).toBe('"always allow" rule Bash(npm test*)');
+    expect(why(decide(bot({ allowRules: ['Bash(npm test*)'] }), 'ask', 'Bash', bash('npm test && rm -rf dist'), cwd, {}))).toContain('only covers part of the command');
+    expect(why(decide(bot(), 'auto', 'Read', { file_path: 'a' }, cwd, {}))).toBe('read-only action');
   });
 });
 
@@ -196,7 +197,7 @@ describe("a role's edit scope", () => {
   it('refuses edits outside it, telling the bot to hand the file over', () => {
     const d = decide(probe, 'auto', 'Write', { file_path: 'src/app.ts' }, cwd, {});
     expect(d.behavior).toBe('deny');
-    expect(d.because).toBe('角色范围只包括 tests/**、**/*.spec.*');
+    expect(d.because).toBe("the role's area only covers tests/**, **/*.spec.*");
     if (d.behavior === 'deny') expect(d.message).toContain('@');
   });
   it('allows edits inside it, by relative or absolute path', () => {

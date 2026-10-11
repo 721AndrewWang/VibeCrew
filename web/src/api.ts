@@ -48,7 +48,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   } catch {
     data = text;
   }
-  if (!res.ok) throw new ApiError(res.status, data?.error || `请求失败（${res.status}）`);
+  if (!res.ok) throw new ApiError(res.status, data?.error || `Request failed (${res.status})`);
   return data as T;
 }
 

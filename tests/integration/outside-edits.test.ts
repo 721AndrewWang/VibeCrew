@@ -29,30 +29,30 @@ describe('files changed outside the chat', () => {
     const html = fs.readFileSync(file('index.html'), 'utf8');
     fs.writeFileSync(file('index.html'), html.replace('<h1>', '<h1 data-x="1">'));
     await new Promise((r) => setTimeout(r, 300));
-    fs.writeFileSync(file('notes.txt'), '第一行\n第二行\n');
+    fs.writeFileSync(file('notes.txt'), 'first line\nsecond line\n');
     const [n] = await waitFor(async () => {
       const list = await notes(groupId);
       return list.length ? list : null;
     }, 15_000);
     expect(n.role).toBe('system');
-    expect(n.text).toContain('有文件在聊天之外被改了');
-    expect(n.text).toMatch(/index\.html 第 \d+ 行起：/);
+    expect(n.text).toContain('Files were changed outside the chat');
+    expect(n.text).toMatch(/index\.html, from line \d+:/);
     expect(n.text).toContain('+ ');
-    expect(n.text).toContain('notes.txt：新文件');
+    expect(n.text).toContain('notes.txt: new file');
     expect(await notes(chiefDm)).toHaveLength(1);
     expect(await notes(groupId)).toHaveLength(1);
   });
 
   it("say when it was Crew's own editor", async () => {
     const before = (await notes(groupId)).length;
-    await crew.api('PUT', `/projects/${project.id}/file`, { path: 'notes.txt', content: '第一行\n改过的第二行\n' });
+    await crew.api('PUT', `/projects/${project.id}/file`, { path: 'notes.txt', content: 'first line\nedited second line\n' });
     const n = await waitFor(async () => {
       const list = await notes(groupId);
       return list.length > before ? list.at(-1) : null;
     }, 15_000);
-    expect(n.text).toContain('用户在 Crew 的编辑器里改了文件');
-    expect(n.text).toContain('- 第二行');
-    expect(n.text).toContain('+ 改过的第二行');
+    expect(n.text).toContain("The user edited files in Crew's editor");
+    expect(n.text).toContain('- second line');
+    expect(n.text).toContain('+ edited second line');
   });
 
   it("leave out the sandbox's placeholders and atomic-write temporaries", async () => {
@@ -65,18 +65,18 @@ describe('files changed outside the chat', () => {
     }
     await new Promise((r) => setTimeout(r, 300));
     for (const p of placeholders) fs.rmSync(file(p));
-    fs.writeFileSync(file('notes.txt'), '第一行\n真的改了\n');
+    fs.writeFileSync(file('notes.txt'), 'first line\nreally changed\n');
     const n = await waitFor(async () => {
       const list = await notes(groupId);
       return list.length > before ? list.at(-1) : null;
     }, 15_000);
-    expect(n.text).toContain('notes.txt 第 2 行起');
+    expect(n.text).toContain('notes.txt, from line 2');
     for (const p of placeholders) expect(n.text).not.toContain(p);
   });
 
   it("are not raised for the bots' own edits, or for undoing a turn", async () => {
     const before = (await notes(chiefDm)).length;
-    const sent = await crew.api('POST', `/chats/${chiefDm}/messages`, { text: '帮我做一个页面' }); // the demo bot writes crew-demo.md
+    const sent = await crew.api('POST', `/chats/${chiefDm}/messages`, { text: 'Please make a page' }); // the demo bot writes crew-demo.md
     const reply = await waitTurn(crew.api, chiefDm, sent.seq);
     expect(fs.existsSync(file('crew-demo.md'))).toBe(true);
     await new Promise((r) => setTimeout(r, 5000));

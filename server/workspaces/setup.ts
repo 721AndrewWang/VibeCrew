@@ -11,7 +11,7 @@ const SETUP_TIMEOUT_MS = 15 * 60_000;
  * bots wait for it: messages sent meanwhile are queued.
  */
 export function prepareWorkspace(chat: Chat, ws: Project, command: string) {
-  systemMessage(chat, `正在准备工作区：${command}`, { uiOnly: true });
+  systemMessage(chat, `Preparing the workspace: ${command}`, { uiOnly: true });
   const started = Date.now();
   const work = new Promise<void>((resolve) => {
     let tail = '';
@@ -32,7 +32,7 @@ export function prepareWorkspace(chat: Chat, ws: Project, command: string) {
       clearTimeout(timer);
       const secs = Math.round((Date.now() - started) / 1000);
       const c = chats.get(chat.id);
-      if (c && code === 0) systemMessage(c, `工作区准备好了（${secs} 秒）。`, { uiOnly: true });
+      if (c && code === 0) systemMessage(c, `The workspace is ready (${secs}s).`, { uiOnly: true });
       else if (c) {
         const out = tail
           .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
@@ -40,7 +40,10 @@ export function prepareWorkspace(chat: Chat, ws: Project, command: string) {
           .split('\n')
           .slice(-15)
           .join('\n');
-        systemMessage(c, `工作区准备命令没有成功（${signal === 'SIGKILL' ? '超时' : `退出码 ${code}`}，${secs} 秒），依赖可能不全。\n\`\`\`\n${out || '（没有输出）'}\n\`\`\``);
+        systemMessage(
+          c,
+          `The workspace setup command didn't succeed (${signal === 'SIGKILL' ? 'timed out' : `exit code ${code}`}, ${secs}s), so some dependencies may be missing.\n\`\`\`\n${out || '(no output)'}\n\`\`\``,
+        );
       }
       resolve();
     };

@@ -7,7 +7,7 @@ describe('modelLabel', () => {
     expect(modelLabel('claude-sonnet-5')).toBe('Sonnet 5');
     expect(modelLabel('claude-haiku-4-5-20251001')).toBe('Haiku 4.5');
     expect(modelLabel('claude-fable-5-1')).toBe('Fable 5.1');
-    expect(modelLabel('claude-opus-5[1m]')).toBe('Opus 5（1M）');
+    expect(modelLabel('claude-opus-5[1m]')).toBe('Opus 5 (1M)');
   });
   it('leaves other providers’ ids alone', () => {
     expect(modelLabel('deepseek-v4-pro')).toBe('deepseek-v4-pro');
@@ -19,7 +19,7 @@ describe('modelLabel', () => {
 describe('fmtDuration', () => {
   it('reads like a person would say it', () => {
     expect(fmtDuration(855)).toBe('855ms');
-    expect(fmtDuration(6 * 60_000 + 27_000)).toBe('6分27秒');
+    expect(fmtDuration(6 * 60_000 + 27_000)).toBe('6m 27s');
   });
 });
 

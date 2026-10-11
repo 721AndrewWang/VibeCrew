@@ -23,7 +23,7 @@ export function CodeLine({ code }: { code: string }) {
       <code>{code}</code>
       <button
         className="icon-btn sm"
-        title="复制"
+        title="Copy"
         onClick={() =>
           void copyText(code).then(() => {
             setCopied(true);

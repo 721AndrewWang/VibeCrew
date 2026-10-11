@@ -29,10 +29,6 @@ jobs:
           [ "$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} but package.json says $v"; exit 1; }
       - run: npm run check
       - run: npm run desktop:pack
-        env:
-          # GitHub's own downloads are the fastest from a runner; the scripts default to a mirror.
-          ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
-          ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
       - name: Release notes from the CHANGELOG
         run: node desktop/release-notes.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
       - uses: softprops/action-gh-release@v2

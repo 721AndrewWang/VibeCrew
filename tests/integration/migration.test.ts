@@ -16,7 +16,7 @@ beforeAll(async () => {
   initRepo(oldSite, gitEnv(root), { 'index.html': '<h1>hi</h1>\n' });
   // What the old app wrote: settings keep the projects folder, projects.json the absolute path.
   fs.writeFileSync(path.join(oldData, 'settings.json'), JSON.stringify({ projectsRoot: path.join(HOME, 'VibeCrewProjects'), token: 'x', initialized: true, defaultPermission: 'ask' }));
-  fs.writeFileSync(path.join(oldData, 'projects.json'), JSON.stringify([{ id: 'p_old1', name: '我的第一个网站', path: oldSite, createdAt: 1, updatedAt: 1 }]));
+  fs.writeFileSync(path.join(oldData, 'projects.json'), JSON.stringify([{ id: 'p_old1', name: 'My first site', path: oldSite, createdAt: 1, updatedAt: 1 }]));
   fs.writeFileSync(path.join(oldData, 'bots.json'), '[]');
   fs.writeFileSync(path.join(oldData, 'chats.json'), '[]');
   crew = await startServer({ isolate: false, dir: root, env: { HOME } });

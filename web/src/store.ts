@@ -474,7 +474,7 @@ export async function loadMessages(chatId: string, older = false) {
     set({ msgs: { ...get().msgs, [chatId]: { list: merged, loaded: true, hasMore: r.hasMore, loading: false } } });
   } catch (e) {
     set({ msgs: { ...get().msgs, [chatId]: { list: st?.list || [], loaded: false, hasMore: false, loading: false } } });
-    toast('加载消息失败', (e as Error).message, 'error');
+    toast("Couldn't load messages", (e as Error).message, 'error');
   }
 }
 
@@ -518,7 +518,7 @@ export async function sendMessage(chatId: string, textOverride?: string) {
     if (st?.loaded) set({ msgs: { ...get().msgs, [chatId]: { ...st, list: upsertMsg(st.list, msg) } } });
   } catch (e) {
     set({ drafts: { ...get().drafts, [chatId]: d } });
-    toast('发送失败', (e as Error).message, 'error');
+    toast('Send failed', (e as Error).message, 'error');
   }
 }
 

@@ -1,5 +1,5 @@
 // Against the real Claude Code CLI, talking to a mock Anthropic-compatible endpoint: other model
-// providers, the context usage it reports, and the deny list holding even in 全自动.
+// providers, the context usage it reports, and the deny list holding even in Full auto.
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -44,7 +44,7 @@ describe.skipIf(!hasCli)('another model provider', () => {
     mock.requests.length = 0;
     const t = await crew.api('POST', '/settings/test-connection', { authMode: 'provider', provider: provider(), providerToken: TOKEN });
     expect(t.ok).toBe(true);
-    expect(t.text).toContain('连接成功');
+    expect(t.text).toContain('Connected');
     expect(mock.requests.some((r) => r.model === 'mock-model')).toBe(true);
   });
 
@@ -65,10 +65,10 @@ describe.skipIf(!hasCli)('another model provider', () => {
     const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
     await crew.api('PATCH', `/bots/${chief.id}`, { model: 'claude-opus-5' });
     mock.requests.length = 0;
-    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '你好，请简单回复一句' });
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: 'Hi, please reply with one short line' });
     const reply = await waitTurn(crew.api, dm.id, sent.seq, 120_000);
     expect(reply.status).toBe('done');
-    expect(reply.text).toContain('连接成功');
+    expect(reply.text).toContain('Connected');
     const models = [...new Set(mock.requests.map((r) => r.model).filter(Boolean))];
     expect(models).toContain('mock-model');
     expect(models.some((m) => /claude/.test(String(m)))).toBe(false);
@@ -89,7 +89,7 @@ describe.skipIf(!hasCli)('another model provider', () => {
     const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
     await crew.api('PATCH', `/bots/${chief.id}`, { model: 'mock-special' });
     mock.requests.length = 0;
-    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '再回复一句' });
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: 'Reply with one more line' });
     await waitTurn(crew.api, dm.id, sent.seq, 120_000);
     expect(mock.requests.some((r) => r.model === 'mock-special')).toBe(true);
   });
@@ -115,7 +115,7 @@ describe.skipIf(!hasCli)('the deny list', () => {
       reply: (r) =>
         r.tools.includes('Bash') && !mock.toolResults.length
           ? { tool: { id: 'toolu_deny', name: 'Bash', input: { command: 'ssh prod-server uptime', description: 'Check the load' } } }
-          : { text: '好的，不连服务器。' },
+          : { text: "OK, I won't connect to the server." },
     });
     crew = await startServer({ fakeAgent: false, env: { PATH: `${bin}:${process.env.PATH}` } });
     await crew.api('PATCH', '/settings', {
@@ -131,18 +131,18 @@ describe.skipIf(!hasCli)('the deny list', () => {
     fs.rmSync(bin, { recursive: true, force: true });
   });
 
-  it('refuses the command in 全自动 before it runs, and tells the model why', async () => {
+  it('refuses the command in Full auto before it runs, and tells the model why', async () => {
     const b = await crew.api('GET', '/bootstrap');
     expect(b.settings.denyRules).toEqual(['Bash(*prod-server*)']);
     const chief = b.bots.find((x: any) => x.name === 'Chief');
     const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
     await crew.api('PATCH', `/chats/${dm.id}`, { permission: 'auto' });
-    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '看一下服务器的负载' });
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: 'Check the server load' });
     const reply = await waitTurn(crew.api, dm.id, sent.seq, 120_000);
     expect(reply.status).toBe('done');
     // Claude Code's own startup check may run ssh against github.com; the forbidden host never.
     expect(fs.existsSync(ran) ? fs.readFileSync(ran, 'utf8') : '').not.toContain('prod-server');
-    expect(mock.toolResults.some((t) => t.includes('这个操作被禁止了'))).toBe(true);
+    expect(mock.toolResults.some((t) => t.includes('Bash(*prod-server*)'))).toBe(true);
     expect((reply.parts || []).some((p: any) => p.type === 'approval')).toBe(false);
   });
 
@@ -170,7 +170,8 @@ describe.skipIf(!hasCli)('the wrap-up reminder', () => {
     // One harmless command, then a closing line.
     mock = await startMockProvider({
       token: TOKEN,
-      reply: (r) => (r.tools.includes('Bash') && !mock.toolResults.length ? { tool: { id: 'toolu_echo', name: 'Bash', input: { command: 'echo hi', description: 'Say hi' } } } : { text: '收尾了。' }),
+      reply: (r) =>
+        r.tools.includes('Bash') && !mock.toolResults.length ? { tool: { id: 'toolu_echo', name: 'Bash', input: { command: 'echo hi', description: 'Say hi' } } } : { text: 'Wrapping up.' },
     });
     crew = await startServer({ fakeAgent: false });
     await crew.api('PATCH', '/settings', {
@@ -191,13 +192,13 @@ describe.skipIf(!hasCli)('the wrap-up reminder', () => {
     const chief = b.bots.find((x: any) => x.name === 'Chief');
     const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
     await crew.api('PATCH', `/chats/${dm.id}`, { permission: 'auto' });
-    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: '打个招呼' });
+    const sent = await crew.api('POST', `/chats/${dm.id}/messages`, { text: 'Say hello' });
     expect((await waitTurn(crew.api, dm.id, sent.seq, 120_000)).status).toBe('done');
     const main = mock.requests.filter((r) => r.tools.includes('Bash'));
     const after = main.at(-1)!;
     const text = JSON.stringify(after.body.messages);
-    expect(text).toContain('这一轮的上下文已经到');
-    expect(text.split('这一轮的上下文已经到').length - 1).toBe(1);
-    expect(JSON.stringify(main[0].body.messages)).not.toContain('这一轮的上下文已经到');
+    expect(text).toContain("This turn's context has reached");
+    expect(text.split("This turn's context has reached").length - 1).toBe(1);
+    expect(JSON.stringify(main[0].body.messages)).not.toContain("This turn's context has reached");
   });
 });

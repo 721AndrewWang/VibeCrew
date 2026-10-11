@@ -25,26 +25,29 @@ async function gitVersion(): Promise<{ ok: boolean; text: string }> {
     const [major, minor] = (text.match(/^(\d+)\.(\d+)/) || []).slice(1).map(Number);
     return { ok: major > MIN_GIT[0] || (major === MIN_GIT[0] && minor >= MIN_GIT[1]), text };
   } catch {
-    return { ok: false, text: '没有安装' };
+    return { ok: false, text: 'not installed' };
   }
 }
 
 export async function doCreate(chatId: string): Promise<Project> {
   const chat = requireChat(chatId);
-  if (workspaceOf(chat)) throw new HttpError(409, '这个对话已经在独立工作区里了');
+  if (workspaceOf(chat)) throw new HttpError(409, 'This chat is already in a separate workspace');
   const parent = projects.get(chat.projectId);
-  if (!parent || parent.workspace) throw new HttpError(400, '先给这个对话绑定一个项目');
+  if (!parent || parent.workspace) throw new HttpError(400, 'Link a project to this chat first');
   const version = await gitVersion();
-  if (!version.ok) throw new HttpError(400, `独立工作区需要 Git ${MIN_GIT.join('.')} 或更新的版本（现在是 ${version.text}）。`);
+  if (!version.ok) throw new HttpError(400, `Separate workspaces need Git ${MIN_GIT.join('.')} or newer (you have ${version.text}).`);
   if (!(await succeeds(parent.path, ['rev-parse', '--verify', 'HEAD']))) {
-    throw new HttpError(400, '这个项目还不是 Git 仓库，或者还没有任何提交。在右侧「改动」里提交一次，就可以使用独立工作区了。');
+    throw new HttpError(400, "This project isn't a Git repo yet, or it has no commits. Make a commit under Changes on the right, and then you can use separate workspaces.");
   }
   if (!(await succeeds(parent.path, ['var', 'GIT_COMMITTER_IDENT']))) {
-    throw new HttpError(400, '机器人的改动要提交到分支，需要先设置 Git 的用户名和邮箱。在终端运行：git config --global user.name "你的名字"，以及 git config --global user.email "你的邮箱"。');
+    throw new HttpError(
+      400,
+      'To commit bot changes to a branch, Git needs your name and email first. Run this in a terminal: git config --global user.name "Your Name" and git config --global user.email "you@example.com".',
+    );
   }
   // The full ref: a tag with the same name would make the short name ambiguous.
   const headRef = (await gitIn(parent.path, ['symbolic-ref', '-q', 'HEAD']).catch(() => '')).trim();
-  if (!headRef.startsWith('refs/heads/')) throw new HttpError(400, '项目目录现在不在任何分支上（detached HEAD），先切换到一个分支再试。');
+  if (!headRef.startsWith('refs/heads/')) throw new HttpError(400, "The project folder isn't on any branch right now (detached HEAD). Switch to a branch and try again.");
   const baseBranch = headRef.slice('refs/heads/'.length);
   const repo = (await gitIn(parent.path, ['rev-parse', '--show-toplevel'])).trim();
   // Where the project sits in the repository: '' at the top, or a monorepo package folder.
@@ -64,7 +67,10 @@ export async function doCreate(chatId: string): Promise<Project> {
   try {
     const wsPath = path.resolve(worktree, prefix);
     if (!fs.existsSync(wsPath)) {
-      throw new HttpError(400, `项目文件夹 ${prefix.replace(/\/$/, '')} 还没有提交到 Git，工作区里没有它。先在右侧「改动」里提交一次再试。`);
+      throw new HttpError(
+        400,
+        `The project folder ${prefix.replace(/\/$/, '')} hasn't been committed to Git yet, so the workspace wouldn't have it. Make a commit under Changes on the right and try again.`,
+      );
     }
     copied = await copyLocalFiles(repo, worktree, prefix);
     const now = Date.now();
@@ -91,11 +97,11 @@ export async function doCreate(chatId: string): Promise<Project> {
   restartBots(chat);
   emitChat(chat);
   const notes = [
-    `已进入独立工作区：新分支 ${branch}（从 ${baseBranch} 分出）。`,
-    `机器人接下来在这份副本里工作，不影响主目录和其他对话；每一轮的改动会自动提交到这个分支，确认没问题后在右侧「改动」里合并回 ${baseBranch}。`,
+    `Moved into a separate workspace: new branch ${branch} (branched from ${baseBranch}).`,
+    `From now on bots work in this copy, without touching the main folder or other chats. Each round's changes are committed to this branch automatically. Once you're happy with them, merge them back into ${baseBranch} under Changes on the right.`,
   ];
-  if (uncommitted) notes.push(`主目录里还没提交的改动不会带进工作区。`);
-  if (copied.length) notes.push(`已带上 git 之外的本地文件：${copied.slice(0, 8).join('、')}${copied.length > 8 ? ` 等 ${copied.length} 项` : ''}。`);
+  if (uncommitted) notes.push(`Uncommitted changes in the main folder are not brought into the workspace.`);
+  if (copied.length) notes.push(`Brought along local files that aren't in git: ${copied.slice(0, 8).join(', ')}${copied.length > 8 ? ` and more (${copied.length} in all)` : ''}.`);
   systemMessage(chat, notes.join('\n'));
   const setup = configOf(ws).setupCommand;
   if (setup) prepareWorkspace(chat, ws, setup);

@@ -30,17 +30,17 @@ async function say(text: string) {
 
 describe('automatic adversarial review', () => {
   it('stays off until the project turns it on', async () => {
-    const after = await say('帮我做一个页面'); // the demo lead writes crew-demo.md
+    const after = await say('Make me a page'); // the demo lead writes crew-demo.md
     expect(after.some((m: any) => m.botId === skeptic.id)).toBe(false);
   });
 
   it('brings Skeptic in once the change matches a rule, and says why', async () => {
     const p = await crew.api('PATCH', `/projects/${projectId}`, { autoChallenge: { enabled: true, paths: ['**/*.md', ' ', '**/*.md'], minLines: 0 } });
     expect(p.autoChallenge).toEqual({ enabled: true, paths: ['**/*.md'], minLines: 0 });
-    const after = await say('再做一个页面');
-    const note = after.find((m: any) => m.role === 'system' && m.text.includes('自动对抗审查规则'));
-    expect(note.text).toContain('crew-demo.md（规则 **/*.md）');
-    expect(after.some((m: any) => m.role === 'system' && m.text === 'Skeptic 加入了对话')).toBe(true);
+    const after = await say('Make another page');
+    const note = after.find((m: any) => m.role === 'system' && m.text.includes('auto adversarial review rules'));
+    expect(note.text).toContain('crew-demo.md (rule **/*.md)');
+    expect(after.some((m: any) => m.role === 'system' && m.text === 'Skeptic joined the chat')).toBe(true);
     const review = after.filter((m: any) => m.botId === skeptic.id);
     expect(review).toHaveLength(1);
     expect(review[0].meta.verdict).toEqual({ refuted: 0 });
@@ -49,7 +49,7 @@ describe('automatic adversarial review', () => {
 
   it('does not review a change that matches no rule', async () => {
     await crew.api('PATCH', `/projects/${projectId}`, { autoChallenge: { enabled: true, paths: ['**/*.css'], minLines: 0 } });
-    const after = await say('又做一个页面');
+    const after = await say('Make yet another page');
     expect(after.some((m: any) => m.botId === skeptic.id)).toBe(false);
   });
 });

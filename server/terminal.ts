@@ -14,7 +14,7 @@ let pty: PtyModule | null = null;
 try {
   pty = require('node-pty') as PtyModule;
 } catch (e) {
-  log.warn('node-pty 不可用，终端将使用简化模式：', (e as Error).message);
+  log.warn('node-pty is unavailable; the terminal will use a simplified mode:', (e as Error).message);
 }
 export const hasPty = !!pty;
 

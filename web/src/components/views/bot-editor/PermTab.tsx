@@ -10,7 +10,7 @@ export function PermTab({ draft, patch }: { draft: Bot; patch: (p: Partial<Bot>)
   return (
     <div className="tab-body">
       <div className="field">
-        <label>权限级别</label>
+        <label>Permission level</label>
         <div className="choice-list">
           {PERMISSION_ORDER.map((level) => {
             const info = PERMISSION_INFO[level];
@@ -31,33 +31,35 @@ export function PermTab({ draft, patch }: { draft: Bot; patch: (p: Partial<Bot>)
         </div>
       </div>
       <RuleList
-        label="只能修改的路径（它的职责范围）"
-        hint="留空就不限制。填了之后，范围外的文件它改不了，会 @ 负责的队友。例如 tests/**、src/styles/**、**/*.md"
+        label="Editable paths only (its area of responsibility)"
+        hint="Leave empty for no limit. Once set, it can't edit files outside this scope and will @ the teammate in charge. E.g. tests/**, src/styles/**, **/*.md"
         tone="orange"
         value={draft.editScope || []}
         onChange={(editScope) => patch({ editScope })}
       />
       <div className="field">
-        <label>每月预算（美元）</label>
+        <label>Monthly budget (USD)</label>
         <input
           className="input num-input"
           type="number"
           min={0}
           step={1}
           value={draft.monthlyBudgetUsd ?? ''}
-          placeholder="不限"
+          placeholder="No limit"
           onChange={(e) => patch({ monthlyBudgetUsd: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) })}
         />
-        <div className="hint">按 Claude Code 报告的每轮费用累计；用完这个月就不再接任务。用其他模型服务商时费用是 0，这项不起作用。</div>
+        <div className="hint">
+          Adds up the per-turn cost Claude Code reports. Once used up, the bot takes no more tasks this month. With another model provider the cost is 0, so this has no effect.
+        </div>
       </div>
-      <RuleList label="自动允许（不用问你）" tone="green" value={draft.allowRules} onChange={(allowRules) => patch({ allowRules })} />
-      <RuleList label="必须确认（无论权限级别）" tone="orange" value={draft.askRules} onChange={(askRules) => patch({ askRules })} />
+      <RuleList label="Auto-allow (without asking you)" tone="green" value={draft.allowRules} onChange={(allowRules) => patch({ allowRules })} />
+      <RuleList label="Always ask (any permission level)" tone="orange" value={draft.askRules} onChange={(askRules) => patch({ askRules })} />
       <div className="note">
         <FileQuestion size={14} />
         <span>
-          规则写法：<code className="inline-code">Bash(npm run *)</code>、<code className="inline-code">Bash(git push*)</code>、<code className="inline-code">Edit</code>、
-          <code className="inline-code">Edit(src/**)</code>、<code className="inline-code">WebFetch(domain:github.com)</code>、<code className="inline-code">mcp__github</code>。
-          在对话里点「总是允许」也会自动加到这里。
+          Rule syntax: <code className="inline-code">Bash(npm run *)</code>, <code className="inline-code">Bash(git push*)</code>, <code className="inline-code">Edit</code>,
+          <code className="inline-code">Edit(src/**)</code>, <code className="inline-code">WebFetch(domain:github.com)</code>, <code className="inline-code">mcp__github</code>. Clicking "Always allow"
+          in a chat also adds rules here.
         </span>
       </div>
     </div>

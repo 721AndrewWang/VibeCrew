@@ -9,192 +9,192 @@ type BuiltinSkill = Omit<Skill, 'builtin' | 'updatedAt'>;
 export const BUILTIN_SKILLS: BuiltinSkill[] = [
   {
     name: 'landing',
-    title: '生成落地页',
+    title: 'Build a landing page',
     icon: '🚀',
-    argsHint: '产品或主题描述',
-    description: '从零做一个完整、精美、响应式的落地页',
-    body: `为「{{args}}」制作一个精美、完整的落地页。
+    argsHint: 'Product or topic description',
+    description: 'Build a complete, polished, responsive landing page from scratch',
+    body: `Build a polished, complete landing page for "{{args}}".
 
-要求：
-1. 先快速看一下项目结构和技术栈；没有框架就用纯 HTML/CSS/JS，有框架就遵循现有写法。
-2. 包含：导航栏、Hero（主标题 + 副标题 + 主次 CTA）、卖点/功能区、社会证明（用户评价或 logo 墙）、价格方案、FAQ、页脚。文案要具体，不要 lorem ipsum。
-3. 视觉：现代、克制、层次清晰；统一的配色、字号和间距体系；适度的动效（hover、滚动淡入），并尊重 prefers-reduced-motion。
-4. 响应式：手机、平板、桌面都要好看。可访问性：语义化标签、足够的对比度、图片 alt、键盘可用。
-5. 完成后用 preview_screenshot 分别检查 desktop 和 mobile，修正发现的问题，再简要汇报。`,
+Requirements:
+1. Take a quick look at the project structure and tech stack first. With no framework, use plain HTML/CSS/JS; with a framework, follow the existing conventions.
+2. Include: a nav bar, a hero (headline + subheading + primary and secondary CTAs), selling points/features, social proof (testimonials or a logo wall), pricing, an FAQ, and a footer. Write specific copy, no lorem ipsum.
+3. Visuals: modern, restrained, with a clear hierarchy; a consistent system for color, type sizes and spacing; tasteful motion (hover, fade-in on scroll) that respects prefers-reduced-motion.
+4. Responsive: it should look good on phone, tablet and desktop. Accessibility: semantic tags, enough contrast, image alt text, keyboard support.
+5. When done, check both desktop and mobile with preview_screenshot, fix any problems you find, then give a short report.`,
   },
   {
     name: 'component',
-    title: '创建组件',
+    title: 'Create a component',
     icon: '🧩',
-    argsHint: '组件描述，如：带搜索的下拉选择框',
-    description: '按项目现有风格实现一个可复用组件',
-    body: `实现组件：{{args}}
+    argsHint: 'Component description, e.g. a dropdown select with search',
+    description: "Build a reusable component in the project's existing style",
+    body: `Build this component: {{args}}
 
-要求：
-- 遵循项目现有的框架、目录结构、命名和样式方案。
-- 组件要可复用：合理的 props/参数、默认值、受控/非受控（如适用）。
-- 覆盖交互状态：hover、focus（可见的焦点样式）、disabled、loading、空状态、错误状态。
-- 可访问性：正确的语义与 ARIA、键盘操作。
-- 在一个现有页面（或新建的演示页）里放一个使用示例，用 preview_screenshot 确认效果。`,
+Requirements:
+- Follow the project's existing framework, folder structure, naming and styling approach.
+- Make it reusable: sensible props/parameters, defaults, controlled/uncontrolled modes (where it applies).
+- Cover interaction states: hover, focus (with a visible focus style), disabled, loading, empty and error states.
+- Accessibility: correct semantics and ARIA, keyboard support.
+- Put a usage example on an existing page (or a new demo page) and confirm it looks right with preview_screenshot.`,
   },
   {
     name: 'responsive',
-    title: '响应式检查',
+    title: 'Responsive check',
     icon: '📱',
-    argsHint: '页面路径（可选，默认当前页面）',
-    description: '在手机/平板/桌面三种尺寸下截图检查并修复布局问题',
-    body: `对页面 {{args}} 做响应式检查并修复问题（没写路径就检查当前预览页面和首页）。
+    argsHint: 'Page path (optional, defaults to the current page)',
+    description: 'Screenshot the page at phone, tablet and desktop sizes and fix layout problems',
+    body: `Do a responsive check of page {{args}} and fix the problems (if no path is given, check the current preview page and the home page).
 
-步骤：
-1. 分别用 preview_screenshot 以 mobile、tablet、desktop 三种设备截图（必要时 fullPage）。
-2. 找出问题：横向滚动/溢出、文字过小或挤压、按钮点击区域太小、图片变形、元素重叠、导航在手机上不可用、间距失衡等。
-3. 逐个修复（优先用流式布局、clamp()、合适的断点），再次截图确认。
-4. 汇报：每个尺寸发现了什么、改了什么。`,
+Steps:
+1. Take screenshots with preview_screenshot on mobile, tablet and desktop (use fullPage when needed).
+2. Find problems: horizontal scrolling/overflow, text too small or cramped, tap targets too small, distorted images, overlapping elements, navigation unusable on phones, unbalanced spacing, and so on.
+3. Fix them one by one (prefer fluid layouts, clamp() and sensible breakpoints), then screenshot again to confirm.
+4. Report: what you found at each size and what you changed.`,
   },
   {
     name: 'fix-console',
-    title: '修复控制台报错',
+    title: 'Fix console errors',
     icon: '🩺',
-    argsHint: '页面路径（可选）',
-    description: '打开页面收集控制台错误和失败请求，逐个修复',
-    body: `检查并修复预览页面的控制台问题。页面：{{args}}（没写就检查当前页面和首页）。
+    argsHint: 'Page path (optional)',
+    description: 'Open the page, collect console errors and failed requests, and fix them one by one',
+    body: `Check and fix console problems on the preview page. Page: {{args}} (if not given, check the current page and the home page).
 
-1. 用 preview_console 打开页面，收集错误、警告和失败的网络请求。
-2. 按影响排序，找到根因并修复（不要用 try/catch 吞掉错误来“修复”）。
-3. 重新运行 preview_console 确认问题消失，且没有引入新问题。
-4. 汇报修复了哪些问题、各自的原因。`,
+1. Open the page with preview_console and collect errors, warnings and failed network requests.
+2. Sort them by impact, find the root cause and fix it (don't "fix" things by swallowing errors in try/catch).
+3. Run preview_console again to confirm the problems are gone and nothing new was introduced.
+4. Report which problems you fixed and what caused each one.`,
   },
   {
     name: 'polish',
-    title: '界面精修',
+    title: 'UI polish',
     icon: '💅',
-    argsHint: '要精修的页面或区域（可选）',
-    description: '打磨间距、字体、对齐、配色和微交互，让界面更有品质感',
-    body: `对 {{args}}（没写就是当前预览页面）做一轮界面精修。
+    argsHint: 'Page or area to polish (optional)',
+    description: 'Refine spacing, type, alignment, color and micro-interactions for a higher-quality feel',
+    body: `Do a round of UI polish on {{args}} (if not given, the current preview page).
 
-先用 preview_screenshot 仔细观察，然后改进：
-- 间距节奏：统一的间距刻度，区块之间留白充足，元素对齐。
-- 字体排版：清晰的字号层级、合适的行高和字重、中文与英文数字的搭配。
-- 配色：主色克制使用，文本对比度达标，边框/分割线柔和。
-- 细节：圆角与阴影一致、按钮和链接有 hover/active/focus 状态、过渡动画自然。
-- 保持现有功能和结构不变。
-改完再截图对比，列出主要改动。`,
+Look closely with preview_screenshot first, then improve:
+- Spacing rhythm: a consistent spacing scale, plenty of whitespace between sections, aligned elements.
+- Typography: a clear type-size hierarchy, suitable line heights and weights, and a good pairing of text and numerals.
+- Color: use the primary color sparingly, meet text contrast requirements, keep borders/dividers soft.
+- Details: consistent corner radii and shadows, hover/active/focus states on buttons and links, natural transitions.
+- Keep existing functionality and structure unchanged.
+After the changes, take screenshots again to compare and list the main changes.`,
   },
   {
     name: 'dark-mode',
-    title: '添加暗色模式',
+    title: 'Add dark mode',
     icon: '🌙',
     argsHint: '',
-    description: '基于 CSS 变量实现浅色/暗色主题和切换按钮',
-    body: `为项目添加暗色模式。{{args}}
+    description: 'Light/dark themes and a toggle button built on CSS variables',
+    body: `Add dark mode to the project. {{args}}
 
-- 把颜色整理成 CSS 变量（或项目已有的主题方案，如 Tailwind 的 dark: 变体）。
-- 默认跟随系统 prefers-color-scheme，并提供一个切换按钮，选择保存在 localStorage，首屏不闪烁。
-- 检查所有页面在暗色下的对比度、图片/图标、阴影和边框。
-- 用 preview_screenshot 查看两种主题下的效果。`,
+- Organize colors into CSS variables (or the project's existing theming approach, such as Tailwind's dark: variant).
+- Follow the system prefers-color-scheme by default and provide a toggle button; save the choice in localStorage, with no flash on first paint.
+- Check contrast, images/icons, shadows and borders on every page in dark mode.
+- Look at both themes with preview_screenshot.`,
   },
   {
     name: 'a11y',
-    title: '可访问性审查',
+    title: 'Accessibility review',
     icon: '♿',
-    argsHint: '页面路径（可选）',
-    description: '检查并修复语义、对比度、键盘操作、ARIA 等问题',
-    body: `对 {{args}}（没写就是当前页面）做可访问性审查并修复。
+    argsHint: 'Page path (optional)',
+    description: 'Find and fix problems with semantics, contrast, keyboard use, ARIA and more',
+    body: `Do an accessibility review of {{args}} (if not given, the current page) and fix what you find.
 
-检查：语义化标签与标题层级、图片 alt、表单 label 与错误提示、颜色对比度（WCAG AA）、键盘可操作性与可见的焦点样式、ARIA 使用是否正确、动效与 prefers-reduced-motion、页面 lang 属性。
-先列出问题（按严重程度），再逐一修复，最后说明还有哪些需要人工确认的地方。`,
+Check: semantic tags and heading levels, image alt text, form labels and error messages, color contrast (WCAG AA), keyboard operability and visible focus styles, correct ARIA usage, motion and prefers-reduced-motion, and the page's lang attribute.
+List the problems first (by severity), then fix them one by one, and finally note anything that still needs a human to confirm.`,
   },
   {
     name: 'seo',
-    title: 'SEO 优化',
+    title: 'SEO optimization',
     icon: '🔎',
-    argsHint: '网站主题/关键词（可选）',
-    description: 'meta、Open Graph、结构化数据、语义结构、性能相关 SEO',
-    body: `为网站做 SEO 优化。补充信息：{{args}}
+    argsHint: 'Site topic/keywords (optional)',
+    description: 'Meta tags, Open Graph, structured data, semantic structure and performance-related SEO',
+    body: `Optimize the site for SEO. Extra info: {{args}}
 
-- 每个页面的 title、description、canonical；Open Graph 和 Twitter Card；favicon。
-- 合理的标题层级（每页一个 h1）、语义化结构、图片 alt、友好的链接文字。
-- 适合的 JSON-LD 结构化数据（Organization / WebSite / Product / FAQ 等按需）。
-- robots.txt 和 sitemap.xml（静态站点可直接生成）。
-- 列出改动，以及需要用户补充的真实信息（域名、品牌名等）。`,
+- A title, description and canonical on every page; Open Graph and Twitter Card; a favicon.
+- A sensible heading hierarchy (one h1 per page), semantic structure, image alt text, descriptive link text.
+- Suitable JSON-LD structured data (Organization / WebSite / Product / FAQ, etc., as needed).
+- robots.txt and sitemap.xml (can be generated directly for static sites).
+- List the changes, plus any real information the user needs to provide (domain, brand name, etc.).`,
   },
   {
     name: 'perf',
-    title: '性能优化',
+    title: 'Performance tuning',
     icon: '⚡',
-    argsHint: '重点页面（可选）',
-    description: '找出加载和运行时的性能瓶颈并优化',
-    body: `对项目做一轮性能优化。重点：{{args}}
+    argsHint: 'Key pages (optional)',
+    description: 'Find and fix load-time and runtime performance bottlenecks',
+    body: `Do a round of performance tuning on the project. Focus: {{args}}
 
-检查并优化：图片（尺寸、格式、懒加载、宽高占位防止布局偏移）、字体加载、首屏关键资源、JS 体积与拆分、不必要的重渲染或重排、第三方脚本、缓存策略。
-先说明发现的主要瓶颈和预期收益，再动手；改完用 preview_console 确认没有报错。`,
+Check and optimize: images (size, format, lazy loading, width/height placeholders to prevent layout shift), font loading, critical above-the-fold resources, JS bundle size and splitting, unnecessary re-renders or reflows, third-party scripts, and caching strategy.
+Explain the main bottlenecks you found and the expected gains before making changes; afterwards, confirm with preview_console that there are no errors.`,
   },
   {
     name: 'clone-ui',
-    title: '按图还原界面',
+    title: 'Build UI from an image',
     icon: '🖼️',
-    argsHint: '补充说明（请同时附上截图/设计稿）',
-    description: '根据附带的截图或设计稿高保真还原页面',
-    body: `请根据我附带的截图/设计稿，高保真地实现这个界面。{{args}}
+    argsHint: 'Extra notes (attach a screenshot/design too)',
+    description: 'Recreate a page with high fidelity from an attached screenshot or design',
+    body: `Implement this UI with high fidelity from the screenshot/design I attached. {{args}}
 
-- 仔细观察布局结构、间距、字号、字重、颜色、圆角、阴影和图标，尽量 1:1 还原。
-- 用项目现有技术栈实现，结构语义化，并做好响应式（设计稿没给的尺寸按合理方式适配）。
-- 实现后用 preview_screenshot 截图，与设计稿逐区域对比，至少迭代一轮修正差异。`,
+- Study the layout, spacing, type sizes, font weights, colors, corner radii, shadows and icons closely, and match them 1:1 as far as possible.
+- Build it with the project's existing tech stack, with semantic structure, and make it responsive (adapt sensibly for sizes the design doesn't show).
+- After implementing, take a screenshot with preview_screenshot, compare it with the design section by section, and do at least one round of fixes for the differences.`,
   },
   {
     name: 'e2e',
-    title: '编写端到端测试',
+    title: 'Write end-to-end tests',
     icon: '🧪',
-    argsHint: '要测试的用户流程',
-    description: '为关键流程编写并运行 Playwright 测试',
-    body: `为以下流程编写端到端测试：{{args}}
+    argsHint: 'User flow to test',
+    description: 'Write and run Playwright tests for key flows',
+    body: `Write end-to-end tests for this flow: {{args}}
 
-- 如果项目还没有 Playwright，先安装并创建最小配置（baseURL 指向开发服务器）。
-- 优先使用基于角色和文字的定位（getByRole、getByText），少用脆弱的 CSS 选择器。
-- 覆盖正常路径和至少一个异常路径。
-- 运行测试直到通过；如果发现的是产品 bug，说明问题并 @相关队友，而不是改测试去迁就 bug。`,
+- If the project doesn't have Playwright yet, install it and create a minimal config first (baseURL pointing at the dev server).
+- Prefer role- and text-based locators (getByRole, getByText) over brittle CSS selectors.
+- Cover the happy path and at least one failure path.
+- Run the tests until they pass. If you find a product bug, describe it and @ the relevant teammate instead of bending the test to fit the bug.`,
   },
   {
     name: 'challenge',
-    title: '对抗审查',
+    title: 'Adversarial review',
     icon: '⚖️',
-    argsHint: '重点（可选）',
-    description: '让 Skeptic 只看需求和改动，尽力证伪；可以作为合并前的门槛',
-    body: `@Skeptic 对当前的改动做一次对抗审查：尽力证明它是错的，只认能复现的反例。重点：{{args}}（没写就按你的流程全面试）。`,
+    argsHint: 'Focus (optional)',
+    description: 'Have Skeptic look only at the requirements and the changes and try hard to prove them wrong; works as a gate before merging',
+    body: `@Skeptic Do an adversarial review of the current changes: try hard to prove they are wrong, and only accept counterexamples you can reproduce. Focus: {{args}} (if not given, test everything following your usual process).`,
   },
   {
     name: 'review',
-    title: '审查改动',
+    title: 'Review changes',
     icon: '🔍',
-    argsHint: '范围（可选，默认未提交的改动）',
-    description: '审查最近的改动，找出 bug、安全和可维护性问题',
-    body: `审查代码改动。范围：{{args}}（没写就审查 git 中未提交的改动；不是 git 仓库就审查最近修改的文件）。
+    argsHint: 'Scope (optional, defaults to uncommitted changes)',
+    description: 'Review recent changes for bugs, security and maintainability problems',
+    body: `Review the code changes. Scope: {{args}} (if not given, review the uncommitted changes in git; if it isn't a git repo, review the recently modified files).
 
-关注正确性、边界情况、安全（XSS、注入、密钥泄露）、性能、可访问性、一致性和可维护性。
-按「必须修复 / 建议 / 可选」分组列出，每条带文件和行号、问题说明和修改建议。先不要直接改代码。`,
+Focus on correctness, edge cases, security (XSS, injection, leaked secrets), performance, accessibility, consistency and maintainability.
+Group the findings as "Must fix / Suggested / Optional", each with file and line number, a description of the problem and a suggested fix. Don't change the code yet.`,
   },
   {
     name: 'commit',
-    title: '整理并提交',
+    title: 'Tidy up and commit',
     icon: '📦',
-    argsHint: '提交说明（可选）',
-    description: '检查改动，写清晰的提交信息并 git commit',
-    body: `把当前改动整理成提交。补充说明：{{args}}
+    argsHint: 'Commit notes (optional)',
+    description: 'Check the changes, write a clear commit message and git commit',
+    body: `Turn the current changes into commits. Extra notes: {{args}}
 
-1. 运行 git status 和 git diff 了解改动；如果不是 git 仓库，先询问我是否要 git init。
-2. 确认没有误加的文件（node_modules、.env、构建产物、大文件等），必要时补充 .gitignore。
-3. 如果改动包含几件不相关的事，按主题拆成多个提交。
-4. 使用清晰的提交信息（简洁的标题 + 必要的说明），然后提交。
-5. 不要 push，除非我明确要求。`,
+1. Run git status and git diff to understand the changes. If it isn't a git repo, ask me first whether to git init.
+2. Make sure no files were added by mistake (node_modules, .env, build output, large files, etc.); add to .gitignore if needed.
+3. If the changes cover several unrelated things, split them into separate commits by topic.
+4. Use clear commit messages (a concise subject + any needed details), then commit.
+5. Don't push unless I explicitly ask.`,
   },
   {
     name: 'explain',
-    title: '讲解项目',
+    title: 'Explain the project',
     icon: '📖',
-    argsHint: '想了解的部分（可选）',
-    description: '梳理项目结构、技术栈、数据流和运行方式',
-    body: `帮我快速理解这个项目。重点：{{args}}
+    argsHint: 'The part you want to understand (optional)',
+    description: 'Walk through the project structure, tech stack, data flow and how to run it',
+    body: `Help me understand this project quickly. Focus: {{args}}
 
-说明：技术栈与依赖、目录结构、页面/路由、关键组件与数据流、如何运行和构建、值得注意的问题或技术债。尽量简洁，用列表，关键处给出文件路径。不要修改任何文件。`,
+Cover: tech stack and dependencies, folder structure, pages/routes, key components and data flow, how to run and build it, and notable problems or tech debt. Keep it concise, use lists, and give file paths for the key parts. Don't modify any files.`,
   },
 ];

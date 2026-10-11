@@ -64,7 +64,7 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
           if (!toolResults.includes(text)) toolResults.push(text);
         }
       }
-      const reply = opts.reply?.(r) ?? { text: '连接成功' };
+      const reply = opts.reply?.(r) ?? { text: 'Connected' };
       const block =
         'text' in reply
           ? { start: { type: 'text', text: '' }, delta: { type: 'text_delta', text: reply.text }, final: { type: 'text', text: reply.text } }

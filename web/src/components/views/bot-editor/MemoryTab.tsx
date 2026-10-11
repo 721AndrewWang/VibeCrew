@@ -16,26 +16,26 @@ export function MemoryTab({
   return (
     <div className="tab-body">
       <div className="field">
-        <label>长期记忆（机器人通过 remember 工具写入，每次对话都能看到）</label>
+        <label>Long-term memory (the bot writes it with the remember tool and sees it in every chat)</label>
         {memory === null ? (
           <div className="row muted">
-            <span className="spinner" /> 正在加载…
+            <span className="spinner" /> Loading…
           </div>
         ) : (
           <textarea
             className="textarea mono tall"
             value={memory}
             spellCheck={false}
-            placeholder={'还没有记忆。可以写下项目约定、你的偏好等，例如：\n- 用户喜欢简洁的界面，主色 #0a84ff\n- 提交信息用中文'}
+            placeholder={'No memory yet. You can note project conventions, your preferences and so on, e.g.:\n- The user likes a clean UI, primary color #0a84ff\n- Write commit messages in English'}
             onChange={(e) => setMemory(e.target.value)}
           />
         )}
       </div>
       <div className="row">
-        <span className="hint">记忆太长会占用上下文，可以定期整理。</span>
+        <span className="hint">Long memory takes up context, so tidy it up now and then.</span>
         <span className="spacer" />
         <button className="btn" disabled={!memoryDirty || memoryBusy} onClick={saveMemory}>
-          {memoryBusy ? <span className="spinner" /> : <Save size={14} />} 保存记忆
+          {memoryBusy ? <span className="spinner" /> : <Save size={14} />} Save memory
         </button>
       </div>
     </div>

@@ -9,7 +9,7 @@ const T0 = Date.parse('2026-10-01T07:55:39.000Z');
 const at = (ms: number) => new Date(T0 + ms).toISOString();
 const S = 'sess-1';
 const rows = [
-  { type: 'user', sessionId: S, timestamp: at(0), uuid: 'u1', message: { role: 'user', content: '<context>…</context>\n\n给首页加一个区块' } },
+  { type: 'user', sessionId: S, timestamp: at(0), uuid: 'u1', message: { role: 'user', content: '<context>…</context>\n\nAdd a section to the home page' } },
   { type: 'attachment', sessionId: S, timestamp: at(10), uuid: 'a1', attachment: { type: 'sandbox_instructions' } },
   {
     type: 'assistant',
@@ -20,7 +20,7 @@ const rows = [
     message: {
       id: 'msg_1',
       model: 'claude-opus-5-5',
-      content: [{ type: 'thinking', thinking: '先看看文件' }],
+      content: [{ type: 'thinking', thinking: 'Look at the files first' }],
       usage: { input_tokens: 2, cache_creation_input_tokens: 14317, cache_read_input_tokens: 10522, output_tokens: 279, output_tokens_details: { thinking_tokens: 157 } },
     },
   },
@@ -53,12 +53,12 @@ const rows = [
     message: {
       id: 'msg_2',
       model: 'claude-opus-5-5',
-      content: [{ type: 'text', text: '交给 @Pixel' }],
+      content: [{ type: 'text', text: 'Over to @Pixel' }],
       usage: { input_tokens: 5, cache_read_input_tokens: 24800, output_tokens: 1035, output_tokens_details: { thinking_tokens: 600 } },
     },
   },
   // Another turn, long after: not part of this one.
-  { type: 'user', sessionId: S, timestamp: at(120_000), uuid: 'u9', message: { role: 'user', content: '再来' } },
+  { type: 'user', sessionId: S, timestamp: at(120_000), uuid: 'u9', message: { role: 'user', content: 'Again' } },
   // Another session in the same file: never.
   {
     type: 'assistant',
@@ -85,7 +85,7 @@ describe('buildTrace', () => {
     expect(totals).toEqual({ calls: 2, tools: 1, input: 7, cacheRead: 35322, cacheWrite: 14317, output: 1314, thinking: 757, durationMs: 25_000 });
   });
   it('keeps the tool result and what was sent', () => {
-    expect(steps[0]).toMatchObject({ kind: 'prompt', text: expect.stringContaining('给首页加一个区块') });
+    expect(steps[0]).toMatchObject({ kind: 'prompt', text: expect.stringContaining('Add a section to the home page') });
     expect(steps[3]).toMatchObject({ kind: 'tool_result', toolUseId: 'toolu_1', isError: false, text: 'index.html\nstyles.css' });
   });
 });
@@ -144,7 +144,7 @@ describe('turnTrace', () => {
       if (!t.available) return;
       expect(t.totals.calls).toBe(2);
       expect(readTurnRows(file, S, T0, T0 + 30_000)).toHaveLength(6);
-      expect(turnTrace({ sessionId: 'nope', cwd, from: T0, to: T0 + 1 })).toMatchObject({ available: false, reason: expect.stringContaining('找不到') });
+      expect(turnTrace({ sessionId: 'nope', cwd, from: T0, to: T0 + 1 })).toMatchObject({ available: false, reason: expect.stringContaining("Can't find") });
       expect(turnTrace(undefined)).toMatchObject({ available: false });
     } finally {
       delete process.env.CLAUDE_CONFIG_DIR;

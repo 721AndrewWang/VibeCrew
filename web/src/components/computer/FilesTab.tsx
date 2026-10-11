@@ -38,7 +38,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
         const list = await api.tree(project.id, dir);
         setChildren((c) => ({ ...c, [dir]: list }));
       } catch (e) {
-        if (dir === '') toast('读取文件列表失败', (e as Error).message, 'error');
+        if (dir === '') toast('Failed to load file list', (e as Error).message, 'error');
       }
     },
     [project.id],
@@ -46,7 +46,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
 
   const openFile = useCallback(
     async (path: string, keepDirtyCheck = true) => {
-      if (keepDirtyCheck && dirty && openPath && path !== openPath && !window.confirm(`「${openPath}」还没保存，确定要切换吗？`)) return;
+      if (keepDirtyCheck && dirty && openPath && path !== openPath && !window.confirm(`"${openPath}" has unsaved changes. Switch anyway?`)) return;
       setOpenPath(path);
       setDirty(false);
       if (IMAGE_EXT.test(path)) {
@@ -58,7 +58,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
         setFile(f);
         setText(f.content ?? '');
       } catch (e) {
-        toast('打开文件失败', (e as Error).message, 'error');
+        toast('Failed to open file', (e as Error).message, 'error');
       }
     },
     [project.id, dirty, openPath],
@@ -115,7 +115,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
       setFile((f) => (f && f.path === openPath ? { ...f, content: text } : f));
       setDirty(false);
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -156,7 +156,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
           <span className="tree-title" title={project.path}>
             {project.name}
           </span>
-          <button className="icon-btn sm" title="刷新" onClick={() => void loadDir('')}>
+          <button className="icon-btn sm" title="Refresh" onClick={() => void loadDir('')}>
             <RefreshCw size={13} />
           </button>
         </div>
@@ -164,12 +164,12 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
       </div>
       <div className="editor-pane">
         <div className="editor-head">
-          <button className="icon-btn sm" title={treeOpen ? '隐藏文件树' : '显示文件树'} onClick={() => setTreeOpen(!treeOpen)}>
+          <button className="icon-btn sm" title={treeOpen ? 'Hide file tree' : 'Show file tree'} onClick={() => setTreeOpen(!treeOpen)}>
             <PanelLeft size={14} />
           </button>
           <span className="editor-path">
-            {openPath || '选择一个文件'}
-            {dirty && <span className="dirty-dot" title="未保存" />}
+            {openPath || 'Select a file'}
+            {dirty && <span className="dirty-dot" title="Unsaved" />}
           </span>
           <span className="spacer" />
           {openPath && (
@@ -177,27 +177,27 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
               {isHtml && (
                 <button
                   className="btn sm ghost"
-                  title="在浏览器里打开这个页面"
+                  title="Open this page in the browser"
                   onClick={() => {
                     updatePreview(project.id, { navigate: { path: '/' + openPath, nonce: Date.now() } });
                     setComputer({ tab: 'browser' });
                   }}
                 >
-                  <Globe size={13} /> 预览
+                  <Globe size={13} /> Preview
                 </button>
               )}
               <button
                 className="btn sm ghost"
-                title="把这个文件作为上下文附加到输入框"
+                title="Attach this file to the input as context"
                 onClick={() => {
                   addAttachment(chat.id, { kind: 'file', id: attachmentId(), path: openPath });
-                  toast('已附加文件', openPath, 'success');
+                  toast('File attached', openPath, 'success');
                 }}
               >
-                <AtSign size={13} /> 引用
+                <AtSign size={13} /> Mention
               </button>
-              <button className="btn sm" disabled={!dirty || saving} onClick={save} title="保存（Ctrl/⌘+S）">
-                <Save size={13} /> 保存
+              <button className="btn sm" disabled={!dirty || saving} onClick={save} title="Save (Ctrl/⌘+S)">
+                <Save size={13} /> Save
               </button>
             </>
           )}
@@ -208,7 +208,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
               <div className="big">
                 <Glyph emoji="📄" size={26} />
               </div>
-              <p>从左侧选择文件查看或编辑。机器人修改文件后，这里会自动刷新。</p>
+              <p>Pick a file on the left to view or edit. This refreshes automatically when a bot changes the file.</p>
             </div>
           )}
           {openPath && file && file.path === openPath && IMAGE_EXT.test(openPath) && (
@@ -218,7 +218,7 @@ export function FilesTab({ chat, project, active }: { chat: Chat; project: Proje
           )}
           {openPath && file && file.path === openPath && !IMAGE_EXT.test(openPath) && (file.binary || file.tooLarge) && (
             <div className="empty">
-              <p>{file.tooLarge ? `文件太大（${fmtBytes(file.size)}），不在这里打开。` : '这是二进制文件，无法以文本方式显示。'}</p>
+              <p>{file.tooLarge ? `File too large (${fmtBytes(file.size)}) to open here.` : 'This is a binary file and cannot be shown as text.'}</p>
             </div>
           )}
           {openPath && file && file.path === openPath && file.content !== undefined && (

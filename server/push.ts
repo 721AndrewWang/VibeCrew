@@ -19,18 +19,18 @@ export function barkUrlOk(url: string): boolean {
 }
 
 export async function sendBark(url: string, title: string, body: string): Promise<void> {
-  if (!barkUrlOk(url)) throw new Error('Bark 地址的格式不对，应该像 https://api.day.app/你的key');
+  if (!barkUrlOk(url)) throw new Error("That Bark URL doesn't look right; it should look like https://api.day.app/your-key");
   const res = await fetch(url.replace(/\/+$/, ''), {
     method: 'POST',
     headers: { 'content-type': 'application/json; charset=utf-8' },
     body: JSON.stringify({ title, body, group: 'Crew', level: 'timeSensitive' }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`Bark 返回 ${res.status}`);
+  if (!res.ok) throw new Error(`Bark returned ${res.status}`);
 }
 
 export function approvalPushText(botName: string, chatTitle: string, action: string, minutes: number) {
-  return { title: `${botName} 在等你确认`, body: `「${chatTitle}」里已经等了 ${minutes} 分钟：${action}` };
+  return { title: `${botName} is waiting for your approval`, body: `Waiting ${minutes} min in "${chatTitle}": ${action}` };
 }
 
 /**

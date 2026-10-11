@@ -49,12 +49,12 @@ describe('edit scope', () => {
   it("refuses the demo bot's write outside its lane, with the reason in the chat", async () => {
     const bot = await crew.api('POST', '/bots', { name: 'Tester', title: 't', permission: 'auto', editScope: ['tests/**'], projectId });
     const chatId = (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === bot.id).id;
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '帮我做一个页面' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Make me a page' });
     const reply = await waitTurn(crew.api, chatId, sent.seq);
     expect(reply.status).toBe('done');
     const write = reply.parts.find((p: any) => p.type === 'tool' && p.name === 'Write');
     expect(write.status).toBe('error');
-    expect(JSON.stringify(write)).toContain('不在你负责的范围内');
+    expect(JSON.stringify(write)).toContain('outside your area');
     expect(JSON.stringify(write)).toContain('tests/**');
   });
 });
@@ -72,7 +72,7 @@ describe('spend and budget', () => {
   };
 
   it("adds each turn's cost to the bot's usage, today and this month", async () => {
-    await turn('你好');
+    await turn('Hello');
     const u = await waitFor(async () => (await crew.api('GET', '/usage'))[bot.id]);
     expect(u.month.turns).toBe(1);
     expect(u.today.costUsd).toBeCloseTo(0.01, 5);
@@ -80,8 +80,8 @@ describe('spend and budget', () => {
   });
 
   it("counts each turn's own share of the session's running totals, with the cache it read", async () => {
-    await turn('再来');
-    await turn('第三轮');
+    await turn('Again');
+    await turn('Round three');
     const u = (await crew.api('GET', '/usage'))[bot.id].month;
     expect(u.turns).toBe(3);
     // The demo agent reports 0.01, 0.02, 0.03 as the session goes: three cents, not six.
@@ -95,10 +95,10 @@ describe('spend and budget', () => {
 
   it('stops the bot once the monthly budget is spent, and tells the chat once', async () => {
     expect((await crew.api('PATCH', `/bots/${bot.id}`, { monthlyBudgetUsd: 0.035 })).monthlyBudgetUsd).toBe(0.035);
-    await turn('再来一次'); // 0.04 ≥ 0.035 after this one
+    await turn('One more time'); // 0.04 ≥ 0.035 after this one
     const before = (await crew.api('GET', `/chats/${chatId}/messages?limit=30`)).messages.length;
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '还能干活吗' });
-    await waitFor(async () => (await lastSystem(chatId)).includes('预算'), 10_000);
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Can you still work?' });
+    await waitFor(async () => (await lastSystem(chatId)).includes('budget'), 10_000);
     expect(await lastSystem(chatId)).toContain('$0.04');
     await new Promise((r) => setTimeout(r, 1500));
     const { messages } = await crew.api('GET', `/chats/${chatId}/messages?limit=30`);
@@ -109,6 +109,6 @@ describe('spend and budget', () => {
 
   it('works again once the budget is raised or removed', async () => {
     expect((await crew.api('PATCH', `/bots/${bot.id}`, { monthlyBudgetUsd: null })).monthlyBudgetUsd).toBeUndefined();
-    expect((await turn('现在呢')).status).toBe('done');
+    expect((await turn('How about now')).status).toBe('done');
   });
 });

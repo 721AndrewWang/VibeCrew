@@ -32,7 +32,7 @@ app.set('trust proxy', false);
 app.use(guard);
 app.use('/api', apiRouter());
 
-// The favicon follows the logo chosen in Settings → 外观; it is drawn here, built UI or not.
+// The favicon follows the logo chosen in Settings → Appearance; it is drawn here, built UI or not.
 app.get('/icon.svg', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.type('image/svg+xml').send(appIconSvg(settings.get().logo));
@@ -55,7 +55,7 @@ if (hasWeb) {
     res
       .type('html')
       .send(
-        '<meta charset="utf-8"><body style="font-family:system-ui;padding:40px"><h2>Crew 服务已启动</h2><p>还没有构建界面：请运行 <code>npm run build</code> 后重启，或用 <code>npm run dev</code> 进入开发模式（界面在 5173 端口）。</p></body>',
+        '<meta charset="utf-8"><body style="font-family:system-ui;padding:40px"><h2>Crew server is running</h2><p>The UI hasn\'t been built yet: run <code>npm run build</code> and restart, or use <code>npm run dev</code> for dev mode (the UI is on port 5173).</p></body>',
       );
   });
 }
@@ -110,7 +110,7 @@ wss.on('connection', (ws: WebSocket) => {
           break;
       }
     } catch (e) {
-      send({ t: 'notify', title: '操作失败', body: (e as Error).message, level: 'error' });
+      send({ t: 'notify', title: 'Action failed', body: (e as Error).message, level: 'error' });
     }
   });
 
@@ -126,9 +126,10 @@ async function main() {
   startRoutines();
   startOutsideEditNotes();
   void checkAuth(true).then((a) => {
-    if (!a.cliFound) console.warn('⚠️  没有找到 Claude Code 命令行（claude）。请先安装：npm i -g @anthropic-ai/claude-code');
-    else if (!a.ready && a.method === 'provider') console.warn('⚠️  模型服务商还没配置好：请在 Crew「设置 → 模型连接」里填写地址、Key 和模型。');
-    else if (!a.ready) console.warn('⚠️  Claude Code 还没有登录。请在终端运行 `claude auth login`，或在 Crew「设置 → 模型连接」里填写 API Key、选择其他模型服务商。');
+    if (!a.cliFound) console.warn('⚠️  Claude Code CLI (claude) not found. Install it first: npm i -g @anthropic-ai/claude-code');
+    else if (!a.ready && a.method === 'provider') console.warn("⚠️  The model provider isn't set up yet: fill in the URL, key and model in Crew under Settings → Model connection.");
+    else if (!a.ready)
+      console.warn("⚠️  Claude Code isn't logged in. Run `claude auth login` in a terminal, or enter an API key or pick another model provider in Crew under Settings → Model connection.");
   });
 
   const s = settings.get();
@@ -136,7 +137,7 @@ async function main() {
   const host = s.lanEnabled ? '0.0.0.0' : '127.0.0.1';
   server.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code === 'EADDRINUSE') {
-      console.error(`❌ 端口 ${port} 已被占用。Crew 可能已经在运行（打开 http://localhost:${port}），或用 CREW_PORT=其他端口 npm start。`);
+      console.error(`❌ Port ${port} is already in use. Crew may already be running (open http://localhost:${port}), or use CREW_PORT=<another port> npm start.`);
       // The desktop app reads exit code 3 as "port taken".
       process.exit(3);
     }
@@ -146,17 +147,17 @@ async function main() {
   server.listen(port, host, () => {
     if (port !== s.port) settings.update({ port });
     const local = `http://localhost:${port}`;
-    console.log(`\n  🤖 ${APP_NAME} ${APP_VERSION} 已启动\n`);
-    console.log(`  本机访问：  ${local}`);
+    console.log(`\n  🤖 ${APP_NAME} ${APP_VERSION} is running\n`);
+    console.log(`  Local:       ${local}`);
     const lan = lanUrl();
-    if (lan) console.log(`  手机访问：  ${lan}`);
+    if (lan) console.log(`  Phone:       ${lan}`);
     const ts = tailscaleUrl();
-    if (ts) console.log(`  Tailscale： ${ts}`);
-    else if (lanAddress()) console.log('  手机访问：  未开启（可在「设置 → 手机访问」中打开）');
-    console.log(`  数据目录：  ${HOME_DIR}`);
-    console.log(`  Claude：    ${findClaudeExecutable() || '未找到'}`);
-    console.log(`  浏览器：    ${findChrome() || '未找到（截图/浏览器测试不可用）'}`);
-    if (!hasWeb) console.log('\n  ⚠️  界面尚未构建，运行 npm run build 后重启。');
+    if (ts) console.log(`  Tailscale:   ${ts}`);
+    else if (lanAddress()) console.log('  Phone:       off (turn it on in Settings → Phone access)');
+    console.log(`  Data dir:    ${HOME_DIR}`);
+    console.log(`  Claude:      ${findClaudeExecutable() || 'not found'}`);
+    console.log(`  Browser:     ${findChrome() || 'not found (screenshots/browser tests unavailable)'}`);
+    if (!hasWeb) console.log("\n  ⚠️  The UI isn't built yet. Run npm run build and restart.");
     console.log('');
     if (process.argv.includes('--open') && !process.env.CREW_DESKTOP) {
       const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
@@ -171,7 +172,7 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log('\n正在退出…');
+  console.log('\nShutting down…');
   flushAll();
   closeAllSessions();
   closeAllTerminals();

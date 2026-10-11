@@ -7,7 +7,7 @@
 set -euo pipefail
 
 if [ "$(id -u)" != 0 ]; then
-  echo "请用 sudo 运行：sudo $0 $*"
+  echo "Run this with sudo: sudo $0 $*"
   exit 1
 fi
 
@@ -20,12 +20,12 @@ if [ "${1:-}" = "--remove" ]; then
   if [ -f "$PROFILE" ]; then apparmor_parser -R "$PROFILE" 2>/dev/null || true; fi
   rm -f "$PROFILE"
   rm -rf "$DEST"
-  echo "已移除 $DEST 和 AppArmor 规则。以普通用户再运行一次 npm run desktop:install，菜单会改回 AppImage。"
+  echo "Removed $DEST and the AppArmor profile. Run npm run desktop:install again as yourself to point the menu back at the AppImage."
   exit 0
 fi
 
 if [ ! -x "$SRC/crew" ]; then
-  echo "找不到 $SRC/crew，请先运行 npm run desktop:pack"
+  echo "$SRC/crew not found. Run npm run desktop:pack first."
   exit 1
 fi
 
@@ -40,5 +40,5 @@ mv "$DEST.new" "$DEST"
 install -m 644 "$HERE/apparmor/crew" "$PROFILE"
 apparmor_parser -r "$PROFILE"
 
-echo "✅ 已安装到 $DEST，并启用了 AppArmor 规则（沙盒可用）。"
-echo "   接下来以普通用户运行：npm run desktop:install"
+echo "✅ Installed to $DEST and enabled the AppArmor profile (sandbox available)."
+echo "   Next, as yourself, run: npm run desktop:install"

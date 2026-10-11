@@ -10,10 +10,10 @@ import { FilesTab } from './FilesTab';
 import { TerminalTab } from './TerminalTab';
 
 const TABS: { id: ComputerTab; label: string; icon: typeof Globe }[] = [
-  { id: 'browser', label: '浏览器', icon: Globe },
-  { id: 'files', label: '文件', icon: FileCode2 },
-  { id: 'terminal', label: '终端', icon: SquareTerminal },
-  { id: 'changes', label: '改动', icon: GitCompareArrows },
+  { id: 'browser', label: 'Browser', icon: Globe },
+  { id: 'files', label: 'Files', icon: FileCode2 },
+  { id: 'terminal', label: 'Terminal', icon: SquareTerminal },
+  { id: 'changes', label: 'Changes', icon: GitCompareArrows },
 ];
 
 function DevControls({ projectId }: { projectId: string }) {
@@ -21,13 +21,13 @@ function DevControls({ projectId }: { projectId: string }) {
   const project = useStore((s) => s.projects[projectId]);
   if (!project?.devDetected)
     return (
-      <span className="dev-pill static" title="静态网页由 Crew 直接提供，保存即刷新">
-        静态站点
+      <span className="dev-pill static" title="Static pages are served by Crew directly and refresh on save">
+        Static site
       </span>
     );
   const status = ds?.status || 'stopped';
-  const run = (action: 'start' | 'stop' | 'restart') => api.dev(projectId, action).catch((e) => toast('操作失败', e.message, 'error'));
-  const label = { stopped: '未启动', installing: '安装依赖中', starting: '启动中', running: '运行中', error: '出错了' }[status];
+  const run = (action: 'start' | 'stop' | 'restart') => api.dev(projectId, action).catch((e) => toast('Action failed', e.message, 'error'));
+  const label = { stopped: 'Stopped', installing: 'Installing deps', starting: 'Starting', running: 'Running', error: 'Error' }[status];
   return (
     <div className="dev-controls">
       <span className={cx('dev-pill', status)} title={ds?.error || ds?.url || project.devDetected}>
@@ -35,15 +35,15 @@ function DevControls({ projectId }: { projectId: string }) {
         {label}
       </span>
       {status === 'stopped' || status === 'error' ? (
-        <button className="icon-btn sm" title={`启动：${project.devDetected}`} onClick={() => run('start')}>
+        <button className="icon-btn sm" title={`Start: ${project.devDetected}`} onClick={() => run('start')}>
           <Play size={14} />
         </button>
       ) : (
         <>
-          <button className="icon-btn sm" title="重启" onClick={() => run('restart')}>
+          <button className="icon-btn sm" title="Restart" onClick={() => run('restart')}>
             <RotateCw size={13} />
           </button>
-          <button className="icon-btn sm" title="停止" onClick={() => run('stop')}>
+          <button className="icon-btn sm" title="Stop" onClick={() => run('stop')}>
             <Square size={12} />
           </button>
         </>
@@ -63,7 +63,7 @@ export function ComputerPane({ chat, visible }: { chat: Chat; visible: boolean }
   return (
     <section className={cx('computer', !visible && 'hidden')}>
       <div className="comp-head">
-        <button className="icon-btn only-mobile" onClick={() => useStore.setState({ mobilePane: 'chat' })} aria-label="返回聊天">
+        <button className="icon-btn only-mobile" onClick={() => useStore.setState({ mobilePane: 'chat' })} aria-label="Back to chat">
           <ChevronLeft size={20} />
         </button>
         <div className="comp-tabs" role="tablist">
@@ -77,16 +77,16 @@ export function ComputerPane({ chat, visible }: { chat: Chat; visible: boolean }
         </div>
         <span className="spacer" />
         {project?.workspace && (
-          <button className="branch-pill" title={`独立工作区：${project.path}`} onClick={() => setComputer({ tab: 'changes' })}>
+          <button className="branch-pill" title={`Isolated workspace: ${project.path}`} onClick={() => setComputer({ tab: 'changes' })}>
             <GitBranch size={12} />
             <span>{project.workspace.branch}</span>
           </button>
         )}
         {project && <DevControls projectId={project.id} />}
-        <button className="icon-btn hide-mobile" title={maximized ? '还原' : '放大'} onClick={() => setComputer({ maximized: !maximized })}>
+        <button className="icon-btn hide-mobile" title={maximized ? 'Restore' : 'Maximize'} onClick={() => setComputer({ maximized: !maximized })}>
           {maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>
-        <button className="icon-btn hide-mobile" title="收起" onClick={() => setComputer({ open: false, maximized: false })}>
+        <button className="icon-btn hide-mobile" title="Collapse" onClick={() => setComputer({ open: false, maximized: false })}>
           <X size={16} />
         </button>
       </div>
@@ -95,11 +95,11 @@ export function ComputerPane({ chat, visible }: { chat: Chat; visible: boolean }
           <div className="big">
             <Glyph emoji="🗂️" size={26} />
           </div>
-          <h3>这个对话还没有绑定项目</h3>
-          <p>绑定一个项目文件夹后，机器人就能在里面写代码，这里会显示实时预览、文件和终端。</p>
+          <h3>This chat has no project yet</h3>
+          <p>Link a project folder and bots can write code in it. The live preview, files and terminal will show up here.</p>
           <div className="row">
             <button className="btn primary" onClick={() => openModal({ kind: 'newProject' })}>
-              <FolderPlus size={15} /> 新建或打开项目
+              <FolderPlus size={15} /> New or open project
             </button>
           </div>
         </div>

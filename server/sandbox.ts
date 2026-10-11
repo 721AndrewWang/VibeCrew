@@ -13,7 +13,7 @@ const log = logger('sandbox');
 export const ALWAYS_ALLOWED = ['localhost', '127.0.0.1', '[::1]'];
 
 /** The list a new install starts with: where dependencies come from. */
-export const DEFAULT_ALLOWED = ['registry.npmjs.org', 'registry.npmmirror.com', 'pypi.org', 'files.pythonhosted.org', 'github.com', '*.githubusercontent.com', 'codeload.github.com'];
+export const DEFAULT_ALLOWED = ['registry.npmjs.org', 'pypi.org', 'files.pythonhosted.org', 'github.com', '*.githubusercontent.com', 'codeload.github.com'];
 
 const DOMAIN = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/i;
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}(:\d{1,5})?$/;
@@ -50,7 +50,7 @@ export function sandboxStatus(refresh = false): SandboxStatus {
 }
 
 function probe(): SandboxStatus {
-  if (process.platform !== 'linux' && process.platform !== 'darwin') return { available: false, missing: [], hint: '沙盒只支持 Linux 和 macOS。' };
+  if (process.platform !== 'linux' && process.platform !== 'darwin') return { available: false, missing: [], hint: 'The sandbox only supports Linux and macOS.' };
   if (process.platform !== 'linux') return { available: true, missing: [] };
   const missing: string[] = [];
   for (const bin of ['bwrap', 'socat']) {
@@ -60,7 +60,7 @@ function probe(): SandboxStatus {
       missing.push(bin === 'bwrap' ? 'bubblewrap' : bin);
     }
   }
-  if (missing.length) return { available: false, missing, hint: `缺少 ${missing.join(' 和 ')}。Ubuntu 上运行：sudo apt install ${missing.join(' ')}` };
+  if (missing.length) return { available: false, missing, hint: `Missing ${missing.join(' and ')}. On Ubuntu, run: sudo apt install ${missing.join(' ')}` };
   // User namespaces may be restricted (Ubuntu 24.04 does unless bwrap has its AppArmor profile).
   try {
     execFileSync('bwrap', ['--ro-bind', '/', '/', '--unshare-all', '--', '/bin/true'], { stdio: 'ignore', timeout: 5000 });
@@ -69,7 +69,7 @@ function probe(): SandboxStatus {
     return {
       available: false,
       missing,
-      hint: 'bubblewrap 在这台机器上建不了沙盒（可能是用户命名空间被限制了）。Ubuntu 上试试：sudo apt install bubblewrap，并确认 /etc/apparmor.d/bwrap-userns-restrict 存在。',
+      hint: "bubblewrap can't create a sandbox on this machine (user namespaces may be restricted). On Ubuntu, try: sudo apt install bubblewrap, and check that /etc/apparmor.d/bwrap-userns-restrict exists.",
     };
   }
   return { available: true, missing: [] };

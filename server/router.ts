@@ -35,18 +35,18 @@ export function parseProbs(text: string, order: Candidate[]): Record<string, num
   const body = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
   const start = body.indexOf('{');
   const end = body.lastIndexOf('}');
-  if (start < 0 || end < start) throw new Error('不是 JSON');
+  if (start < 0 || end < start) throw new Error('Not JSON');
   const raw = JSON.parse(body.slice(start, end + 1));
   const probs = (raw.probabilities ?? raw) as Record<string, unknown>;
   const out: Record<string, number> = {};
   for (const c of order) {
     const v = Number(probs[c.name]);
-    if (!Number.isFinite(v) || v < 0) throw new Error(`没有 ${c.name} 的概率`);
+    if (!Number.isFinite(v) || v < 0) throw new Error(`No probability for ${c.name}`);
     out[c.id] = v;
   }
   const sum = Object.values(out).reduce((a, b) => a + b, 0);
   // Rounded verbal probabilities: tolerate a little, refuse nonsense.
-  if (Math.abs(sum - 1) > 0.05) throw new Error(`概率加起来是 ${sum.toFixed(2)}`);
+  if (Math.abs(sum - 1) > 0.05) throw new Error(`Probabilities add up to ${sum.toFixed(2)}`);
   for (const k of Object.keys(out)) out[k] /= sum;
   return out;
 }
@@ -61,14 +61,14 @@ export function combine(a: Record<string, number>, b: Record<string, number>): {
 
 function question(text: string, order: Candidate[]): string {
   return [
-    '群聊里用户发了一条消息，没有 @ 任何人。判断由哪位队友来接最合适（最能独立做完、最省事的那一位；需要拆分协调的复杂任务交给负责人）。',
+    'In a group chat, the user sent a message without @-mentioning anyone. Decide which teammate is the best fit to take it (the one who can most likely finish it alone with the least fuss; complex tasks that need splitting and coordinating go to the lead).',
     '',
-    '队友：',
-    ...order.map((c) => `- ${c.name}：${c.title}`),
+    'Teammates:',
+    ...order.map((c) => `- ${c.name}: ${c.title}`),
     '',
-    `用户的消息：\n${text.slice(0, 2000)}`,
+    `The user's message:\n${text.slice(0, 2000)}`,
     '',
-    `只回复 JSON，给每位队友一个概率，加起来等于 1：{"probabilities": {${order.map((c) => `"${c.name}": 0.0`).join(', ')}}}`,
+    `Reply with JSON only, giving each teammate a probability, adding up to 1: {"probabilities": {${order.map((c) => `"${c.name}": 0.0`).join(', ')}}}`,
   ].join('\n');
 }
 
@@ -76,13 +76,15 @@ function question(text: string, order: Candidate[]): string {
 async function decide(text: string, candidates: Candidate[], lead: Candidate): Promise<Pick<RoutingRecord, 'choice' | 'confidence' | 'probs' | 'costUsd' | 'backend'>> {
   if (FAKE_AGENT) {
     // Demo stand-in: sure of the lead when the request asks to split work, unsure otherwise.
-    const split = /交给|分派|拆分|handoff/i.test(text);
+    const split = /hand off|handoff|assign|split/i.test(text);
     const probs = Object.fromEntries(candidates.map((c) => [c.id, c.id === lead.id ? (split ? 0.95 : 0.55) : (split ? 0.05 : 0.45) / (candidates.length - 1)]));
     const { choice, confidence } = combine(probs, probs);
     return { choice, confidence, probs, costUsd: 0, backend: 'fake' };
   }
   const reversed = [...candidates].reverse();
-  const [x, y] = await Promise.all([candidates, reversed].map((order) => oneShot(question(text, order), { model: 'haiku', timeoutMs: 60_000, system: '你是一个分类器，只回复要求的 JSON。' })));
+  const [x, y] = await Promise.all(
+    [candidates, reversed].map((order) => oneShot(question(text, order), { model: 'haiku', timeoutMs: 60_000, system: 'You are a classifier. Reply only with the requested JSON.' })),
+  );
   const costUsd = x.costUsd + y.costUsd;
   const c = combine(parseProbs(x.text, candidates), parseProbs(y.text, reversed));
   return { ...c, costUsd, backend: 'haiku' };

@@ -13,13 +13,13 @@ const MAX_DIFF_CHARS = 60_000;
 export async function doSuggest(chatId: string): Promise<string> {
   const { chat, ws, info } = requireWorkspace(chatId);
   const cli = findClaudeExecutable();
-  if (!cli) throw new HttpError(400, '没有找到 Claude Code，没法生成提交说明');
-  await saveWork(info, 'Crew：保存改动');
+  if (!cli) throw new HttpError(400, "Couldn't find Claude Code, so a commit message can't be generated");
+  await saveWork(info, 'Crew: save changes');
   const baseHead = await revParse(info.repo, `refs/heads/${info.baseBranch}`);
   const head = await revParse(info.worktree, 'HEAD');
   const range = `${baseHead}...${head}`;
   const stat = (await gitIn(info.repo, ['diff', '--stat=120', range])).trim();
-  if (!stat) throw new HttpError(409, `没有需要合并的改动，${info.baseBranch} 已经包含这个分支的全部内容`);
+  if (!stat) throw new HttpError(409, `Nothing to merge: ${info.baseBranch} already contains everything on this branch`);
   let diff = await gitIn(info.repo, ['-c', 'core.quotePath=false', 'diff', '--no-color', '-U2', range]);
   if (diff.length > MAX_DIFF_CHARS) diff = `${diff.slice(0, MAX_DIFF_CHARS)}\n[… diff truncated …]`;
   const recent = (await gitIn(info.repo, ['log', '-12', '--no-merges', '--format=%s', baseHead]).catch(() => '')).trim();
@@ -46,7 +46,7 @@ export async function doSuggest(chatId: string): Promise<string> {
   const out = await oneShot(prompt, { model: 'sonnet' })
     .then((r) => r.text)
     .catch((e: Error) => {
-      throw new HttpError(502, `没能生成提交说明：${e.message}`);
+      throw new HttpError(502, `Couldn't generate a commit message: ${e.message}`);
     });
   const text = out
     .trim()
@@ -55,6 +55,6 @@ export async function doSuggest(chatId: string): Promise<string> {
     .filter((l) => !/^(co-authored-by|generated with|🤖)/i.test(l.trim()))
     .join('\n')
     .trim();
-  if (!text) throw new HttpError(502, '模型返回了空的提交说明，请再试一次');
+  if (!text) throw new HttpError(502, 'The model returned an empty commit message. Please try again');
   return text;
 }

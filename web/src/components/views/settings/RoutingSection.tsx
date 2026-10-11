@@ -26,18 +26,18 @@ export function RoutingSection() {
       const r = await api.updateSettings({ routing: { mode: v ? 'shadow' : 'off' } });
       useStore.setState({ settings: r.settings });
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     }
   };
-  const name = (id?: string | null) => (id === 'multi' ? '多人' : id ? bots[id]?.name || '?' : '还没结果');
+  const name = (id?: string | null) => (id === 'multi' ? 'Several' : id ? bots[id]?.name || '?' : 'No result yet');
   return (
-    <Section icon={<Route size={18} />} title="群聊路由（影子模式）">
+    <Section icon={<Route size={18} />} title="Group chat routing (shadow mode)">
       <div className="setting-row">
         <div>
-          <div className="sr-title">记录便宜模型会把消息派给谁</div>
+          <div className="sr-title">Log who a cheap model would route messages to</div>
           <div className="hint">
-            群聊里没 @ 人的消息照常交给负责人；同时让 Haiku 按两种顺序各猜一次「该谁接」并给出把握，只记录、不执行。每条大约 $0.002。攒够 100
-            条有结果的记录后，会按下限估计建议一个把握门槛：超过门槛的就可以直接派，省掉负责人那一轮。
+            Group chat messages without an @ still go to the lead as usual. Meanwhile Haiku guesses "who should take it" twice, in two orders, with a confidence, which is only logged, never acted on.
+            About $0.002 per message. After 100 labeled records, it suggests a confidence threshold from a lower-bound estimate: messages above it could be routed directly, skipping the lead's turn.
           </div>
         </div>
         <Toggle on={on} onChange={toggle} />
@@ -46,25 +46,25 @@ export function RoutingSection() {
         <div className="routing-report">
           <div className="routing-totals">
             <span>
-              有结果 <b>{report.labeled}</b> 条
+              Labeled <b>{report.labeled}</b>
             </span>
-            <span>一致率 {report.agreement === null ? '—' : pct(report.agreement)}</span>
-            <span>花费 {fmtUsd(report.costUsd)}</span>
-            {report.avgRoutingTurnUsd !== null && <span>负责人只派活的一轮平均 {fmtUsd(report.avgRoutingTurnUsd)}</span>}
+            <span>Agreement {report.agreement === null ? '—' : pct(report.agreement)}</span>
+            <span>Cost {fmtUsd(report.costUsd)}</span>
+            {report.avgRoutingTurnUsd !== null && <span>Avg lead routing-only turn {fmtUsd(report.avgRoutingTurnUsd)}</span>}
           </div>
           <div className="routing-totals">
-            <span title="把握高低和对错的对应程度：随机拿一个猜对的和一个猜错的，猜对的那个把握更高的概率。0.5 等于瞎猜，把握完全没用；论文里能当第一关的大约 0.75 以上。">
-              把握的区分度（AUROC） <b>{report.auroc === null ? '—' : report.auroc.toFixed(2)}</b>
-              {report.auroc !== null && report.auroc < 0.65 ? '（接近瞎猜，把握不可信）' : ''}
+            <span title="How well confidence tracks correctness: the chance that a random right guess has higher confidence than a random wrong one. 0.5 is a coin flip (confidence is useless); papers treat about 0.75+ as good enough for a first gate.">
+              Confidence discrimination (AUROC) <b>{report.auroc === null ? '—' : report.auroc.toFixed(2)}</b>
+              {report.auroc !== null && report.auroc < 0.65 ? ' (near random, confidence unreliable)' : ''}
             </span>
-            <span title="把握 ≥ 0.9 的猜测里错了几次：真放行之后会直接派错人的那部分。">
-              有把握却错了 <b>{report.confident.n ? `${report.confident.wrong}/${report.confident.n}` : '—'}</b>
+            <span title="Wrong guesses among those with confidence ≥ 0.9: the ones that would go to the wrong bot if routing were live.">
+              Confident but wrong <b>{report.confident.n ? `${report.confident.wrong}/${report.confident.n}` : '—'}</b>
             </span>
           </div>
           <table className="routing-bins">
             <thead>
               <tr>
-                <th>把握</th>
+                <th>Confidence</th>
                 {report.bins.map((b) => (
                   <th key={b.lo}>
                     {b.lo.toFixed(2)}–{b.hi >= 1 ? '1' : b.hi.toFixed(2)}
@@ -74,7 +74,7 @@ export function RoutingSection() {
             </thead>
             <tbody>
               <tr>
-                <td>猜对</td>
+                <td>Correct</td>
                 {report.bins.map((b) => (
                   <td key={b.lo}>{b.n ? `${b.correct}/${b.n}` : '—'}</td>
                 ))}
@@ -83,17 +83,17 @@ export function RoutingSection() {
           </table>
           <div className="hint">
             {report.threshold
-              ? `建议门槛 ${report.threshold.tau}：覆盖 ${pct(report.threshold.coverage)} 的消息，准确率 ${pct(report.threshold.accuracy)}（95% 下限 ${pct(report.threshold.lower)}）。`
+              ? `Suggested threshold ${report.threshold.tau}: covers ${pct(report.threshold.coverage)} of messages at ${pct(report.threshold.accuracy)} accuracy (95% lower bound ${pct(report.threshold.lower)}).`
               : report.needed > 0
-                ? `还要 ${report.needed} 条有结果的记录才能建议门槛。`
-                : '没有哪个门槛能让准确率的下限达到 90%，暂时不建议直接派。'}
+                ? `Needs ${report.needed} more labeled record${report.needed === 1 ? '' : 's'} to suggest a threshold.`
+                : 'No threshold gets the accuracy lower bound to 90%, so direct routing is not advised yet.'}
           </div>
           {report.recent.length > 0 && (
             <div className="routing-recent">
               {report.recent.slice(0, 8).map((r) => (
                 <div key={r.id} className="routing-row">
-                  <span className="mono">{r.invalid ? '无效' : `${name(r.choice)} ${r.confidence !== undefined ? pct(r.confidence) : ''}`}</span>
-                  <span className="muted">实际 {name(r.label)}</span>
+                  <span className="mono">{r.invalid ? 'Invalid' : `${name(r.choice)} ${r.confidence !== undefined ? pct(r.confidence) : ''}`}</span>
+                  <span className="muted">Actual {name(r.label)}</span>
                   <span className="routing-text">{r.text}</span>
                 </div>
               ))}

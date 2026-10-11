@@ -31,13 +31,13 @@ import { Avatar, confirmDialog, Glyph, GroupAvatar, MenuButton, type MenuItem } 
 async function switchProject(chat: Chat, projectId: string | null) {
   if (chat.workspaceId) {
     const ok = await confirmDialog({
-      title: '切换项目？',
-      body: '这个对话的独立工作区属于当前项目，切换后会关闭它。还没合并的改动会保留在它的分支里。',
-      ok: '切换',
+      title: 'Switch project?',
+      body: "This chat's isolated workspace belongs to the current project and will be closed when you switch. Unmerged changes stay on its branch.",
+      ok: 'Switch',
     });
     if (!ok) return;
   }
-  await api.updateChat(chat.id, { projectId }).catch((e) => toast('切换失败', e.message, 'error'));
+  await api.updateChat(chat.id, { projectId }).catch((e) => toast('Switch failed', e.message, 'error'));
 }
 
 function ProjectPicker({ chat }: { chat: Chat }) {
@@ -45,10 +45,10 @@ function ProjectPicker({ chat }: { chat: Chat }) {
   const project = chat.projectId ? projects[chat.projectId] : null;
   const ws = chat.workspaceId ? projects[chat.workspaceId]?.workspace : undefined;
   const items = (): MenuItem[] => [
-    { heading: '切换项目' },
+    { heading: 'Switch project' },
     ...listProjects(projects).map((p) => ({
       label: p.name,
-      hint: p.id === chat.projectId ? '当前' : p.framework,
+      hint: p.id === chat.projectId ? 'Current' : p.framework,
       icon: <FolderGit2 size={15} />,
       onClick: () => {
         if (p.id !== chat.projectId) void switchProject(chat, p.id);
@@ -58,21 +58,21 @@ function ProjectPicker({ chat }: { chat: Chat }) {
       ? ws
         ? [
             { separator: true },
-            { heading: `独立工作区 · ${ws.branch}` },
-            { label: '查看改动 / 合并', icon: <GitMerge size={15} />, onClick: showWorkspaceChanges },
-            { label: '关闭独立工作区…', icon: <LogOut size={15} />, onClick: () => void closeWorkspace(chat) },
+            { heading: `Isolated workspace · ${ws.branch}` },
+            { label: 'View changes / merge', icon: <GitMerge size={15} />, onClick: showWorkspaceChanges },
+            { label: 'Close isolated workspace…', icon: <LogOut size={15} />, onClick: () => void closeWorkspace(chat) },
           ]
-        : [{ separator: true }, { label: '在独立分支中工作…', hint: '新建 Git 分支', icon: <GitBranch size={15} />, onClick: () => void enableWorkspace(chat) }]
+        : [{ separator: true }, { label: 'Work on a separate branch…', hint: 'Creates a Git branch', icon: <GitBranch size={15} />, onClick: () => void enableWorkspace(chat) }]
       : []),
     { separator: true },
-    { label: '新建 / 打开项目…', icon: <FolderPlus size={15} />, onClick: () => openModal({ kind: 'newProject' }) },
-    ...(project ? [{ label: '解除绑定', icon: <Unlink size={15} />, onClick: () => void switchProject(chat, null) }] : []),
+    { label: 'New / open project…', icon: <FolderPlus size={15} />, onClick: () => openModal({ kind: 'newProject' }) },
+    ...(project ? [{ label: 'Unlink', icon: <Unlink size={15} />, onClick: () => void switchProject(chat, null) }] : []),
   ];
-  const title = !project ? '绑定一个项目' : ws ? `${project.path}\n独立工作区：分支 ${ws.branch}（从 ${ws.baseBranch} 分出）` : project.path;
+  const title = !project ? 'Link a project' : ws ? `${project.path}\nIsolated workspace: branch ${ws.branch} (from ${ws.baseBranch})` : project.path;
   return (
     <MenuButton className={cx('project-pill', !project && 'none', ws && 'isolated')} items={items} align="right" title={title}>
       {ws ? <GitBranch size={14} /> : <FolderGit2 size={14} />}
-      <span>{project ? project.name : '未绑定项目'}</span>
+      <span>{project ? project.name : 'No project'}</span>
       {ws && <span className="pill-branch">{ws.branch}</span>}
     </MenuButton>
   );
@@ -88,7 +88,7 @@ function ChatHeader({ chat }: { chat: Chat }) {
   const busy = members.filter((b) => statuses[b.id]?.chatId === chat.id && statuses[b.id]?.state !== 'idle' && statuses[b.id]?.state !== 'error');
   return (
     <header className="chat-head">
-      <button className="icon-btn mobile-back" onClick={() => useStore.setState({ mobilePane: 'list' })} aria-label="返回">
+      <button className="icon-btn mobile-back" onClick={() => useStore.setState({ mobilePane: 'list' })} aria-label="Back">
         <ChevronLeft size={20} />
       </button>
       <button className="ch-who" onClick={() => (dm ? openModal({ kind: 'botEditor', botId: dm.id }) : openModal({ kind: 'chatSettings', chatId: chat.id }))}>
@@ -104,11 +104,11 @@ function ChatHeader({ chat }: { chat: Chat }) {
               )
             ) : busy.length ? (
               <span className="ch-status busy">
-                {busy.map((b) => b.name).join('、')} {busy.some((b) => statuses[b.id]?.state === 'waiting') ? '等待你确认' : '正在工作…'}
+                {busy.map((b) => b.name).join(', ')} {busy.some((b) => statuses[b.id]?.state === 'waiting') ? 'waiting for you' : 'working…'}
               </span>
             ) : (
               <>
-                <Users size={11} /> {members.map((b) => b.name).join('、')}
+                <Users size={11} /> {members.map((b) => b.name).join(', ')}
               </>
             )}
           </div>
@@ -118,23 +118,29 @@ function ChatHeader({ chat }: { chat: Chat }) {
       <ProjectPicker chat={chat} />
       <button
         className="icon-btn"
-        title="开始新话题（机器人忘记之前的上下文）"
+        title="Start new topic (bots forget earlier context)"
         onClick={async () => {
-          if (await confirmDialog({ title: '开始新话题？', body: '机器人会忘记这个对话之前的上下文（聊天记录仍然保留）。切换到不相关的任务时这样做，回复会更快、更省用量。', ok: '开始新话题' }))
+          if (
+            await confirmDialog({
+              title: 'Start new topic?',
+              body: "Bots will forget this chat's earlier context (the chat history is kept). Do this when switching to an unrelated task: replies get faster and use less.",
+              ok: 'Start new topic',
+            })
+          )
             void api.reset(chat.id);
         }}
       >
         <RotateCcw size={17} />
       </button>
-      <button className="icon-btn only-mobile" title="电脑" onClick={() => useStore.setState({ mobilePane: 'computer' })}>
+      <button className="icon-btn only-mobile" title="Computer" onClick={() => useStore.setState({ mobilePane: 'computer' })}>
         <Monitor size={18} />
       </button>
-      <button className="icon-btn hide-mobile" title={computerOpen ? '收起电脑面板' : '打开电脑面板'} onClick={() => setComputer({ open: !computerOpen })}>
+      <button className="icon-btn hide-mobile" title={computerOpen ? 'Hide computer panel' : 'Show computer panel'} onClick={() => setComputer({ open: !computerOpen })}>
         {computerOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
       </button>
       <MenuButton
         align="right"
-        items={() => [...(dm ? [{ label: `${dm.name} 的设置`, icon: <Settings2 size={15} />, onClick: () => openModal({ kind: 'botEditor', botId: dm.id }) }] : []), ...chatMenuItems(chat)]}
+        items={() => [...(dm ? [{ label: `${dm.name} settings`, icon: <Settings2 size={15} />, onClick: () => openModal({ kind: 'botEditor', botId: dm.id }) }] : []), ...chatMenuItems(chat)]}
       >
         <MoreHorizontal size={18} />
       </MenuButton>
@@ -148,51 +154,51 @@ function AuthBanner() {
   if (auth.ready || !auth.checkedAt) return null;
   return (
     <div className="auth-banner">
-      <b>机器人还不能工作：</b>
+      <b>Bots can't work yet:</b>
       {!auth.cliFound ? (
         <>
-          没有找到 Claude Code。请先在终端安装：<code>npm i -g @anthropic-ai/claude-code</code>
+          Claude Code not found. Install it in a terminal first: <code>npm i -g @anthropic-ai/claude-code</code>
         </>
       ) : settings.authMode === 'api-key' ? (
-        <>API Key 未设置。</>
+        <>API key is not set.</>
       ) : settings.authMode === 'provider' ? (
-        <>模型服务商还没配置好（缺少地址、Key 或模型名）。</>
+        <>The model provider isn't fully set up (missing URL, key, or model name).</>
       ) : (
-        <>本机的 Claude Code 还没有登录。也可以在设置里改用 API Key 或其他模型服务商（DeepSeek、Kimi、智谱 GLM…）。</>
+        <>Claude Code on this machine isn't signed in. You can also switch to an API key or another model provider (DeepSeek, Kimi, Zhipu GLM…) in Settings.</>
       )}
       <span className="spacer" />
       {auth.cliFound && settings.authMode === 'claude-code' && (
         <button className="btn sm" onClick={() => requestTerminal('claude auth login')}>
-          在终端登录
+          Sign in via terminal
         </button>
       )}
       <button className="btn sm" onClick={() => setView('settings')}>
-        设置
+        Settings
       </button>
       <button
         className="btn sm ghost"
         onClick={async () => {
           const a = await api.auth(true);
           useStore.setState({ auth: a });
-          toast(a.ready ? '模型已连接' : '还没有连接好', a.ready ? '机器人可以开始工作了' : '完成登录或设置后再点一次「重新检测」', a.ready ? 'success' : 'warn');
+          toast(a.ready ? 'Model connected' : 'Not connected yet', a.ready ? 'Bots can start working now' : 'Finish signing in or setup, then click "Check again"', a.ready ? 'success' : 'warn');
         }}
       >
-        重新检测
+        Check again
       </button>
     </div>
   );
 }
 
 const SUGGESTIONS: Record<string, string[]> = {
-  group: ['做一个咖啡店的落地页，要有菜单、门店和预约', '检查一下现在的页面，列出最该改进的 3 件事', '/responsive', '/polish'],
-  chief: ['帮我规划一个个人作品集网站，并分派给大家', '现在项目的进度怎么样？下一步该做什么？'],
-  pixel: ['把首页改成现代的深色风格', '/landing 一款番茄钟 App', '/component 带搜索的下拉选择框', '/responsive'],
-  forge: ['给项目加一个联系表单的后端接口', '把项目改成 Vite + React + TypeScript'],
-  probe: ['把主要流程都点一遍，找找 bug', '/fix-console', '/e2e 首页按钮点击后的交互'],
-  lens: ['/review', '审查一下最近的改动有没有安全问题'],
-  muse: ['给这个页面设计一套更有质感的配色和字体', '/polish'],
-  quill: ['/seo', '重写首页文案，更简洁有力'],
-  default: ['/explain', '做一个简单的待办清单页面', '/fix-console'],
+  group: ['Build a landing page for a coffee shop with a menu, locations, and reservations', 'Review the current page and list the top 3 things to improve', '/responsive', '/polish'],
+  chief: ['Plan a personal portfolio site and assign the work to the team', 'How is the project going? What should we do next?'],
+  pixel: ['Give the home page a modern dark look', '/landing a Pomodoro timer app', '/component a searchable dropdown select', '/responsive'],
+  forge: ['Add a backend endpoint for a contact form', 'Convert the project to Vite + React + TypeScript'],
+  probe: ['Click through the main flows and look for bugs', '/fix-console', '/e2e what happens when the home page buttons are clicked'],
+  lens: ['/review', 'Check recent changes for security issues'],
+  muse: ['Design a more refined color palette and typography for this page', '/polish'],
+  quill: ['/seo', 'Rewrite the home page copy to be tighter and punchier'],
+  default: ['/explain', 'Build a simple to-do list page', '/fix-console'],
 };
 
 function EmptyChat({ chat }: { chat: Chat }) {
@@ -204,7 +210,7 @@ function EmptyChat({ chat }: { chat: Chat }) {
     <div className="chat-empty">
       {dm ? <Avatar bot={dm} size={64} /> : <GroupAvatar bots={members} size={64} />}
       <h3>{dm ? dm.name : chat.title}</h3>
-      <p>{dm ? dm.title : `${members.map((b) => b.name).join('、')} · 没有 @ 人时由 ${bots[chat.leadBotId || '']?.name || members[0]?.name} 回复`}</p>
+      <p>{dm ? dm.title : `${members.map((b) => b.name).join(', ')} · ${bots[chat.leadBotId || '']?.name || members[0]?.name} replies when no one is @mentioned`}</p>
       <div className="suggestions">
         {list.map((s) => (
           <button key={s} className="suggestion" onClick={() => setDraft(chat.id, { text: s })}>
@@ -269,7 +275,7 @@ function MessageList({ chat }: { chat: Chat }) {
                 void loadMessages(chat.id, true);
               }}
             >
-              {st.loading ? '加载中…' : '加载更早的消息'}
+              {st.loading ? 'Loading…' : 'Load earlier messages'}
             </button>
           </div>
         )}
@@ -304,7 +310,7 @@ function MessageList({ chat }: { chat: Chat }) {
                 <Avatar bot={b} size={18} /> {b.name}
               </span>
             ))}
-            <span>排队中，马上轮到…</span>
+            <span>Queued, up next…</span>
           </div>
         )}
       </div>
@@ -359,10 +365,10 @@ export function ChatView() {
         <div className="big">
           <Glyph emoji="💬" size={26} />
         </div>
-        <h3>选择一个对话</h3>
-        <p>从左侧选择机器人或群聊开始工作。</p>
+        <h3>Pick a chat</h3>
+        <p>Choose a bot or group chat on the left to get started.</p>
         <button className="btn primary" onClick={() => openModal({ kind: 'newGroup' })}>
-          新建群聊
+          New group chat
         </button>
       </div>
     );

@@ -110,7 +110,7 @@ export const Trigger = z.discriminatedUnion('type', [
       .min(1)
       .max(60 * 24 * 365),
   }),
-  z.object({ type: z.literal('daily'), time: z.string().regex(/^\d{1,2}:\d{2}$/, '时间要写成 HH:MM'), days: z.array(z.number().int().min(0).max(6)).max(7).optional() }),
+  z.object({ type: z.literal('daily'), time: z.string().regex(/^\d{1,2}:\d{2}$/, 'Time must be written as HH:MM'), days: z.array(z.number().int().min(0).max(6)).max(7).optional() }),
   z.object({ type: z.literal('cron'), expr: text(100) }),
   z.object({ type: z.literal('file_change'), debounceSec: z.number().min(0).max(3600) }),
   z.object({ type: z.literal('git_commit') }),
@@ -176,25 +176,25 @@ export function body<T extends z.ZodType>(schema: T, raw: unknown): z.output<T> 
   const r = schema.safeParse(raw ?? {});
   if (r.success) return r.data;
   const issue = r.error.issues[0];
-  const field = issue.path.length ? issue.path.map(String).join('.') : '请求内容';
-  throw new HttpError(400, `${field}：${explain(issue)}`);
+  const field = issue.path.length ? issue.path.map(String).join('.') : 'request body';
+  throw new HttpError(400, `${field}: ${explain(issue)}`);
 }
 
 function explain(issue: z.core.$ZodIssue): string {
   switch (issue.code) {
     case 'invalid_type':
-      return `应为 ${TYPE_NAMES[issue.expected] || issue.expected}`;
+      return `should be ${TYPE_NAMES[issue.expected] || issue.expected}`;
     case 'invalid_value':
-      return `只能是 ${issue.values.map((v) => JSON.stringify(v)).join('、')} 之一`;
+      return `must be one of ${issue.values.map((v) => JSON.stringify(v)).join(', ')}`;
     case 'too_big':
-      return issue.origin === 'string' ? `最多 ${issue.maximum} 个字符` : `最多 ${issue.maximum}`;
+      return issue.origin === 'string' ? `at most ${issue.maximum} characters` : `at most ${issue.maximum}`;
     case 'too_small':
-      return issue.origin === 'string' || issue.origin === 'array' ? '不能为空' : `至少 ${issue.minimum}`;
+      return issue.origin === 'string' || issue.origin === 'array' ? "can't be empty" : `at least ${issue.minimum}`;
     case 'invalid_union':
-      return '格式不对';
+      return 'invalid format';
     default:
       return issue.message;
   }
 }
 
-const TYPE_NAMES: Record<string, string> = { string: '文字', number: '数字', boolean: '是/否', array: '列表', object: '对象', int: '整数' };
+const TYPE_NAMES: Record<string, string> = { string: 'text', number: 'a number', boolean: 'true/false', array: 'a list', object: 'an object', int: 'an integer' };

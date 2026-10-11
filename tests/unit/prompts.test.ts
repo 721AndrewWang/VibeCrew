@@ -2,16 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { buildTurnPrompt, contextDelta } from '../../server/agents/prompts';
 
 describe('contextDelta', () => {
-  const first = ['时间：10:00', '预览：静态网页', '禁止的操作：Bash(*x*)', '沙盒：只能访问本机'];
+  const first = ['Time: 10:00', 'Preview: static page', 'Forbidden actions: Bash(*x*)', 'Sandbox: local machine only'];
   it('sends everything the first time', () => {
     expect(contextDelta(undefined, first)).toEqual(first);
   });
   it('then only the time and what changed, saying the rest is unchanged', () => {
-    expect(contextDelta(first, ['时间：10:05', ...first.slice(1)])).toEqual(['时间：10:05', '（其余环境信息和之前一样）']);
-    expect(contextDelta(first, ['时间：10:05', '预览：开发服务器运行中', ...first.slice(2)])).toEqual(['时间：10:05', '预览：开发服务器运行中', '（其余环境信息和之前一样）']);
+    expect(contextDelta(first, ['Time: 10:05', ...first.slice(1)])).toEqual(['Time: 10:05', '(The rest of the environment is unchanged.)']);
+    expect(contextDelta(first, ['Time: 10:05', 'Preview: dev server running', ...first.slice(2)])).toEqual([
+      'Time: 10:05',
+      'Preview: dev server running',
+      '(The rest of the environment is unchanged.)',
+    ]);
   });
   it('says what no longer applies', () => {
-    expect(contextDelta(first, ['时间：10:05', '预览：静态网页', '沙盒：只能访问本机'])).toEqual(['时间：10:05', '不再适用：禁止的操作：Bash(*x*)', '（其余环境信息和之前一样）']);
+    expect(contextDelta(first, ['Time: 10:05', 'Preview: static page', 'Sandbox: local machine only'])).toEqual([
+      'Time: 10:05',
+      'No longer applies: Forbidden actions: Bash(*x*)',
+      '(The rest of the environment is unchanged.)',
+    ]);
   });
 });
 
@@ -21,23 +29,23 @@ describe('buildTurnPrompt in a group', () => {
     ['b_lens', 'Lens'],
     ['b_probe', 'Probe'],
   ]);
-  const long = (head: string) => `${head}\n${'细节。'.repeat(120)}`;
+  const long = (head: string) => `${head}\n${'Details. '.repeat(120).trim()}`;
   const msg = (seq: number, role: 'user' | 'bot', text: string, botId?: string) => ({ id: `m${seq}`, seq, role, text, botId, chatId: 'c', ts: seq }) as any;
   const unseen = [
-    msg(5, 'bot', long('审查完成，没有阻塞性问题。'), 'b_lens'),
-    msg(6, 'bot', long('区块加好了，Probe 验收通过。'), 'b_chief'),
-    msg(7, 'user', '邮箱用 hello@mysite.test，改完让 Probe 验收。'),
-    msg(8, 'bot', long('三处都改好了。@Probe 请验收这次改动。'), 'b_chief'),
+    msg(5, 'bot', long('Review done, no blocking issues.'), 'b_lens'),
+    msg(6, 'bot', long('Section added, Probe signed off.'), 'b_chief'),
+    msg(7, 'user', 'Use hello@mysite.test as the email, then have Probe check it.'),
+    msg(8, 'bot', long('All three are fixed. @Probe please check this change.'), 'b_chief'),
   ];
-  const prompt = buildTurnPrompt({ bot: { name: 'Probe' } as any, chat: { kind: 'group', title: 'Web 小队' } as any, unseen, names, context: [], trigger: { type: 'mention', by: 'b_chief' } });
+  const prompt = buildTurnPrompt({ bot: { name: 'Probe' } as any, chat: { kind: 'group', title: 'Web team' } as any, unseen, names, context: [], trigger: { type: 'mention', by: 'b_chief' } });
 
   it('keeps the user and the handoff in full', () => {
-    expect(prompt).toContain('邮箱用 hello@mysite.test，改完让 Probe 验收。');
+    expect(prompt).toContain('Use hello@mysite.test as the email, then have Probe check it.');
     expect(prompt).toContain(unseen[3].text);
   });
   it('turns older long teammate messages into one line with their number', () => {
-    expect(prompt).toContain('【@Lens · #5】审查完成，没有阻塞性问题。（全文');
-    expect(prompt).toContain('【@Chief · #6】区块加好了，Probe 验收通过。（全文');
+    expect(prompt).toContain('[@Lens · #5] Review done, no blocking issues. (full text');
+    expect(prompt).toContain('[@Chief · #6] Section added, Probe signed off. (full text');
     expect(prompt).not.toContain(unseen[0].text);
     expect(prompt).toContain('chat_history');
     expect(prompt.length).toBeLessThan(unseen.reduce((n: number, m: any) => n + m.text.length, 0) * 0.6);
@@ -46,12 +54,12 @@ describe('buildTurnPrompt in a group', () => {
     const p = buildTurnPrompt({
       bot: { name: 'Probe' } as any,
       chat: { kind: 'group', title: 'g' } as any,
-      unseen: [msg(1, 'bot', '好的，我看一下。', 'b_lens'), msg(2, 'bot', '@Probe 你来。', 'b_chief')],
+      unseen: [msg(1, 'bot', 'OK, let me take a look.', 'b_lens'), msg(2, 'bot', '@Probe your turn.', 'b_chief')],
       names,
       context: [],
       trigger: { type: 'mention', by: 'b_chief' },
     });
-    expect(p).toContain('【@Lens】\n好的，我看一下。');
+    expect(p).toContain('[@Lens]\nOK, let me take a look.');
   });
 });
 
@@ -60,28 +68,28 @@ describe('the recap after a session starts over', () => {
     ['b_pixel', 'Pixel'],
     ['b_chief', 'Chief'],
   ]);
-  const long = (head: string) => `${head}\n${'细节。'.repeat(120)}`;
+  const long = (head: string) => `${head}\n${'Details. '.repeat(120).trim()}`;
   const msg = (seq: number, role: 'user' | 'bot', text: string, botId?: string) => ({ id: `m${seq}`, seq, role, text, botId, chatId: 'c', ts: seq }) as any;
   const prompt = buildTurnPrompt({
     bot: { id: 'b_pixel', name: 'Pixel' } as any,
     chat: { kind: 'group', title: 'g' } as any,
-    unseen: [msg(3, 'user', '做一个联系区块'), msg(4, 'bot', long('改好了 index.html 和 styles.css。'), 'b_pixel'), msg(5, 'bot', '@Pixel 把按钮改深一点', 'b_chief')],
+    unseen: [msg(3, 'user', 'make a contact section'), msg(4, 'bot', long('Updated index.html and styles.css.'), 'b_pixel'), msg(5, 'bot', '@Pixel make the button a bit darker', 'b_chief')],
     names,
     context: [],
     trigger: { type: 'mention', by: 'b_chief' },
     recap: { tokens: 62_524 },
   });
   it('says why and how big the old session was, and where the rest is', () => {
-    expect(prompt).toContain('这是新会话');
-    expect(prompt).toContain('63k token');
+    expect(prompt).toContain('This is a new session');
+    expect(prompt).toContain('63k tokens');
     expect(prompt).toContain('chat_history');
   });
   it("brings back the bot's own replies, labelled as its own, long ones as a line", () => {
-    expect(prompt).toContain('【你自己（@Pixel） · #4】改好了 index.html 和 styles.css。（全文');
-    expect(prompt).not.toContain('细节。细节。');
+    expect(prompt).toContain('[You (@Pixel) · #4] Updated index.html and styles.css. (full text');
+    expect(prompt).not.toContain('Details. Details.');
   });
   it('keeps the user and the latest message in full', () => {
-    expect(prompt).toContain('【用户 · #3】\n做一个联系区块');
-    expect(prompt).toContain('【@Chief · #5】\n@Pixel 把按钮改深一点');
+    expect(prompt).toContain('[User · #3]\nmake a contact section');
+    expect(prompt).toContain('[@Chief · #5]\n@Pixel make the button a bit darker');
   });
 });

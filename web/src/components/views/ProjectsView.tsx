@@ -12,7 +12,7 @@ import { PageHead } from './BotsView';
 // ---------------------------------------------------------------- shared bits
 
 /** Project picker used by the bot editor and the chat dialogs. */
-export function ProjectSelect({ value, onChange, noneLabel = '不绑定项目' }: { value: string | null; onChange: (v: string | null) => void; noneLabel?: string }) {
+export function ProjectSelect({ value, onChange, noneLabel = 'No project' }: { value: string | null; onChange: (v: string | null) => void; noneLabel?: string }) {
   const projects = useStore((s) => s.projects);
   const list = useMemo(() => listProjects(projects), [projects]);
   return (
@@ -23,7 +23,7 @@ export function ProjectSelect({ value, onChange, noneLabel = '不绑定项目' }
           {p.name} — {shortPath(p.path)}
         </option>
       ))}
-      {value && !projects[value] && <option value={value}>（项目已移除）</option>}
+      {value && !projects[value] && <option value={value}>(project removed)</option>}
     </select>
   );
 }
@@ -31,15 +31,15 @@ export function ProjectSelect({ value, onChange, noneLabel = '不绑定项目' }
 function devBadge(st: DevServerState | undefined) {
   switch (st?.status) {
     case 'running':
-      return { cls: 'green', text: '运行中' };
+      return { cls: 'green', text: 'Running' };
     case 'starting':
-      return { cls: 'orange', text: '启动中' };
+      return { cls: 'orange', text: 'Starting' };
     case 'installing':
-      return { cls: 'orange', text: '安装依赖中' };
+      return { cls: 'orange', text: 'Installing dependencies' };
     case 'error':
-      return { cls: 'red', text: '出错' };
+      return { cls: 'red', text: 'Error' };
     default:
-      return { cls: '', text: '未运行' };
+      return { cls: '', text: 'Stopped' };
   }
 }
 
@@ -88,10 +88,10 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
             .filter(Boolean),
         },
       });
-      toast('项目设置已保存', undefined, 'success');
+      toast('Project settings saved', undefined, 'success');
       onDone();
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -101,58 +101,67 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
     <div className="pc-settings">
       <div className="form-grid">
         <div className="field">
-          <label>名称</label>
+          <label>Name</label>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="field">
-          <label>启动命令</label>
-          <input className="input mono" value={devCommand} placeholder="自动检测（如 npm run dev）；填 static 表示纯静态" onChange={(e) => setDevCommand(e.target.value)} />
+          <label>Dev command</label>
+          <input className="input mono" value={devCommand} placeholder="Auto-detected (e.g. npm run dev); enter static for a static site" onChange={(e) => setDevCommand(e.target.value)} />
         </div>
         <div className="field">
-          <label>静态文件目录</label>
-          <input className="input mono" value={staticRoot} placeholder="静态文件目录，默认项目根目录" onChange={(e) => setStaticRoot(e.target.value)} />
-          <div className="hint">没有开发服务器时，预览直接托管这个目录（相对项目根目录，例如 public 或 dist）。</div>
+          <label>Static files folder</label>
+          <input className="input mono" value={staticRoot} placeholder="Static files folder, defaults to the project root" onChange={(e) => setStaticRoot(e.target.value)} />
+          <div className="hint">Without a dev server, the preview serves this folder directly (relative to the project root, e.g. public or dist).</div>
         </div>
         <div className="field">
-          <label>新工作区准备命令</label>
-          <input className="input mono" value={setupCommand} placeholder="例如 npm ci，或 uv sync && cd frontend && bun install" onChange={(e) => setSetupCommand(e.target.value)} />
-          <div className="hint">每开一个独立工作区都先在里面跑一遍（比如装依赖），跑完机器人才开始工作。</div>
+          <label>Workspace setup command</label>
+          <input className="input mono" value={setupCommand} placeholder="e.g. npm ci, or uv sync && cd frontend && bun install" onChange={(e) => setSetupCommand(e.target.value)} />
+          <div className="hint">Runs in every new isolated workspace (e.g. to install dependencies) before the bot starts working.</div>
         </div>
         <div className="field span-all">
-          <label>提交信息要求</label>
-          <textarea className="input" rows={2} value={commitGuide} placeholder="例如：英文，祈使句，第一行不超过 72 个字符，正文说明为什么改" onChange={(e) => setCommitGuide(e.target.value)} />
-          <div className="hint">机器人提交时照这个写；合并独立工作区时，合并说明也必须按它写，可以一键生成。</div>
+          <label>Commit message guidelines</label>
+          <textarea
+            className="input"
+            rows={2}
+            value={commitGuide}
+            placeholder="e.g. English, imperative mood, first line under 72 characters, body explains why"
+            onChange={(e) => setCommitGuide(e.target.value)}
+          />
+          <div className="hint">Bots follow this when committing. Merge messages for isolated workspaces must follow it too, and can be generated in one click.</div>
         </div>
         <div className="field span-all">
-          <label>必须确认的操作</label>
-          <textarea className="input mono" rows={3} value={askRules} placeholder={'每行一条，例如\nBash(ssh:*)\nBash(docker compose down:*)'} onChange={(e) => setAskRules(e.target.value)} />
-          <div className="hint">在这个项目里工作的所有机器人，碰到这些操作都要先问你。写法和机器人设置里的「必须确认」一样。</div>
+          <label>Actions that need approval</label>
+          <textarea className="input mono" rows={3} value={askRules} placeholder={'One per line, e.g.\nBash(ssh:*)\nBash(docker compose down:*)'} onChange={(e) => setAskRules(e.target.value)} />
+          <div className="hint">Every bot working in this project must ask you before these actions. Same syntax as "Needs approval" in bot settings.</div>
         </div>
         <div className="field span-all">
-          <label>沙盒里允许访问的域名</label>
-          <textarea className="input mono" rows={2} value={allowedDomains} placeholder={'每行一个，例如\napi.example.com\n10.0.0.5:8080'} onChange={(e) => setAllowedDomains(e.target.value)} />
-          <div className="hint">在「设置 → 沙盒」的全局列表之外，这个项目的命令还能连这些主机。</div>
+          <label>Allowed domains in the sandbox</label>
+          <textarea className="input mono" rows={2} value={allowedDomains} placeholder={'One per line, e.g.\napi.example.com\n10.0.0.5:8080'} onChange={(e) => setAllowedDomains(e.target.value)} />
+          <div className="hint">On top of the global list in Settings → Sandbox, commands in this project can also reach these hosts.</div>
         </div>
         <div className="field span-all">
           <div className="setting-row">
             <div>
-              <div className="sr-title">提交不加 AI 署名</div>
-              <div className="hint">机器人的提交和 PR 不带 Co-Authored-By 之类的署名，合并提交里也不写 Crew。</div>
+              <div className="sr-title">No AI attribution in commits</div>
+              <div className="hint">Bot commits and PRs carry no Co-Authored-By or similar lines, and merge commits don't mention Crew.</div>
             </div>
             <Toggle on={noAttribution} onChange={setNoAttribution} />
           </div>
           <div className="setting-row">
             <div>
-              <div className="sr-title">合并前必须通过对抗审查</div>
-              <div className="hint">独立工作区合并前，Skeptic 要针对最新的提交审一次，而且一条都没推翻才能合并（/challenge）。每次大约花 $0.3～0.6。</div>
+              <div className="sr-title">Require adversarial review before merge</div>
+              <div className="hint">
+                Before an isolated workspace merges, Skeptic reviews the latest commit, and it can only merge if nothing is overturned (/challenge). Costs about $0.3–0.6 each time.
+              </div>
             </div>
             <Toggle on={requireChallenge} onChange={setRequireChallenge} />
           </div>
           <div className="setting-row">
             <div>
-              <div className="sr-title">按规则自动对抗审查</div>
+              <div className="sr-title">Auto adversarial review by rules</div>
               <div className="hint">
-                一串机器人的活干完、改动又碰到下面的文件或者超过行数时，自动请 Skeptic 审一次。每个请求最多两次（审、修、再审），同样的改动不审第二遍。规则是固定的，不让模型判断「有没有风险」。
+                When a chain of bot work finishes and the changes touch the files below or exceed the line count, Skeptic reviews automatically. At most twice per request (review, fix, re-review), and
+                the same changes are never reviewed twice. The rules are fixed; the model doesn't decide what is "risky".
               </div>
             </div>
             <Toggle on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
@@ -160,13 +169,13 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           {auto.enabled && (
             <div className="form-grid">
               <div className="field">
-                <label>碰到这些文件就审（每行一个）</label>
+                <label>Review when these files change (one per line)</label>
                 <textarea className="input mono" rows={5} value={autoPaths} onChange={(e) => setAutoPaths(e.target.value)} />
               </div>
               <div className="field">
-                <label>或者改动至少多少行</label>
+                <label>Or when at least this many lines change</label>
                 <input className="input num-input" type="number" min={0} step={10} value={auto.minLines} onChange={(e) => setAuto({ ...auto, minLines: Math.max(0, Number(e.target.value) || 0) })} />
-                <div className="hint">加的行和删的行加起来；0 表示不按行数。</div>
+                <div className="hint">Added plus deleted lines. 0 means no line threshold.</div>
               </div>
             </div>
           )}
@@ -175,10 +184,10 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
       <div className="row">
         <span className="spacer" />
         <button className="btn" onClick={onDone}>
-          取消
+          Cancel
         </button>
         <button className="btn primary" disabled={saving} onClick={save}>
-          {saving ? <span className="spinner" /> : <Check size={15} />} 保存
+          {saving ? <span className="spinner" /> : <Check size={15} />} Save
         </button>
       </div>
     </div>
@@ -191,14 +200,14 @@ function WorkspaceList({ workspaces }: { workspaces: Project[] }) {
   if (!workspaces.length) return null;
   return (
     <div className="pc-workspaces">
-      <span className="muted">独立工作区：</span>
+      <span className="muted">Isolated workspaces:</span>
       {workspaces.map((w) => {
         const chat = chats[w.workspace!.chatId];
         return (
           <button
             key={w.id}
             className="branch-pill"
-            title={`${w.path}\n打开对话「${chat?.title ?? ''}」查看改动`}
+            title={`${w.path}\nOpen chat "${chat?.title ?? ''}" to see changes`}
             onClick={() => {
               if (!chat) return;
               openChat(chat.id);
@@ -234,25 +243,25 @@ function ProjectCard({ project, chatCount, workspaces }: { project: Project; cha
     api
       .dev(project.id, active ? 'stop' : 'start')
       .then((st) => {
-        if (st.status === 'error' && st.error) toast('开发服务器没有启动', st.error, 'warn');
+        if (st.status === 'error' && st.error) toast('Dev server failed to start', st.error, 'warn');
       })
-      .catch((e) => toast(active ? '停止失败' : '启动失败', (e as Error).message, 'error'))
+      .catch((e) => toast(active ? 'Failed to stop' : 'Failed to start', (e as Error).message, 'error'))
       .finally(() => setPending(false));
   };
 
   const remove = async () => {
     const ok = await confirmDialog({
-      title: `从列表移除「${project.name}」？`,
-      body: `只是从 Crew 移除，不会删除文件。使用这个项目的对话会解除绑定${workspaces.length ? `，它们的 ${workspaces.length} 个独立工作区也会关闭（没合并的改动保留在各自的分支里）` : ''}。`,
-      ok: '移除',
+      title: `Remove "${project.name}" from the list?`,
+      body: `This only removes it from Crew; no files are deleted. Chats using this project will be unbound${workspaces.length ? `, and their ${workspaces.length} isolated workspace${workspaces.length === 1 ? '' : 's'} will be closed (unmerged changes stay on their branches)` : ''}.`,
+      ok: 'Remove',
       danger: true,
     });
     if (!ok) return;
     try {
       await api.removeProject(project.id);
-      toast('已从列表移除', project.name, 'success');
+      toast('Removed from list', project.name, 'success');
     } catch (e) {
-      toast('移除失败', (e as Error).message, 'error');
+      toast('Remove failed', (e as Error).message, 'error');
     }
   };
 
@@ -272,9 +281,9 @@ function ProjectCard({ project, chatCount, workspaces }: { project: Project; cha
           </div>
           <div className="pc-meta">
             <span className="pc-dev">
-              开发服务器：
+              Dev server:{' '}
               {isStatic ? (
-                <span className="badge">不需要 · 静态网页直接预览</span>
+                <span className="badge">Not needed · static site previews directly</span>
               ) : (
                 <>
                   <span className={cx('badge', badge.cls)}>
@@ -291,32 +300,32 @@ function ProjectCard({ project, chatCount, workspaces }: { project: Project; cha
                 </>
               )}
             </span>
-            <span className="muted">{chatCount ? `${chatCount} 个对话在用` : '没有对话在用'}</span>
+            <span className="muted">{chatCount ? `Used by ${chatCount} chat${chatCount === 1 ? '' : 's'}` : 'Not used by any chat'}</span>
           </div>
           <WorkspaceList workspaces={workspaces} />
           {status === 'error' && dev?.error && <div className="pc-error">{dev.error}</div>}
         </div>
         <div className="pc-actions">
           {!isStatic && (
-            <button className="btn sm" disabled={pending} onClick={toggleDev} title={active ? '停止开发服务器' : '启动开发服务器'}>
+            <button className="btn sm" disabled={pending} onClick={toggleDev} title={active ? 'Stop dev server' : 'Start dev server'}>
               {pending ? <span className="spinner tiny" /> : active ? <Square size={12} /> : <Play size={13} />}
-              {active ? '停止' : '启动'}
+              {active ? 'Stop' : 'Start'}
             </button>
           )}
           <button className={cx('btn sm', editing && 'on')} onClick={() => setEditing((v) => !v)}>
-            <Settings size={13} /> 设置
+            <Settings size={13} /> Settings
           </button>
           <MenuButton
             align="right"
-            title="更多"
+            title="More"
             items={[
               {
-                label: '复制路径',
+                label: 'Copy path',
                 icon: <Copy size={15} />,
-                onClick: () => void copyText(project.path).then(() => toast('已复制路径', project.path, 'success')),
+                onClick: () => void copyText(project.path).then(() => toast('Path copied', project.path, 'success')),
               },
               { separator: true },
-              { label: '从列表移除', icon: <Trash2 size={15} />, danger: true, onClick: () => void remove() },
+              { label: 'Remove from list', icon: <Trash2 size={15} />, danger: true, onClick: () => void remove() },
             ]}
           >
             <MoreHorizontal size={18} />
@@ -351,12 +360,12 @@ export function ProjectsView() {
   return (
     <div className="page">
       <div className="page-inner">
-        <PageHead title="项目" sub="每个对话绑定一个项目文件夹，机器人在里面工作，右侧面板实时预览">
+        <PageHead title="Projects" sub="Each chat is bound to a project folder. Bots work inside it, with a live preview in the right panel.">
           <button className="btn" onClick={() => setDialog('open')}>
-            <FolderOpen size={15} /> 打开文件夹
+            <FolderOpen size={15} /> Open folder
           </button>
           <button className="btn primary" onClick={() => setDialog('create')}>
-            <FolderPlus size={15} /> 新建项目
+            <FolderPlus size={15} /> New project
           </button>
         </PageHead>
 
@@ -365,14 +374,14 @@ export function ProjectsView() {
             <div className="big">
               <Glyph emoji="📁" size={26} />
             </div>
-            <h3>还没有项目</h3>
-            <div>新建一个网站，或者打开电脑上已有的项目文件夹，机器人就能在里面工作。</div>
+            <h3>No projects yet</h3>
+            <div>Create a new site, or open an existing project folder on your computer, and bots can work in it.</div>
             <div className="row">
               <button className="btn" onClick={() => setDialog('open')}>
-                <FolderOpen size={15} /> 打开文件夹
+                <FolderOpen size={15} /> Open folder
               </button>
               <button className="btn primary" onClick={() => setDialog('create')}>
-                <FolderPlus size={15} /> 新建项目
+                <FolderPlus size={15} /> New project
               </button>
             </div>
           </div>
@@ -403,16 +412,16 @@ function FolderBrowser({ listing, loading, onGo }: { listing: FsListing | null; 
   return (
     <div className="folder-browser">
       <div className="fb-bar">
-        <button className="icon-btn" title="上一级" disabled={!listing?.parent || loading} onClick={() => listing?.parent && onGo(listing.parent)}>
+        <button className="icon-btn" title="Up one level" disabled={!listing?.parent || loading} onClick={() => listing?.parent && onGo(listing.parent)}>
           <ArrowUp size={16} />
         </button>
-        <button className="icon-btn" title="主目录" disabled={loading} onClick={() => onGo(listing?.home)}>
+        <button className="icon-btn" title="Home folder" disabled={loading} onClick={() => onGo(listing?.home)}>
           <House size={16} />
         </button>
         <input
           className="input mono"
           value={typed}
-          placeholder="粘贴文件夹路径，例如 ~/code/my-site"
+          placeholder="Paste a folder path, e.g. ~/code/my-site"
           onChange={(e) => setTyped(e.target.value)}
           // The box starts out holding the current folder, so typing or pasting a path would append
           // to it. Clicking in selects it all, and a pasted full path replaces it whatever is selected.
@@ -431,7 +440,7 @@ function FolderBrowser({ listing, loading, onGo }: { listing: FsListing | null; 
           onKeyDown={(e) => e.key === 'Enter' && typed.trim() && onGo(typed.trim())}
         />
         <button className="btn" disabled={!typed.trim() || loading} onClick={() => onGo(typed.trim())}>
-          <CornerDownLeft size={14} /> 前往
+          <CornerDownLeft size={14} /> Go
         </button>
       </div>
       <div className="fb-list">
@@ -440,12 +449,12 @@ function FolderBrowser({ listing, loading, onGo }: { listing: FsListing | null; 
             <span className="spinner" />
           </div>
         )}
-        {listing && listing.entries.length === 0 && <div className="fb-empty muted">这个文件夹里没有子文件夹</div>}
+        {listing && listing.entries.length === 0 && <div className="fb-empty muted">No subfolders in this folder</div>}
         {listing?.entries.map((e) => (
           <button key={e.path} className="fb-item" onClick={() => onGo(e.path)} disabled={loading}>
             {e.isProject ? <FolderGit2 size={16} className="fb-ico proj" /> : <Folder size={16} className="fb-ico" />}
             <span className="ellipsis">{e.name}</span>
-            {e.isProject && <span className="badge accent">项目</span>}
+            {e.isProject && <span className="badge accent">Project</span>}
           </button>
         ))}
       </div>
@@ -479,7 +488,7 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
       })
       .catch((e) => {
         setTemplates([]);
-        toast('加载项目模板失败', (e as Error).message, 'error');
+        toast('Failed to load project templates', (e as Error).message, 'error');
       });
   }, []);
 
@@ -488,7 +497,7 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
     try {
       setListing(await api.fs(path));
     } catch (e) {
-      toast('无法打开文件夹', (e as Error).message, 'error');
+      toast('Could not open folder', (e as Error).message, 'error');
     } finally {
       setLoadingFs(false);
     }
@@ -504,7 +513,7 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
         try {
           setListing(await api.fs());
         } catch (e) {
-          toast('无法读取文件夹', (e as Error).message, 'error');
+          toast('Could not read folder', (e as Error).message, 'error');
         }
       } finally {
         setLoadingFs(false);
@@ -517,20 +526,20 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
       try {
         await api.updateChat(activeChatId, { projectId: project.id });
       } catch (e) {
-        toast('切换对话项目失败', (e as Error).message, 'error');
+        toast('Failed to switch chat project', (e as Error).message, 'error');
       }
     }
-    toast(`${verb}「${project.name}」`, useInChat && activeChat ? `已在「${activeChat.title}」中使用` : shortPath(project.path), 'success');
+    toast(`${verb} "${project.name}"`, useInChat && activeChat ? `Now used in "${activeChat.title}"` : shortPath(project.path), 'success');
     onClose();
   };
 
   const create = async () => {
     setBusy(true);
     try {
-      const p = await api.createProject({ name: name.trim() || '我的网站', template });
-      await finish(p, '已创建项目');
+      const p = await api.createProject({ name: name.trim() || 'My site', template });
+      await finish(p, 'Created project');
     } catch (e) {
-      toast('创建项目失败', (e as Error).message, 'error');
+      toast('Failed to create project', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -541,9 +550,9 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
     setBusy(true);
     try {
       const p = await api.openProject(listing.path);
-      await finish(p, '已打开项目');
+      await finish(p, 'Opened project');
     } catch (e) {
-      toast('打开项目失败', (e as Error).message, 'error');
+      toast('Failed to open project', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -553,7 +562,7 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
 
   return (
     <Modal
-      title="新建或打开项目"
+      title="New or open project"
       icon={<FolderPlus size={20} className="modal-icon" />}
       onClose={onClose}
       wide
@@ -563,21 +572,21 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
             <label className="check-row foot-left">
               <input type="checkbox" checked={useInChat} onChange={(e) => setUseInChat(e.target.checked)} />
               <span>
-                在当前对话<span className="muted">「{activeChat.title}」</span>中使用
+                Use in current chat <span className="muted">&quot;{activeChat.title}&quot;</span>
               </span>
             </label>
           )}
           <span className="spacer" />
           <button className="btn" onClick={onClose}>
-            取消
+            Cancel
           </button>
           {tab === 'create' ? (
             <button className="btn primary" disabled={busy || !templates?.length} onClick={create}>
-              {busy ? <span className="spinner" /> : <FolderPlus size={15} />} 创建项目
+              {busy ? <span className="spinner" /> : <FolderPlus size={15} />} Create project
             </button>
           ) : (
             <button className="btn primary" disabled={busy || loadingFs || !listing} onClick={open}>
-              {busy ? <span className="spinner" /> : <Check size={15} />} 使用这个文件夹
+              {busy ? <span className="spinner" /> : <Check size={15} />} Use this folder
             </button>
           )}
         </>
@@ -585,24 +594,24 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
     >
       <div className="tabs">
         <button className={cx('tab', tab === 'create' && 'on')} onClick={() => setTab('create')}>
-          <FolderPlus size={15} /> 新建
+          <FolderPlus size={15} /> New
         </button>
         <button className={cx('tab', tab === 'open' && 'on')} onClick={() => setTab('open')}>
-          <FolderOpen size={15} /> 打开已有文件夹
+          <FolderOpen size={15} /> Open existing folder
         </button>
       </div>
 
       {tab === 'create' ? (
         <div className="tab-body">
           <div className="field">
-            <label>项目名称</label>
-            <input className="input" autoFocus value={name} placeholder="我的网站" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !busy && void create()} />
+            <label>Project name</label>
+            <input className="input" autoFocus value={name} placeholder="My site" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !busy && void create()} />
           </div>
           <div className="field">
-            <label>模板</label>
+            <label>Template</label>
             {!templates ? (
               <div className="row muted">
-                <span className="spinner" /> 正在加载模板…
+                <span className="spinner" /> Loading templates…
               </div>
             ) : (
               <div className="choice-grid">
@@ -610,7 +619,7 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
                   <button key={t.id} className={cx('choice-card', template === t.id && 'on')} onClick={() => setTemplate(t.id)}>
                     <div className="cc-head">
                       <span className="cc-title">{t.name}</span>
-                      {t.needsInstall && <span className="badge orange">需要安装依赖</span>}
+                      {t.needsInstall && <span className="badge orange">Needs install</span>}
                       <span className="spacer" />
                       <span className="cc-check">{template === t.id && <Check size={13} />}</span>
                     </div>
@@ -619,12 +628,12 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
                 ))}
               </div>
             )}
-            {tpl?.needsInstall && <div className="hint">第一次启动开发服务器时会自动安装依赖，可能需要一两分钟。</div>}
+            {tpl?.needsInstall && <div className="hint">Dependencies install automatically the first time the dev server starts, which may take a minute or two.</div>}
           </div>
           <div className="note">
             <Folder size={14} />
             <span>
-              将创建在 <span className="mono">{shortPath(settings.projectsRoot) || '项目目录'}/</span> 下（可在设置里修改），并自动初始化 Git 仓库。
+              Will be created in <span className="mono">{shortPath(settings.projectsRoot) || 'projects folder'}/</span> (changeable in Settings), with a Git repo initialized automatically.
             </span>
           </div>
         </div>
@@ -635,8 +644,8 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
             <div className="note">
               <FolderOpen size={14} />
               <span>
-                将打开 <span className="mono">{shortPath(listing.path)}</span>
-                {listing.entries.length > 0 && '（点击子文件夹可以进入）'}
+                Will open <span className="mono">{shortPath(listing.path)}</span>
+                {listing.entries.length > 0 && ' (click a subfolder to open it)'}
               </span>
             </div>
           )}
@@ -644,7 +653,7 @@ export function NewProjectDialog({ onClose, initialTab = 'create' }: { onClose: 
       )}
       {!activeChat && (
         <div className="hint" style={{ marginTop: 10 }}>
-          之后可以在对话设置里把项目绑定到任意对话。
+          You can bind the project to any chat later in Chat settings.
         </div>
       )}
     </Modal>

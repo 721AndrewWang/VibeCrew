@@ -3,7 +3,7 @@ import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
 import { chatProjectId, focusTurn, openFileInEditor, openModal, toast, useStore } from '../store';
-import { cx, fmtClock, fmtDuration, modelLabel, toolDuration, toolInfo } from '../utils';
+import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo } from '../utils';
 import { Markdown } from './Markdown';
 import { Avatar, confirmDialog, Glyph } from './ui';
 
@@ -26,7 +26,7 @@ export function AttachmentChips({ items, onRemove, projectId }: { items: Attachm
                   <img src={a.url} alt={a.name} />
                 </a>
                 {onRemove && (
-                  <button className="att-x" onClick={() => onRemove(a.id)} aria-label="移除">
+                  <button className="att-x" onClick={() => onRemove(a.id)} aria-label="Remove">
                     <X size={11} />
                   </button>
                 )}
@@ -37,14 +37,14 @@ export function AttachmentChips({ items, onRemove, projectId }: { items: Attachm
             label = (
               <>
                 <b>{a.tag}</b>
-                {a.text ? `「${a.text.slice(0, 18)}${a.text.length > 18 ? '…' : ''}」` : ` ${a.selector.split(' > ').pop()}`}
+                {a.text ? `"${a.text.slice(0, 18)}${a.text.length > 18 ? '…' : ''}"` : ` ${a.selector.split(' > ').pop()}`}
               </>
             );
             title = `${a.selector}${a.source ? `\n${a.source}` : ''}${a.component ? `\n${a.component}` : ''}`;
             break;
           case 'console':
             icon = <AlertTriangle size={13} />;
-            label = `控制台 ${a.entries.length} 条`;
+            label = `Console · ${plural(a.entries.length, 'entry', 'entries')}`;
             title = a.entries
               .map((e) => `[${e.level}] ${e.text}`)
               .join('\n')
@@ -58,7 +58,7 @@ export function AttachmentChips({ items, onRemove, projectId }: { items: Attachm
             break;
           case 'recording':
             icon = <Film size={13} />;
-            label = `录制的 ${a.steps.length} 步操作`;
+            label = `Recorded ${plural(a.steps.length, 'step')}`;
             title = a.steps.map((s, i) => `${i + 1}. ${s.type} ${s.text || s.selector || s.url || ''}`).join('\n');
             break;
         }
@@ -73,7 +73,7 @@ export function AttachmentChips({ items, onRemove, projectId }: { items: Attachm
                   e.stopPropagation();
                   onRemove(a.id);
                 }}
-                aria-label="移除"
+                aria-label="Remove"
               >
                 <X size={11} />
               </button>
@@ -115,7 +115,7 @@ function ToolDetail({ part, root }: { part: ToolPart; root?: string }) {
     body = (
       <pre className="tool-code">
         {lines.slice(0, 40).join('\n')}
-        {lines.length > 40 ? `\n…（共 ${lines.length} 行）` : ''}
+        {lines.length > 40 ? `\n… (${lines.length} lines total)` : ''}
       </pre>
     );
   } else if (part.name === 'TodoWrite') {
@@ -129,13 +129,13 @@ function ToolDetail({ part, root }: { part: ToolPart; root?: string }) {
     <div className="tool-detail">
       {fp && projectId && root && fp.startsWith(root) && (
         <button className="btn sm ghost" onClick={() => openFileInEditor(projectId, fp.slice(root.length + 1))}>
-          <FileCode2 size={13} /> 在编辑器中打开
+          <FileCode2 size={13} /> Open in editor
         </button>
       )}
       {body}
       {part.result !== undefined && part.result !== '' && (
         <>
-          <div className="tool-sub">{part.status === 'error' ? '错误' : '结果'}</div>
+          <div className="tool-sub">{part.status === 'error' ? 'Error' : 'Result'}</div>
           <pre className={cx('tool-code', part.status === 'error' && 'err')}>{part.result}</pre>
         </>
       )}
@@ -143,7 +143,7 @@ function ToolDetail({ part, root }: { part: ToolPart; root?: string }) {
         <div className="tool-images">
           {part.images.map((u) => (
             <a key={u} href={u} target="_blank" rel="noreferrer">
-              <img src={u} alt="截图" />
+              <img src={u} alt="Screenshot" />
             </a>
           ))}
         </div>
@@ -177,7 +177,7 @@ function ToolRow({ part, root }: { part: ToolPart; root?: string }) {
           <span className="tool-icon">
             <Glyph emoji="✅" size={13} />
           </span>
-          <span className="tool-verb">任务清单</span>
+          <span className="tool-verb">Todo list</span>
         </div>
         <TodoList todos={part.input.todos} />
       </div>
@@ -210,14 +210,16 @@ function ToolGroup({ parts, live, root }: { parts: ToolPart[]; live: boolean; ro
   const running = parts.filter((p) => p.status === 'running').length;
   const errors = parts.filter((p) => p.status === 'error').length;
   const shots = parts.flatMap((p) => p.images || []).slice(-3);
-  const summary = [`${parts.length} 个操作`, edits ? `改了 ${edits} 个文件` : '', commands ? `运行了 ${commands} 条命令` : '', errors ? `${errors} 个出错` : ''].filter(Boolean).join(' · ');
+  const summary = [plural(parts.length, 'action'), edits ? `edited ${plural(edits, 'file')}` : '', commands ? `ran ${plural(commands, 'command')}` : '', errors ? `${errors} failed` : '']
+    .filter(Boolean)
+    .join(' · ');
   const visible = expanded ? parts : [];
   return (
     <div className={cx('tool-group', expanded && 'expanded')}>
       <button className="tool-group-head" onClick={() => setOpen(!expanded)}>
         <ChevronRight size={14} className="chev" />
         {running ? <span className="spinner" /> : <Zap size={13} />}
-        <span>{running ? `正在${toolInfo(parts.find((p) => p.status === 'running')!.name, {}).verb}… · ${summary}` : summary}</span>
+        <span>{running ? `${toolInfo(parts.find((p) => p.status === 'running')!.name, {}).doing}… · ${summary}` : summary}</span>
       </button>
       {expanded && (
         <div className="tool-list">
@@ -229,8 +231,8 @@ function ToolGroup({ parts, live, root }: { parts: ToolPart[]; live: boolean; ro
       {!expanded && shots.length > 0 && (
         <div className="tool-images compact">
           {shots.map((u) => (
-            <a key={u} href={u} target="_blank" rel="noreferrer" title="机器人看到的页面截图">
-              <img src={u} alt="截图" />
+            <a key={u} href={u} target="_blank" rel="noreferrer" title="Page screenshot the bot saw">
+              <img src={u} alt="Screenshot" />
             </a>
           ))}
         </div>
@@ -244,7 +246,7 @@ function ToolGroup({ parts, live, root }: { parts: ToolPart[]; live: boolean; ro
 /** "Bash(git log*)" → "git log"; several joined for the "always allow" button. */
 function ruleNames(rules: string[]): string {
   const names = rules.map((r) => r.replace(/^Bash\((.*?)(:?\*)?\)$/, '$1'));
-  return names.length > 4 ? `${names.slice(0, 4).join('、')} 等 ${names.length} 个` : names.join('、');
+  return names.length > 4 ? `${names.slice(0, 4).join(', ')} and ${names.length - 4} more` : names.join(', ');
 }
 
 function ApprovalCard({ part }: { part: ApprovalPart }) {
@@ -256,7 +258,7 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
     try {
       await api.approve(part.id, d, d === 'deny' ? reason.trim() || undefined : undefined);
     } catch (e) {
-      toast('操作失败', (e as Error).message, 'error');
+      toast('Action failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -269,25 +271,25 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
         <span className="approval-title">{part.title}</span>
         {!pending && (
           <span className={cx('badge', part.status === 'allowed' ? 'green' : part.status === 'denied' ? 'red' : '')}>
-            {part.status === 'allowed' ? '已允许' : part.status === 'denied' ? '已拒绝' : '已失效'}
+            {part.status === 'allowed' ? 'Allowed' : part.status === 'denied' ? 'Denied' : 'Expired'}
           </span>
         )}
       </div>
       {part.detail && <pre className="approval-detail">{part.detail}</pre>}
-      {part.because && <div className="approval-reason">为什么要问：{part.because}</div>}
+      {part.because && <div className="approval-reason">Why approval is needed: {part.because}</div>}
       {part.reason && pending && <div className="approval-reason">{part.reason}</div>}
       {pending && !denying && (
         <div className="approval-actions">
           <button className="btn primary sm" disabled={busy} onClick={() => decide('allow')}>
-            允许
+            Allow
           </button>
           {(part.rules?.length || part.rule) && (
-            <button className="btn sm" disabled={busy} onClick={() => decide('always')} title={`以后自动允许：${(part.rules || [part.rule]).join('、')}`}>
-              总是允许 <code>{ruleNames(part.rules || [part.rule!])}</code>
+            <button className="btn sm" disabled={busy} onClick={() => decide('always')} title={`Auto-allow from now on: ${(part.rules || [part.rule]).join(', ')}`}>
+              Always allow <code>{ruleNames(part.rules || [part.rule!])}</code>
             </button>
           )}
           <button className="btn sm danger" disabled={busy} onClick={() => setDenying(true)}>
-            拒绝
+            Deny
           </button>
         </div>
       )}
@@ -296,16 +298,16 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
           <input
             className="input"
             autoFocus
-            placeholder="告诉它为什么 / 应该怎么做（可选）"
+            placeholder="Tell it why, or what to do instead (optional)"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && decide('deny')}
           />
           <button className="btn sm danger solid" disabled={busy} onClick={() => decide('deny')}>
-            拒绝
+            Deny
           </button>
           <button className="btn sm" onClick={() => setDenying(false)}>
-            返回
+            Back
           </button>
         </div>
       )}
@@ -336,9 +338,9 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
   const revert = async () => {
     if (
       !(await confirmDialog({
-        title: '撤销这一轮的改动？',
-        body: `会把 ${files.length} 个文件恢复到 ${useStore.getState().bots[msg.botId || '']?.name || '机器人'} 修改之前的样子。`,
-        ok: '撤销',
+        title: 'Undo the changes from this turn?',
+        body: `Restores ${plural(files.length, 'file')} to how they were before ${useStore.getState().bots[msg.botId || '']?.name || 'the bot'} changed them.`,
+        ok: 'Undo',
         danger: true,
       }))
     )
@@ -348,21 +350,25 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
       let r = await api.revertTurn(chat.id, msg.turnId!);
       if (r.conflicts.length) {
         const force = await confirmDialog({
-          title: '有文件在之后又被改过',
+          title: 'Some files were changed again later',
           body: (
             <>
-              这些文件在这一轮之后又被修改了：<code>{r.conflicts.join('、')}</code>。强制撤销会覆盖之后的修改。
+              These files were modified again after this turn: <code>{r.conflicts.join(', ')}</code>. Forcing the undo will overwrite those later changes.
             </>
           ),
-          ok: '强制撤销',
+          ok: 'Force undo',
           danger: true,
         });
         if (!force) return;
         r = await api.revertTurn(chat.id, msg.turnId!, true);
       }
-      toast('已撤销', `恢复了 ${r.reverted.length} 个文件${r.skipped.length ? `，${r.skipped.length} 个由命令改动的文件无法自动恢复` : ''}`, 'success');
+      toast(
+        'Undone',
+        `Restored ${plural(r.reverted.length, 'file')}${r.skipped.length ? `; ${plural(r.skipped.length, 'file')} changed by commands couldn't be restored automatically` : ''}`,
+        'success',
+      );
     } catch (e) {
-      toast('撤销失败', (e as Error).message, 'error');
+      toast('Undo failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -371,21 +377,21 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
     <div className="changes-bar">
       <FileCode2 size={13} />
       <button className="link" onClick={() => focusTurn(chat.id, msg.turnId!)}>
-        改动了 {files.length} 个文件
+        Changed {plural(files.length, 'file')}
       </button>
       <span className="files">
         {files
           .slice(0, 3)
           .map((f) => f.split('/').pop())
-          .join('、')}
-        {files.length > 3 ? ' 等' : ''}
+          .join(', ')}
+        {files.length > 3 ? ', …' : ''}
       </span>
       <span className="spacer" />
       {msg.changes?.reverted ? (
-        <span className="badge">已撤销</span>
+        <span className="badge">Undone</span>
       ) : (
-        <button className="btn sm ghost" disabled={busy || msg.status === 'streaming'} onClick={revert} title="撤销这一轮">
-          <Undo2 size={13} /> 撤销
+        <button className="btn sm ghost" disabled={busy || msg.status === 'streaming'} onClick={revert} title="Undo this turn">
+          <Undo2 size={13} /> Undo
         </button>
       )}
     </div>
@@ -405,12 +411,12 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         {showHead && (
           <div className="msg-head">
             <span className="msg-name" style={{ '--bot-color': bot?.color } as CSSProperties}>
-              {bot?.name || '已删除的机器人'}
+              {bot?.name || 'Deleted bot'}
             </span>
-            {by && <span className="msg-meta">回应 @{by}</span>}
+            {by && <span className="msg-meta">replying to @{by}</span>}
             {msg.trigger?.type === 'routine' && (
               <span className="msg-meta">
-                <Clock size={11} /> 定时任务
+                <Clock size={11} /> Routine
               </span>
             )}
             <span className="msg-time">{fmtClock(msg.ts)}</span>
@@ -429,7 +435,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
             b.part.text.trim() ? (
               <details key={b.index} className="thinking">
                 <summary>
-                  <Glyph emoji="💭" size={13} /> 思考过程
+                  <Glyph emoji="💭" size={13} /> Thinking
                 </summary>
                 <div className="thinking-text">{b.part.text}</div>
               </details>
@@ -461,23 +467,23 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         {msg.status === 'error' && (
           <div className="msg-error">
             <AlertTriangle size={14} />
-            <Markdown text={msg.error || '出错了'} />
+            <Markdown text={msg.error || 'Something went wrong'} />
           </div>
         )}
         {msg.status === 'stopped' && (
           <div className="msg-stopped">
-            <CircleSlash size={12} /> {msg.interrupted ? 'Crew 重启时中断了这一轮，写到一半的内容已保留' : '已停止'}
+            <CircleSlash size={12} /> {msg.interrupted ? 'Crew restarted mid-turn; the partial reply was kept' : 'Stopped'}
           </div>
         )}
         <ChangesBar msg={msg} chat={chat} />
         {!live && msg.meta?.durationMs !== undefined && msg.status === 'done' && (
           <div className="msg-foot">
-            用时 {fmtDuration(msg.meta.durationMs)}
+            Took {fmtDuration(msg.meta.durationMs)}
             {msg.meta.model ? ` · ${modelLabel(msg.meta.model)}` : ''}
             {msg.meta.costUsd ? ` · $${msg.meta.costUsd.toFixed(3)}` : ''}
             {msg.meta.trace && (
-              <button className="link-btn" onClick={() => openModal({ kind: 'trace', chatId: msg.chatId, msgId: msg.id })} title="每次模型调用的 token 和内容">
-                <Route size={11} /> 轨迹
+              <button className="link-btn" onClick={() => openModal({ kind: 'trace', chatId: msg.chatId, msgId: msg.id })} title="Tokens and content of each model call">
+                <Route size={11} /> Trace
               </button>
             )}
           </div>
@@ -489,7 +495,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
 
 function renderUserText(text: string, names: string[]) {
   if (!names.length) return text;
-  const re = new RegExp(`(@(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|所有人|all)(?![A-Za-z0-9_-]))`, 'gi');
+  const re = new RegExp(`(@(?:${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|all|everyone)(?![A-Za-z0-9_-]))`, 'gi');
   return text.split(re).map((seg, i) =>
     i % 2 === 1 ? (
       <span key={i} className="mention">
@@ -511,7 +517,7 @@ export const UserMessage = memo(function UserMessage({ msg, chat, names, showTim
           <div className="msg-tags">
             {msg.trigger?.type === 'routine' && (
               <span className="badge accent">
-                <Clock size={11} /> 定时任务
+                <Clock size={11} /> Routine
               </span>
             )}
             {skill && (

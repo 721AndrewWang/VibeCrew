@@ -5,7 +5,7 @@ import { useStore } from '../../../store';
 /** Claude model names, which another provider does not understand. */
 const CLAUDE_MODEL = /^claude-|^(opus|sonnet|haiku|fable)$/i;
 
-const TIER_LABEL = { high: '高档 $$$', mid: '中档 $$', low: '便宜 $' } as const;
+const TIER_LABEL = { high: 'Premium $$$', mid: 'Mid $$', low: 'Cheap $' } as const;
 
 /** Model dropdown with a free-form "custom" option; lists the provider's models when one is used. */
 export function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -18,7 +18,7 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (v: 
     const p = settings.provider;
     const preset = providers.find((x) => x.id === p.preset);
     const ids = [...new Set([p.model, ...(preset?.models || []), p.fastModel].filter(Boolean))];
-    return [{ id: '', label: `跟随连接设置（${p.model || '未设置'}）` }, ...ids.map((id) => ({ id, label: id }))];
+    return [{ id: '', label: `Use connection setting (${p.model || 'not set'})` }, ...ids.map((id) => ({ id, label: id }))];
   }, [viaProvider, claudeModels, settings.provider, providers]);
   // A Claude model chosen earlier is ignored while another provider is used.
   const ignored = viaProvider && CLAUDE_MODEL.test(value);
@@ -44,13 +44,13 @@ export function ModelPicker({ value, onChange }: { value: string; onChange: (v: 
             {(m as ModelOption).tier ? ` · ${TIER_LABEL[(m as ModelOption).tier!]}` : ''}
           </option>
         ))}
-        {!models.some((m) => m.id === '') && <option value="">默认模型</option>}
-        <option value="__custom__">自定义…</option>
+        {!models.some((m) => m.id === '') && <option value="">Default model</option>}
+        <option value="__custom__">Custom…</option>
       </select>
       {custom && (
-        <input className="input mono" value={shown} placeholder={viaProvider ? '服务商的模型 ID' : '模型 ID，例如 claude-sonnet-5 或 opus'} onChange={(e) => onChange(e.target.value.trim())} />
+        <input className="input mono" value={shown} placeholder={viaProvider ? 'Provider model ID' : 'Model ID, e.g. claude-sonnet-5 or opus'} onChange={(e) => onChange(e.target.value.trim())} />
       )}
-      {ignored && <div className="hint">现在用的是其他模型服务商，之前选的 {value} 不会生效，机器人会用连接设置里的主力模型。</div>}
+      {ignored && <div className="hint">Another model provider is in use, so the earlier choice {value} won't apply. The bot will use the main model from the connection settings.</div>}
     </div>
   );
 }

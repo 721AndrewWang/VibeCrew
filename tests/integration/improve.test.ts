@@ -26,14 +26,14 @@ describe('in demo mode', () => {
   });
 
   it('wants more than one request behind a proposal', async () => {
-    await turn('你好');
+    await turn('Hello');
     const r = await crew.api('POST', '/improvements/run');
     expect(r.added).toHaveLength(0);
-    expect(r.dropped[0]).toContain('同一个请求');
+    expect(r.dropped[0]).toContain('a single request');
   });
 
   it('proposes a change tied to real turns, and accepting it changes the bot', async () => {
-    const reply = await turn('再说一句');
+    const reply = await turn('One more thing');
     const r = await crew.api('POST', '/improvements/run');
     expect(r.added).toHaveLength(1);
     const p = r.added[0];
@@ -49,7 +49,7 @@ describe('in demo mode', () => {
   });
 
   it('compares the bot before and after the change', async () => {
-    await turn('再来一次');
+    await turn('Once again');
     const { items, effects } = await crew.api('GET', '/improvements');
     const e = effects[items[0].id];
     expect(e.before.turns).toBe(2);
@@ -66,11 +66,11 @@ describe('in demo mode', () => {
 
   it('remembers a rejection and its reason, and does not propose it again', async () => {
     const p = (await crew.api('POST', '/improvements/run')).added[0];
-    const r = (await crew.api('POST', `/improvements/${p.id}/reject`, { note: 'Chief 需要记得前情' })).improvement;
-    expect([r.status, r.note]).toEqual(['rejected', 'Chief 需要记得前情']);
+    const r = (await crew.api('POST', `/improvements/${p.id}/reject`, { note: 'Chief needs to remember the backstory' })).improvement;
+    expect([r.status, r.note]).toEqual(['rejected', 'Chief needs to remember the backstory']);
     const again = await crew.api('POST', '/improvements/run');
     expect(again.added).toHaveLength(0);
-    expect(again.dropped).toContain('用户拒绝过一样的建议');
+    expect(again.dropped).toContain('The user already rejected the same proposal');
   });
 
   it('voids a proposal when the setting was changed by hand in the meantime', async () => {
@@ -78,7 +78,7 @@ describe('in demo mode', () => {
     await crew.api('PATCH', `/bots/${chief.id}`, { freshSession: true });
     const pixel = (await crew.api('GET', '/bootstrap')).bots.find((x: any) => x.name === 'Pixel');
     const pdm = (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === pixel.id).id;
-    for (const text of ['你好', '再说一句']) {
+    for (const text of ['Hello', 'One more thing']) {
       const sent = await crew.api('POST', `/chats/${pdm}/messages`, { text });
       await waitTurn(crew.api, pdm, sent.seq);
     }
@@ -86,7 +86,7 @@ describe('in demo mode', () => {
     await crew.api('PATCH', `/bots/${pixel.id}`, { freshSession: true });
     const r = await crew.api('POST', `/improvements/${p.id}/accept`);
     expect(r.status).toBe(409);
-    expect(r.error).toContain('被改过了');
+    expect(r.error).toContain('was changed after this proposal');
     expect((await crew.api('GET', '/improvements')).items.find((x: any) => x.id === p.id).status).toBe('stale');
   });
 });
@@ -101,14 +101,14 @@ describe.skipIf(!claudeCli())('with a model', () => {
 
   beforeAll(async () => {
     // The proposer's prompt asks for a JSON array; everything else is an ordinary chat turn.
-    mock = await startMockProvider({ token: TOKEN, reply: (r) => (JSON.stringify(r.body.messages || []).includes('只回复 JSON 数组') ? { text: answer } : { text: '好的。' }) });
+    mock = await startMockProvider({ token: TOKEN, reply: (r) => (JSON.stringify(r.body.messages || []).includes('Reply with only a JSON array') ? { text: answer } : { text: 'OK.' }) });
     crew = await startServer({ fakeAgent: false });
     await crew.api('PATCH', '/settings', { authMode: 'provider', provider: { preset: 'custom', baseUrl: mock.url, model: 'mock-model', fastModel: 'mock-fast' }, providerToken: TOKEN });
     const b = await crew.api('GET', '/bootstrap');
     const chief = b.bots.find((x: any) => x.name === 'Chief');
     const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id).id;
     await crew.api('PATCH', `/chats/${dm}`, { permission: 'auto' });
-    for (const text of ['你好', '再说一句']) {
+    for (const text of ['Hello', 'One more thing']) {
       const sent = await crew.api('POST', `/chats/${dm}/messages`, { text });
       const reply = await waitTurn(crew.api, dm, sent.seq, 120_000);
       if (ref) ref2 = `${dm}/${reply.id}`;
@@ -125,24 +125,24 @@ describe.skipIf(!claudeCli())('with a model', () => {
       bot: 'Pixel',
       field: 'effort',
       after: 'low',
-      rationale: '简单的改动用不着 medium',
-      expected: '更便宜',
+      rationale: 'Simple changes do not need medium',
+      expected: 'Cheaper',
       evidence: [
-        { ref, note: '一次小改动' },
-        { ref: ref2, note: '又一次' },
+        { ref, note: 'A small change' },
+        { ref: ref2, note: 'Another one' },
       ],
     };
     answer = JSON.stringify([
       good,
       { ...good, bot: 'Nobody' },
-      { ...good, bot: 'Lens', field: 'model', after: 'claude-haiku-4-5', evidence: [{ ref: 'c_x/m_none', note: '编的' }] },
+      { ...good, bot: 'Lens', field: 'model', after: 'claude-haiku-4-5', evidence: [{ ref: 'c_x/m_none', note: 'Made up' }] },
       // Past the budget of three: not looked at.
       { ...good, bot: 'Probe', field: 'freshSession', after: true },
     ]);
     const r = await crew.api('POST', '/improvements/run');
     expect(r.status, r.error).toBe(200);
     expect(r.added.map((p: any) => `${p.botName}.${p.field}=${JSON.stringify(p.after)}`)).toEqual(['Pixel.effort="low"']);
-    expect(r.dropped).toEqual(['没有叫 Nobody 的机器人', '引用的证据不存在', '超出每次 3 条的上限，多出的 1 条没看']);
+    expect(r.dropped).toEqual(['No bot named Nobody', "The cited evidence doesn't exist", "Over the limit of 3 per run; the extra 1 weren't looked at"]);
 
     answer = JSON.stringify([
       { ...good, after: 'ultra' },
@@ -153,14 +153,14 @@ describe.skipIf(!claudeCli())('with a model', () => {
         field: 'effort',
         after: 'medium',
         evidence: [
-          { ref, note: '一次' },
-          { ref, note: '同一次' },
+          { ref, note: 'Once' },
+          { ref, note: 'The same one' },
         ],
       },
     ]);
-    expect((await crew.api('POST', '/improvements/run')).dropped).toEqual(['effort 的新值不合法', '已经有一样的建议', expect.stringContaining('同一个请求')]);
+    expect((await crew.api('POST', '/improvements/run')).dropped).toEqual(['Invalid new value for effort', 'The same proposal is already pending', expect.stringContaining('a single request')]);
     // The prompt carried the team, the turn it cited, and the rules.
-    const sent = mock.requests.find((q) => JSON.stringify(q.body).includes('只回复 JSON 数组'))!;
+    const sent = mock.requests.find((q) => JSON.stringify(q.body).includes('Reply with only a JSON array'))!;
     const text = JSON.stringify(sent.body);
     expect(text).toContain(ref.split('/')[1]);
     expect(text).toContain('### Probe');
@@ -172,7 +172,7 @@ describe.skipIf(!claudeCli())('with a model', () => {
     expect((await edit('ultra')).status).toBe(400);
     const same = await edit('medium'); // what Pixel has now
     expect(same.status).toBe(400);
-    expect(same.error).toContain('和现在一样');
+    expect(same.error).toContain('same as the current value');
     const r = (await edit('high')).improvement;
     expect([r.after, r.original]).toEqual(['high', 'low']);
     expect((await edit('max')).improvement.original).toBe('low'); // the model's value is kept once
@@ -184,14 +184,14 @@ describe.skipIf(!claudeCli())('with a model', () => {
     answer = '[]';
     mock.requests.length = 0;
     await crew.api('POST', '/improvements/run');
-    const sent = JSON.stringify(mock.requests.find((q) => JSON.stringify(q.body).includes('只回复 JSON 数组'))!.body);
-    expect(sent).toContain('模型提的是 \\"low\\"');
+    const sent = JSON.stringify(mock.requests.find((q) => JSON.stringify(q.body).includes('Reply with only a JSON array'))!.body);
+    expect(sent).toContain('the model proposed \\"low\\"');
   });
 
   it('says so when the model answers out of format', async () => {
-    answer = '我觉得都挺好的';
+    answer = 'I think it all looks fine';
     const r = await crew.api('POST', '/improvements/run');
     expect(r.status).toBe(502);
-    expect(r.error).toContain('格式');
+    expect(r.error).toContain('format');
   });
 });

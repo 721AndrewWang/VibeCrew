@@ -35,10 +35,10 @@ afterAll(async () => {
 describe('after a crash mid-turn', () => {
   it('keeps and labels the interrupted turn, and commits what the workspace had', async () => {
     expect(JSON.parse(fs.readFileSync(path.join(crew.home, 'settings.json'), 'utf8')).schemaVersion).toBeGreaterThanOrEqual(1);
-    await crew.api('POST', `/chats/${chatId}/messages`, { text: '帮我做一个页面' });
+    await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Please make a page' });
     // The turn blocks at the first approval; its progress so far reaches the disk within seconds.
     const saved = await waitFor(() => onDisk(chatId).find((m) => m.role === 'bot' && m.status === 'streaming' && m.parts?.some((p: any) => p.type === 'approval')), 15_000);
-    expect(saved.parts.some((p: any) => p.type === 'text' && p.text.includes('演示模式'))).toBe(true);
+    expect(saved.parts.some((p: any) => p.type === 'text' && p.text.toLowerCase().includes('demo mode'))).toBe(true);
 
     await crew.kill();
     fs.writeFileSync(path.join(worktree, 'half-done.txt'), 'written just before the crash\n');
@@ -49,18 +49,18 @@ describe('after a crash mid-turn', () => {
     expect(turn.status).toBe('stopped');
     expect(turn.interrupted).toBe(true);
     expect(turn.parts.find((p: any) => p.type === 'approval').status).toBe('expired');
-    expect(turn.parts.find((p: any) => p.type === 'text').text).toContain('演示模式');
+    expect(turn.parts.find((p: any) => p.type === 'text').text).toMatch(/demo mode/i);
     expect(onDisk(chatId).some((m) => m.id === saved.id && m.interrupted)).toBe(true);
     expect((await crew.api('GET', '/bootstrap')).statuses).not.toHaveProperty(turn.botId + '.state', 'waiting');
 
-    expect(git(worktree, crew.env, 'log', '-1', '--format=%s')).toBe('恢复：上次中断前未提交的改动');
+    expect(git(worktree, crew.env, 'log', '-1', '--format=%s')).toBe('Recovered: uncommitted changes from before the last interruption');
     expect(git(worktree, crew.env, 'status', '--porcelain')).toBe('');
-    expect(messages.some((m: any) => m.role === 'system' && m.text.includes('已经提交到分支上了'))).toBe(true);
+    expect(messages.some((m: any) => m.role === 'system' && m.text.includes('committed to the branch'))).toBe(true);
   });
 
   it('the chat works again: a new message gets a reply', async () => {
     await crew.api('PATCH', `/chats/${chatId}`, { permission: 'auto' });
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '你好' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Hello' });
     const reply = await waitFor(async () => {
       const { messages } = await crew.api('GET', `/chats/${chatId}/messages?limit=30`);
       return messages.find((m: any) => m.role === 'bot' && m.seq > sent.seq && m.status === 'done');

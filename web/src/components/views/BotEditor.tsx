@@ -15,10 +15,10 @@ import { PluginsTab } from './bot-editor/PluginsTab';
 type Tab = 'basic' | 'perm' | 'plugins' | 'memory';
 
 const TABS: { id: Tab; label: string; icon: typeof Brain }[] = [
-  { id: 'basic', label: '基本', icon: UserRound },
-  { id: 'perm', label: '权限', icon: Shield },
-  { id: 'plugins', label: '插件', icon: Puzzle },
-  { id: 'memory', label: '记忆', icon: Brain },
+  { id: 'basic', label: 'Basics', icon: UserRound },
+  { id: 'perm', label: 'Permissions', icon: Shield },
+  { id: 'plugins', label: 'Plugins', icon: Puzzle },
+  { id: 'memory', label: 'Memory', icon: Brain },
 ];
 
 export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: () => void }) {
@@ -48,7 +48,7 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
       .catch((e) => {
         if (cancelled) return;
         setMemory('');
-        toast('加载记忆失败', (e as Error).message, 'error');
+        toast('Could not load memory', (e as Error).message, 'error');
       });
     return () => {
       cancelled = true;
@@ -67,9 +67,9 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
     try {
       await api.saveMemory(botId, memory);
       setMemoryOrig(memory);
-      toast('记忆已保存', undefined, 'success');
+      toast('Memory saved', undefined, 'success');
     } catch (e) {
-      toast('保存记忆失败', (e as Error).message, 'error');
+      toast('Could not save memory', (e as Error).message, 'error');
     } finally {
       setMemoryBusy(false);
     }
@@ -78,26 +78,26 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
   const save = async () => {
     if (!nameOk) {
       setTab('basic');
-      toast('名字不合法', '只能包含字母、数字、中文、下划线或连字符（最多 24 个字符），不能有空格', 'error');
+      toast('Invalid name', 'Use only letters, digits, underscores or hyphens (up to 24 characters), no spaces', 'error');
       return;
     }
     let mcpServers: Record<string, McpServerEntry> = {};
     if (mcpText.trim()) {
       try {
         const v = JSON.parse(mcpText);
-        if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('需要是一个对象：{ "名字": { … } }');
+        if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Must be an object: { "name": { … } }');
         mcpServers = v;
       } catch (e) {
         setTab('plugins');
-        toast('自定义 MCP 服务器配置有误', (e as Error).message, 'error');
+        toast('Custom MCP server config is invalid', (e as Error).message, 'error');
         return;
       }
     }
     if (draft.projectId !== bot.projectId && dmOf(botId)?.workspaceId) {
       const ok = await confirmDialog({
-        title: '切换项目？',
-        body: `和 ${bot.name} 的单聊正在独立工作区里工作，切换项目会关闭这个工作区。还没合并的改动会保留在它的分支里。`,
-        ok: '切换',
+        title: 'Switch project?',
+        body: `The direct chat with ${bot.name} is working in an isolated workspace. Switching projects closes that workspace. Unmerged changes stay on its branch.`,
+        ok: 'Switch',
       });
       if (!ok) return;
     }
@@ -120,10 +120,10 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
         mcpServers,
       });
       if (memoryDirty && memory !== null) await api.saveMemory(botId, memory);
-      toast(`已保存 ${draft.name.trim()} 的设置`, undefined, 'success');
+      toast(`Saved settings for ${draft.name.trim()}`, undefined, 'success');
       onClose();
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -135,21 +135,21 @@ export function BotEditorDialog({ botId, onClose }: { botId: string; onClose: ()
 
   return (
     <Modal
-      title={`${bot.name} 的设置`}
+      title={`${bot.name} settings`}
       icon={<Avatar bot={draft} size={32} />}
       onClose={onClose}
       wide
       footer={
         <>
           <button className="btn danger foot-left" onClick={remove}>
-            <Trash2 size={15} /> 删除机器人
+            <Trash2 size={15} /> Delete bot
           </button>
           <span className="spacer" />
           <button className="btn" onClick={onClose}>
-            取消
+            Cancel
           </button>
           <button className="btn primary" disabled={saving} onClick={save}>
-            {saving ? <span className="spinner" /> : <Save size={15} />} 保存
+            {saving ? <span className="spinner" /> : <Save size={15} />} Save
           </button>
         </>
       }

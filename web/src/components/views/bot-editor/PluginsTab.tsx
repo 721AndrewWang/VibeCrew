@@ -15,9 +15,9 @@ function PluginSecret({ name, stored, onSaved }: { name: string; stored: boolean
       await api.updateSettings({ pluginSecrets: { [name]: v } });
       onSaved(name, !!v);
       setValue('');
-      toast(v ? `已保存 ${name}` : `已清除 ${name}`, undefined, 'success');
+      toast(v ? `Saved ${name}` : `Cleared ${name}`, undefined, 'success');
     } catch (e) {
-      toast('保存失败', (e as Error).message, 'error');
+      toast('Save failed', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -26,22 +26,22 @@ function PluginSecret({ name, stored, onSaved }: { name: string; stored: boolean
     <div className="secret-row">
       <KeyRound size={14} className="muted" />
       <span className="mono secret-name">{name}</span>
-      {stored && <span className="badge green">已设置</span>}
+      {stored && <span className="badge green">Set</span>}
       <input
         className="input mono"
         type="password"
         autoComplete="off"
         value={value}
-        placeholder={stored ? '输入新值可替换' : `填写 ${name}`}
+        placeholder={stored ? 'Enter a new value to replace' : `Enter ${name}`}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && value && void save(value)}
       />
       <button className="btn sm" disabled={!value || busy} onClick={() => save(value)}>
-        保存
+        Save
       </button>
       {stored && (
         <button className="btn sm ghost danger" disabled={busy} onClick={() => save('')}>
-          清除
+          Clear
         </button>
       )}
     </div>
@@ -75,7 +75,7 @@ export function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; 
   if (mcpText.trim()) {
     try {
       const v = JSON.parse(mcpText);
-      if (!v || typeof v !== 'object' || Array.isArray(v)) jsonError = '需要是一个对象：{ "名字": { … } }';
+      if (!v || typeof v !== 'object' || Array.isArray(v)) jsonError = 'Must be an object: { "name": { … } }';
     } catch (e) {
       jsonError = (e as Error).message;
     }
@@ -99,7 +99,7 @@ export function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; 
                       <div className="plugin-name">{p.name}</div>
                       <div className="plugin-desc">{p.description}</div>
                     </div>
-                    <Toggle on={on} onChange={(v) => toggle(p.id, v)} title={on ? '已启用' : '未启用'} />
+                    <Toggle on={on} onChange={(v) => toggle(p.id, v)} title={on ? 'Enabled' : 'Disabled'} />
                   </div>
                   {p.needs?.length ? (
                     <div className="plugin-secrets">
@@ -118,7 +118,7 @@ export function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; 
                           }
                         />
                       ))}
-                      <div className="hint">密钥保存在本机的 Crew 设置里，所有机器人共用，不会写进项目。</div>
+                      <div className="hint">Keys are stored in Crew settings on this machine, shared by all bots, and never written into projects.</div>
                     </div>
                   ) : null}
                 </div>
@@ -135,8 +135,8 @@ export function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; 
               <UserRound size={18} />
             </span>
             <div className="plugin-text">
-              <div className="plugin-name">加载我的 Claude Code 用户设置</div>
-              <div className="plugin-desc">包括 ~/.claude 里的 MCP 服务器、插件、技能和 CLAUDE.md</div>
+              <div className="plugin-name">Load my Claude Code user settings</div>
+              <div className="plugin-desc">Includes MCP servers, plugins, skills and CLAUDE.md from ~/.claude</div>
             </div>
             <Toggle on={draft.loadUserSettings} onChange={(v) => patch({ loadUserSettings: v })} />
           </div>
@@ -144,9 +144,9 @@ export function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; 
       </div>
 
       <div className="field" style={{ marginTop: 18 }}>
-        <label>自定义 MCP 服务器</label>
+        <label>Custom MCP servers</label>
         <div className="hint">
-          JSON 格式，和 Claude Code 的 <span className="mono">mcpServers</span> 配置相同。例如：
+          JSON, same as the Claude Code <span className="mono">mcpServers</span> config. For example:
           <code className="inline-code">{'{"my-server": {"type":"stdio","command":"npx","args":["-y","some-mcp"]}}'}</code>
         </div>
         <textarea
@@ -157,7 +157,7 @@ export function PluginsTab({ draft, patch, mcpText, setMcpText }: { draft: Bot; 
           placeholder={'{\n  "my-server": {\n    "type": "stdio",\n    "command": "npx",\n    "args": ["-y", "some-mcp"]\n  }\n}'}
           onChange={(e) => setMcpText(e.target.value)}
         />
-        {jsonError && <div className="hint error-text">JSON 有误：{jsonError}</div>}
+        {jsonError && <div className="hint error-text">Invalid JSON: {jsonError}</div>}
       </div>
     </div>
   );

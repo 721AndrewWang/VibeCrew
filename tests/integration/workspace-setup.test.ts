@@ -87,11 +87,11 @@ describe('a new workspace', () => {
   });
 
   it('runs the setup command before the bots, holding messages meanwhile', async () => {
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '改一下 src/app.txt' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Make a change to src/app.txt' });
     await waitFor(async () => (await crew.api('GET', '/bootstrap')).statuses?.[botId]?.state === 'queued', 5000, 100);
     const merging = await crew.api('POST', `/chats/${chatId}/workspace/merge`, { message: 'x' });
     expect(merging.status).toBe(409);
-    expect(merging.error).toMatch(/准备/);
+    expect(merging.error).toMatch(/prepar/i);
     await waitTurn(crew.api, chatId, sent.seq);
     expect(has('frontend/node_modules/.setup-done')).toBe(true);
     const { messages } = await crew.api('GET', `/chats/${chatId}/messages?limit=30`);
@@ -99,10 +99,10 @@ describe('a new workspace', () => {
       .filter((m: any) => m.role === 'system')
       .map((m: any) => m.text)
       .join('\n');
-    expect(sys).toMatch(/已带上 git 之外的本地文件：.*CLAUDE\.md/);
+    expect(sys).toMatch(/Brought along local files that aren't in git: .*CLAUDE\.md/);
     expect(sys).not.toContain('.pending-validation');
-    expect(sys).toContain('正在准备工作区');
-    const ready = messages.find((m: any) => m.text?.includes('工作区准备好了'));
+    expect(sys).toContain('Preparing the workspace');
+    const ready = messages.find((m: any) => m.text?.includes('The workspace is ready'));
     const reply = messages.filter((m: any) => m.role === 'bot').at(-1);
     expect(ready).toBeTruthy();
     // By sequence: under load both can share a millisecond.
@@ -112,7 +112,7 @@ describe('a new workspace', () => {
   it('needs a written message to merge when the project has commit rules, and uses it as is', async () => {
     const noMsg = await crew.api('POST', `/chats/${chatId}/workspace/merge`, {});
     expect(noMsg.status).toBe(400);
-    expect(noMsg.error).toMatch(/提交信息有要求/);
+    expect(noMsg.error).toMatch(/rules for commit messages/);
     const msg = 'Fix the demo page title\n\nThe title was stale after the rename.';
     expect((await crew.api('POST', `/chats/${chatId}/workspace/merge`, { message: msg })).ok).toBe(true);
     expect(git(repo, crew.env, 'log', '-1', '--format=%B')).toBe(msg);
@@ -120,7 +120,7 @@ describe('a new workspace', () => {
 
   it('adds no Crew footer with attribution off', async () => {
     await crew.api('PATCH', `/projects/${projectId}`, { commitGuide: '', noAttribution: true, setupCommand: '' });
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '再改一下' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Make one more change' });
     await waitTurn(crew.api, chatId, sent.seq);
     expect((await crew.api('POST', `/chats/${chatId}/workspace/merge`, { message: 'Second change' })).ok).toBe(true);
     expect(git(repo, crew.env, 'log', '-1', '--format=%B')).not.toMatch(/Crew/);
@@ -143,7 +143,7 @@ describe('a failing setup command', () => {
       .filter((m: any) => m.role === 'system')
       .map((m: any) => m.text)
       .join('\n');
-    expect(sys).toMatch(/退出码 3/);
+    expect(sys).toMatch(/exit code 3/);
     expect(sys).toContain('boom');
   });
 });

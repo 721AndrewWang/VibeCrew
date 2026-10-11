@@ -16,21 +16,21 @@ export async function doSync(chatId: string): Promise<WorkspaceMergeResult> {
     const unresolved = await unresolvedConflicts(info.worktree);
     if (unresolved.length) return { ok: false, conflicts: unresolved };
     // Every conflict is fixed but not committed yet: conclude the merge.
-    await saveWork(info, `Crew：同步 ${info.baseBranch} 的最新改动`);
-    systemMessage(chat, `已完成和 ${info.baseBranch} 的同步。`);
+    await saveWork(info, `Crew: sync the latest changes from ${info.baseBranch}`);
+    systemMessage(chat, `Finished syncing with ${info.baseBranch}.`);
     return { ok: true, commit: (await revParse(info.worktree, 'HEAD')).slice(0, 7), files: 0 };
   }
-  await saveWork(info, 'Crew：同步前保存改动');
+  await saveWork(info, 'Crew: save changes before syncing');
   const before = await revParse(info.worktree, 'HEAD');
-  if (!(await count(info.worktree, `HEAD..${baseRef}`))) throw new HttpError(409, `已经是最新的了，${info.baseBranch} 没有新的提交`);
+  if (!(await count(info.worktree, `HEAD..${baseRef}`))) throw new HttpError(409, `Already up to date: ${info.baseBranch} has no new commits`);
   try {
-    await gitIn(info.worktree, ['-c', 'commit.gpgsign=false', 'merge', '--no-verify', '--no-edit', '-q', '-m', `Crew：同步 ${info.baseBranch} 的最新改动`, baseRef]);
+    await gitIn(info.worktree, ['-c', 'commit.gpgsign=false', 'merge', '--no-verify', '--no-edit', '-q', '-m', `Crew: sync the latest changes from ${info.baseBranch}`, baseRef]);
   } catch (e) {
     if (await isMerging(info.worktree)) return { ok: false, conflicts: await unresolvedConflicts(info.worktree) };
-    throw new HttpError(500, `同步失败：${gitError(e)}`);
+    throw new HttpError(500, `Sync failed: ${gitError(e)}`);
   }
   const changed = zList(await gitIn(info.worktree, ['diff', '--name-only', '-z', before, 'HEAD'])).length;
-  systemMessage(chat, `已把 ${info.baseBranch} 的最新改动同步到这个工作区（${changed} 个文件）。`);
+  systemMessage(chat, `Synced the latest changes from ${info.baseBranch} into this workspace (${changed} files).`);
   return { ok: true, commit: (await revParse(info.worktree, 'HEAD')).slice(0, 7), files: changed };
 }
 
@@ -43,9 +43,9 @@ export async function doResolve(chatId: string): Promise<{ started: boolean; con
   const lead = chat.kind === 'group' ? bots.get(chat.leadBotId) || bots.get(chat.botIds[0]) : null;
   const text = [
     lead ? `@${lead.name}` : '',
-    `我在工作区里合并了 ${info.baseBranch} 的最新改动，这些文件有冲突：${conflicts.join('、')}。`,
-    '请处理这些冲突：文本文件里的 <<<<<<< / ======= / >>>>>>> 标记要去掉，两边的改动按意图合在一起；二进制文件，或者一边删除一边修改的文件，决定保留哪个版本后用 git add（保留）或 git rm（删除）标记为已解决。改完检查一下页面和构建是否正常。',
-    '不需要自己提交，Crew 会在这一轮结束后自动提交并完成这次合并。',
+    `I merged the latest changes from ${info.baseBranch} into the workspace, and these files have conflicts: ${conflicts.join(', ')}.`,
+    'Please resolve these conflicts. In text files, remove the <<<<<<< / ======= / >>>>>>> markers and combine both sides according to what each change was meant to do. For binary files, or files deleted on one side and changed on the other, decide which version to keep, then mark it resolved with git add (keep) or git rm (delete). When done, check that the pages and the build still work.',
+    'No need to commit yourself: Crew will commit and finish the merge automatically when this round ends.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -58,7 +58,7 @@ export async function doAbort(chatId: string) {
   const { chat, info } = requireWorkspace(chatId);
   if (!(await isMerging(info.worktree))) return;
   await gitIn(info.worktree, ['merge', '--abort']);
-  systemMessage(chat, `已放弃这次和 ${info.baseBranch} 的同步，工作区恢复到同步之前的样子。`);
+  systemMessage(chat, `Abandoned this sync with ${info.baseBranch}. The workspace is back to how it was before the sync.`);
 }
 
 /** The Git section's "commit all" inside a workspace: same conflict guard as the automatic commits. */
@@ -68,7 +68,7 @@ export async function doCommit(chatId: string, message: string) {
   try {
     r = await autoCommit(info.worktree, message);
   } catch (e) {
-    throw new HttpError(500, `提交失败：${gitError(e)}`);
+    throw new HttpError(500, `Commit failed: ${gitError(e)}`);
   }
-  if (r.unresolved?.length) throw new HttpError(409, `还有冲突没解决：${r.unresolved.join('、')}`);
+  if (r.unresolved?.length) throw new HttpError(409, `There are still unresolved conflicts: ${r.unresolved.join(', ')}`);
 }

@@ -102,7 +102,7 @@ export function LiveTerminal({ id, projectId, command, active }: { id: string; p
     }
     const off = onTerminal(id, {
       data: (d) => t.write(d),
-      exit: (code) => t.write(`\r\n\x1b[90m[进程已退出${code !== null ? `，代码 ${code}` : ''}]\x1b[0m\r\n`),
+      exit: (code) => t.write(`\r\n\x1b[90m[Process exited${code !== null ? ` with code ${code}` : ''}]\x1b[0m\r\n`),
     });
     send({ t: 'term_open', id, projectId, cols: t.cols || 80, rows: t.rows || 24, command });
     const sub = t.onData((d) => send({ t: 'term_input', id, data: d }));

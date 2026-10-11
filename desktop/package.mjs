@@ -4,8 +4,7 @@ import { ensureElectron } from './electron-bin.mjs';
 
 // electron-builder copies Electron from node_modules (build.electronDist), so it must be downloaded.
 ensureElectron();
-// The AppImage tooling is fetched on first use; the mirror is much faster here than GitHub.
-process.env.ELECTRON_BUILDER_BINARIES_MIRROR ||= 'https://npmmirror.com/mirrors/electron-builder-binaries/';
+// The AppImage tooling is fetched on first use (set ELECTRON_BUILDER_BINARIES_MIRROR to use a mirror).
 
 const files = await build({ targets: Platform.LINUX.createTarget('AppImage'), publish: 'never' });
 for (const f of files) console.log(`\n✅ ${f}`);

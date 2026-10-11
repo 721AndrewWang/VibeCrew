@@ -54,8 +54,8 @@ test('window, tray and installed Dock icons follow the logo setting', async () =
     await expect.poll(() => log(), { timeout: 15_000 }).toContain('logo: orbit');
 
     // Changed in the window's own Settings page.
-    await win.locator('.sb-nav-item[title="设置"]').click();
-    await win.locator('.logo-choice', { hasText: '声波' }).click();
+    await win.locator('.sb-nav-item[title="Settings"]').click();
+    await win.locator('.logo-choice', { hasText: /wave/i }).click();
     await expect.poll(() => themeIs('wave'), { timeout: 15_000 }).toBe(true);
     expect(await win.locator('.brand .logo').innerHTML()).toContain('M42 48V80');
     await app.close();
@@ -133,7 +133,7 @@ test('refuses to start next to a running VibeCrew, moving nothing', async () => 
       });
     });
     expect(code).toBe(0);
-    expect(out).toContain('旧版 VibeCrew');
+    expect(out).toContain('old VibeCrew');
     expect(fs.existsSync(path.join(home, '.vibecrew'))).toBe(true);
     expect(fs.existsSync(path.join(home, '.config', 'VibeCrew', 'marker.txt'))).toBe(true);
     expect(fs.existsSync(path.join(home, '.crew'))).toBe(false);

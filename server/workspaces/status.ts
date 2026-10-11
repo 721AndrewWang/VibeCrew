@@ -62,7 +62,7 @@ export async function workspaceDiff(chatId: string, rel: string): Promise<string
   const { info } = requireWorkspace(chatId);
   const root = path.resolve(info.worktree);
   const abs = path.resolve(root, rel);
-  if (!abs.startsWith(root + path.sep)) throw new HttpError(400, '路径超出工作区');
+  if (!abs.startsWith(root + path.sep)) throw new HttpError(400, 'Path is outside the workspace');
   const base = await mergeBase(info);
   const out = await gitIn(root, ['diff', '-M', base, '--', rel]).catch(() => '');
   if (out) return out;

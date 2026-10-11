@@ -68,9 +68,9 @@ export function App() {
         <Logo size={56} />
         {bootError ? (
           <>
-            <div>无法连接到 Crew 服务：{bootError}</div>
+            <div>Can't reach the Crew server: {bootError}</div>
             <button className="btn" onClick={() => location.reload()}>
-              重试
+              Retry
             </button>
           </>
         ) : (
@@ -93,7 +93,7 @@ export function App() {
       </main>
       <Modals />
       <Toasts />
-      {!connected && <div className="offline-bar">与 Crew 的连接已断开，正在重连…</div>}
+      {!connected && <div className="offline-bar">Lost connection to Crew. Reconnecting…</div>}
     </div>
   );
 }

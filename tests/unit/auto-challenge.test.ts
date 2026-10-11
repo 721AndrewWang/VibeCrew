@@ -9,17 +9,17 @@ const f = (p: string, added = 1, removed = 0) => ({ path: p, added, removed });
 describe('ruleReasons', () => {
   const rules = defaultAutoChallenge();
   it('names the files and the rule that matched', () => {
-    expect(ruleReasons([f('src/styles.css'), f('index.html')], rules)).toEqual(['改了 src/styles.css（规则 **/*.css）']);
+    expect(ruleReasons([f('src/styles.css'), f('index.html')], rules)).toEqual(['Changed src/styles.css (rule **/*.css)']);
     expect(ruleReasons([f('server/auth/login.ts')], rules)[0]).toContain('**/auth/**');
     expect(ruleReasons([f('package.json')], rules).length).toBeGreaterThan(0);
   });
   it('counts lines added and removed against the size rule', () => {
-    expect(ruleReasons([f('a.ts', 100, 60)], rules)).toEqual(['一共改了 160 行（规则：至少 150 行）']);
+    expect(ruleReasons([f('a.ts', 100, 60)], rules)).toEqual(['Changed 160 lines in total (rule: at least 150 lines)']);
     expect(ruleReasons([f('a.ts', 100, 40)], rules)).toEqual([]);
     expect(ruleReasons([f('a.ts', 900, 0)], { ...rules, minLines: 0 })).toEqual([]);
   });
   it('shortens a long list of files', () => {
-    expect(ruleReasons([f('a.css'), f('b.css'), f('c.css'), f('d.css')], { ...rules, minLines: 0 })[0]).toContain('等 4 个文件');
+    expect(ruleReasons([f('a.css'), f('b.css'), f('c.css'), f('d.css')], { ...rules, minLines: 0 })[0]).toContain('and others (4 files)');
   });
 });
 
@@ -44,7 +44,7 @@ describe('autoChallengeReasons', () => {
     fs.writeFileSync(path.join(repo, 'index.html'), '<h1>hello</h1>\n');
     expect(await autoChallengeReasons(chat, project, rules)).toBeNull(); // changed, but no rule matches
     fs.appendFileSync(path.join(repo, 'styles.css'), 'p {}\n');
-    expect(await autoChallengeReasons(chat, project, rules)).toEqual(['改了 styles.css（规则 **/*.css）']);
+    expect(await autoChallengeReasons(chat, project, rules)).toEqual(['Changed styles.css (rule **/*.css)']);
     expect(await autoChallengeReasons(chat, project, rules)).toBeNull(); // the same state again
     fs.appendFileSync(path.join(repo, 'styles.css'), 'a {}\n');
     expect(await autoChallengeReasons(chat, project, rules)).not.toBeNull(); // a fix: second look

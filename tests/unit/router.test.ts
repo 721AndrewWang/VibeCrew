@@ -13,8 +13,8 @@ describe('parseProbs', () => {
   });
   it('refuses missing names, bad numbers and sums far from 1', () => {
     expect(() => parseProbs('{"probabilities": {"Chief": 1}}', order)).toThrow('Pixel');
-    expect(() => parseProbs('{"probabilities": {"Chief": 0.9, "Pixel": 0.9}}', order)).toThrow('加起来');
-    expect(() => parseProbs('都可以', order)).toThrow();
+    expect(() => parseProbs('{"probabilities": {"Chief": 0.9, "Pixel": 0.9}}', order)).toThrow('add up');
+    expect(() => parseProbs('Either is fine', order)).toThrow();
   });
 });
 

@@ -6,14 +6,14 @@ import { saveUpload } from '../uploads';
 const MAX_RESULT = 6000;
 
 const ERROR_TEXT: Record<string, string> = {
-  authentication_failed: 'Claude Code 未登录或登录已过期。请在终端运行 `claude auth login` 登录，或在「设置」里改用 API Key。',
-  oauth_org_not_allowed: '当前账号所在的组织不允许这种登录方式，请在「设置」里改用 API Key。',
-  billing_error: '账户余额或订阅有问题，请检查你的 Claude 账户。',
-  rate_limit: '触发了用量限制，请稍后再试。',
-  overloaded: '模型服务繁忙，请稍后重试。',
-  model_not_found: '找不到设置的模型，请在机器人设置里换一个模型。',
-  invalid_request: '请求无效（可能是模型名或参数不被支持）。',
-  max_output_tokens: '回复太长被截断了。',
+  authentication_failed: 'Claude Code is not logged in, or the login has expired. Run `claude auth login` in a terminal, or switch to an API key in Settings.',
+  oauth_org_not_allowed: "Your account's organization doesn't allow this login method. Switch to an API key in Settings.",
+  billing_error: 'There is a problem with your balance or subscription. Please check your Claude account.',
+  rate_limit: 'Hit a usage limit. Please try again later.',
+  overloaded: 'The model service is busy. Please try again later.',
+  model_not_found: 'The configured model was not found. Pick a different model in the bot settings.',
+  invalid_request: 'Invalid request (the model name or a parameter may not be supported).',
+  max_output_tokens: 'The reply was too long and got cut off.',
 };
 
 function toolResultText(content: unknown): { text: string; images: { data: string; mime: string }[] } {
@@ -148,7 +148,7 @@ export class TurnStream {
           if (!part) continue;
           const { text, images } = toolResultText(b.content);
           part.status = b.is_error ? 'error' : 'done';
-          part.result = text.length > MAX_RESULT ? text.slice(0, MAX_RESULT) + `\n…（共 ${text.length} 字符）` : text;
+          part.result = text.length > MAX_RESULT ? text.slice(0, MAX_RESULT) + `\n…(${text.length} characters in total)` : text;
           part.endedAt = Date.now();
           if (images.length) part.images = images.slice(0, 4).map((img) => saveUpload(Buffer.from(img.data, 'base64'), img.mime, 'screenshot').url);
           this.updatePart(part);
@@ -158,7 +158,7 @@ export class TurnStream {
       }
       case 'system': {
         const sub = (m as any).subtype;
-        if (sub === 'status' && (m as any).status === 'compacting') this.onActivity('thinking', '整理上下文…');
+        if (sub === 'status' && (m as any).status === 'compacting') this.onActivity('thinking', 'Compacting context…');
         return;
       }
       case 'tool_progress': {
@@ -198,7 +198,10 @@ export class TurnStream {
       this.msg.status = 'error';
       const resultText = result.subtype === 'success' ? (result as any).result : '';
       this.msg.error =
-        (this.errorCode && ERROR_TEXT[this.errorCode]) || (result.subtype === 'error_max_turns' ? '达到了最大轮数限制。' : '') || (typeof resultText === 'string' && resultText) || '执行出错。';
+        (this.errorCode && ERROR_TEXT[this.errorCode]) ||
+        (result.subtype === 'error_max_turns' ? 'Reached the maximum number of turns.' : '') ||
+        (typeof resultText === 'string' && resultText) ||
+        'Something went wrong.';
       this.closeOpenTools('error');
     } else {
       this.msg.status = 'done';
@@ -211,7 +214,7 @@ export class TurnStream {
     if (this.stopped) this.msg.status = 'stopped';
     else {
       this.msg.status = 'error';
-      this.msg.error = /ENOENT|spawn/.test(text) ? `无法启动 Claude Code：${text}。请确认已安装 Claude Code（npm i -g @anthropic-ai/claude-code），或设置 CREW_CLAUDE_PATH。` : text;
+      this.msg.error = /ENOENT|spawn/.test(text) ? `Could not start Claude Code: ${text}. Make sure Claude Code is installed (npm i -g @anthropic-ai/claude-code), or set CREW_CLAUDE_PATH.` : text;
     }
     this.closeOpenTools('error');
   }

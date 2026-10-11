@@ -15,11 +15,11 @@ export function RuleList({ label, hint, value, onChange, tone }: { label: string
       <label>{label}</label>
       {hint && <div className="hint">{hint}</div>}
       <div className={cx('rule-box', tone)}>
-        {value.length === 0 && <span className="muted rule-empty">（没有规则）</span>}
+        {value.length === 0 && <span className="muted rule-empty">(no rules)</span>}
         {value.map((r) => (
           <span key={r} className="rule-tag mono">
             {r}
-            <button type="button" aria-label="移除" onClick={() => onChange(value.filter((x) => x !== r))}>
+            <button type="button" aria-label="Remove" onClick={() => onChange(value.filter((x) => x !== r))}>
               <X size={12} />
             </button>
           </span>
@@ -29,7 +29,7 @@ export function RuleList({ label, hint, value, onChange, tone }: { label: string
         <input
           className="input mono"
           value={text}
-          placeholder="例如 Bash(npm run *)"
+          placeholder="e.g. Bash(npm run *)"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -39,7 +39,7 @@ export function RuleList({ label, hint, value, onChange, tone }: { label: string
           }}
         />
         <button className="btn" disabled={!text.trim()} onClick={add}>
-          <Plus size={14} /> 添加
+          <Plus size={14} /> Add
         </button>
       </div>
     </div>

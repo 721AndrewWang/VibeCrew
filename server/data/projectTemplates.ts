@@ -11,13 +11,13 @@ const GITIGNORE = 'node_modules\ndist\n.DS_Store\n.env\n.env.*\n!.env.example\nt
 export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: 'static',
-    name: '静态网页',
-    description: 'HTML + CSS + JS，无需安装，保存即刷新',
+    name: 'Static web page',
+    description: 'HTML + CSS + JS, nothing to install, refreshes on save',
     needsInstall: false,
     files: (title) => ({
       '.gitignore': GITIGNORE,
       'index.html': `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -28,9 +28,9 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     <main class="hero">
       <p class="eyebrow">Crew</p>
       <h1>${title}</h1>
-      <p class="lead">这是一个空白的起点。在左边告诉你的机器人小队想做什么，它们会在这里把页面做出来。</p>
-      <button id="cta" class="btn">点我试试</button>
-      <p id="count" class="muted">还没有点击</p>
+      <p class="lead">This is a blank starting point. Tell your bot crew on the left what you want to build, and they will build the page here.</p>
+      <button id="cta" class="btn">Click me</button>
+      <p id="count" class="muted">No clicks yet</p>
     </main>
     <script src="main.js"></script>
   </body>
@@ -121,20 +121,20 @@ let n = 0;
 
 btn.addEventListener('click', () => {
   n += 1;
-  count.textContent = \`已点击 \${n} 次\`;
+  count.textContent = \`Clicked \${n} time\${n === 1 ? '' : 's'}\`;
 });
 `,
     }),
   },
   {
     id: 'tailwind',
-    name: 'Tailwind 静态页',
-    description: 'HTML + Tailwind CSS（CDN），适合快速做落地页',
+    name: 'Tailwind static page',
+    description: 'HTML + Tailwind CSS (CDN), great for quick landing pages',
     needsInstall: false,
     files: (title) => ({
       '.gitignore': GITIGNORE,
       'index.html': `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -145,10 +145,10 @@ btn.addEventListener('click', () => {
     <main class="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-6 text-center">
       <span class="rounded-full bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">Crew</span>
       <h1 class="mt-6 text-4xl font-bold tracking-tight sm:text-6xl">${title}</h1>
-      <p class="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-400">告诉你的机器人小队想做什么，它们会用 Tailwind 把页面做出来。</p>
+      <p class="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-400">Tell your bot crew what you want to build, and they will build the page with Tailwind.</p>
       <div class="mt-10 flex gap-4">
-        <a href="#" class="rounded-full bg-indigo-600 px-6 py-3 font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:-translate-y-0.5 hover:bg-indigo-500">开始使用</a>
-        <a href="#" class="rounded-full px-6 py-3 font-semibold text-slate-700 ring-1 ring-slate-300 transition hover:bg-white dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-slate-900">了解更多</a>
+        <a href="#" class="rounded-full bg-indigo-600 px-6 py-3 font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:-translate-y-0.5 hover:bg-indigo-500">Get started</a>
+        <a href="#" class="rounded-full px-6 py-3 font-semibold text-slate-700 ring-1 ring-slate-300 transition hover:bg-white dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-slate-900">Learn more</a>
       </div>
     </main>
   </body>
@@ -159,7 +159,7 @@ btn.addEventListener('click', () => {
   {
     id: 'vite-react',
     name: 'Vite + React + TS',
-    description: '现代 React 应用，热更新（首次启动会自动 npm install）',
+    description: 'Modern React app with hot reload (runs npm install automatically on first start)',
     needsInstall: true,
     files: (title) => ({
       '.gitignore': GITIGNORE,
@@ -210,7 +210,7 @@ export default defineConfig({
           2,
         ) + '\n',
       'index.html': `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -241,9 +241,9 @@ export default function App() {
     <main className="hero">
       <p className="eyebrow">Crew · React</p>
       <h1>${title}</h1>
-      <p className="lead">告诉你的机器人小队想做什么，它们会在这里把应用做出来。</p>
+      <p className="lead">Tell your bot crew what you want to build, and they will build the app here.</p>
       <button className="btn" onClick={() => setCount((c) => c + 1)}>
-        已点击 {count} 次
+        Clicked {count} time{count === 1 ? '' : 's'}
       </button>
     </main>
   );
@@ -317,7 +317,7 @@ h1 {
   {
     id: 'vite-vue',
     name: 'Vite + Vue 3',
-    description: 'Vue 3 单文件组件，热更新（首次启动会自动 npm install）',
+    description: 'Vue 3 single-file components with hot reload (runs npm install automatically on first start)',
     needsInstall: true,
     files: (title) => ({
       '.gitignore': GITIGNORE,
@@ -343,7 +343,7 @@ export default defineConfig({
 });
 `,
       'index.html': `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -371,8 +371,8 @@ const count = ref(0);
   <main class="hero">
     <p class="eyebrow">Crew · Vue</p>
     <h1>${title}</h1>
-    <p class="lead">告诉你的机器人小队想做什么，它们会在这里把应用做出来。</p>
-    <button class="btn" @click="count++">已点击 {{ count }} 次</button>
+    <p class="lead">Tell your bot crew what you want to build, and they will build the app here.</p>
+    <button class="btn" @click="count++">Clicked {{ count }} time{{ count === 1 ? '' : 's' }}</button>
   </main>
 </template>
 `,

@@ -18,7 +18,7 @@ describe.skipIf(!claudeCli())('dark mode in the browser tools', () => {
       token: TOKEN,
       reply: (r) => {
         const next = steps[mock.toolResults.filter((t) => t.includes('rgb')).length];
-        return r.tools.some((t) => t.endsWith('browser_act')) && next ? { tool: { id: `toolu_dark_${mock.toolResults.length}`, ...next } } : { text: '看过了。' };
+        return r.tools.some((t) => t.endsWith('browser_act')) && next ? { tool: { id: `toolu_dark_${mock.toolResults.length}`, ...next } } : { text: 'Had a look.' };
       },
     });
     crew = await startServer({ fakeAgent: false });
@@ -39,7 +39,7 @@ describe.skipIf(!claudeCli())('dark mode in the browser tools', () => {
       { name: 'mcp__crew__browser_act', input: { colorScheme: 'dark', steps: [{ action: 'eval', value: BG }] } },
       { name: 'mcp__crew__browser_act', input: { colorScheme: 'light', steps: [{ action: 'eval', value: BG }] } },
     ];
-    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: '看看首页的亮色和暗色' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'Look at the home page in light and dark' });
     const reply = await waitTurn(crew.api, chatId, sent.seq, 180_000);
     expect(reply.status).toBe('done');
     const colours = mock.toolResults.map((t) => t.match(/rgb\([^)]*\)/)?.[0]).filter(Boolean);

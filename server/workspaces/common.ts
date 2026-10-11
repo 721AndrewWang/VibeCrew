@@ -13,7 +13,7 @@ export type Workspace = Project & { workspace: WorkspaceInfo };
 
 export function requireChat(chatId: string): Chat {
   const chat = chats.get(chatId);
-  if (!chat) throw new HttpError(404, '对话不存在');
+  if (!chat) throw new HttpError(404, 'Chat not found');
   return chat;
 }
 
@@ -25,8 +25,8 @@ export function workspaceOf(chat: Chat): Workspace | null {
 export function requireWorkspace(chatId: string): { chat: Chat; ws: Workspace; info: WorkspaceInfo } {
   const chat = requireChat(chatId);
   const ws = workspaceOf(chat);
-  if (!ws) throw new HttpError(404, '这个对话没有独立工作区');
-  if (!fs.existsSync(ws.workspace.worktree)) throw new HttpError(410, `工作区目录不见了：${ws.workspace.worktree}`);
+  if (!ws) throw new HttpError(404, 'This chat has no separate workspace');
+  if (!fs.existsSync(ws.workspace.worktree)) throw new HttpError(410, `The workspace folder is missing: ${ws.workspace.worktree}`);
   return { chat, ws, info: ws.workspace };
 }
 
@@ -56,7 +56,7 @@ export function restartBots(chat: Chat) {
   chat.sessions = {};
   chat.context = {};
   const list = messages.sorted(chat.id);
-  const topicStart = [...list].reverse().find((m) => m.role === 'system' && m.uiOnly && m.text === '—— 新话题 ——')?.seq ?? 0;
+  const topicStart = [...list].reverse().find((m) => m.role === 'system' && m.uiOnly && m.text === '—— New topic ——')?.seq ?? 0;
   const recent = list.filter((m) => m.seq > topicStart && !m.uiOnly && m.status !== 'streaming').slice(-RECAP);
   const from = recent.length ? recent[0].seq - 1 : chat.seq;
   for (const b of chat.botIds) chat.cursors[b] = Math.min(chat.cursors[b] ?? from, from);
@@ -78,7 +78,7 @@ export async function saveWork(info: WorkspaceInfo, message: string) {
   try {
     r = await autoCommit(info.worktree, message);
   } catch (e) {
-    throw new HttpError(500, `没能把工作区里的改动提交到分支：${gitError(e)}`);
+    throw new HttpError(500, `Couldn't commit the workspace changes to the branch: ${gitError(e)}`);
   }
-  if (r.unresolved?.length) throw new HttpError(409, `工作区里还有冲突没解决：${r.unresolved.join('、')}`);
+  if (r.unresolved?.length) throw new HttpError(409, `The workspace still has unresolved conflicts: ${r.unresolved.join(', ')}`);
 }

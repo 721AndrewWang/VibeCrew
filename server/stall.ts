@@ -14,14 +14,14 @@ export const MAX_STALL_NUDGES = 8;
  * The lead ends a reply with this line when its next step is its own (commit now, dispatch next):
  * it gets another turn straight away instead of waiting for the user.
  */
-export const CONTINUE_MARK = '【继续】';
+export const CONTINUE_MARK = '[continue]';
 
 export function stallNote(teammate: string, lead: string): string {
-  return `${teammate} 交回了结果，但没有交给下一个人，接力停在这里了。@${lead} 请看一下这一批是不是都完成了：没完成就继续派活，完成了就给用户汇总；需要用户决定的事，列出来问用户。`;
+  return `${teammate} handed back their result but didn't pass it on to anyone, so the relay stopped here. @${lead} please check whether this batch is all done: if not, keep assigning work; if it is, sum it up for the user; and list anything the user needs to decide as questions for them.`;
 }
 
 export function continueNote(lead: string): string {
-  return `${lead} 说下一步还要自己接着做，接着给它一轮。`;
+  return `${lead} said the next step is theirs too, so giving them another round.`;
 }
 
 /** Nudges (stall or continue) already used since the latest user message. */

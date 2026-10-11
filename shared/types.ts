@@ -31,7 +31,7 @@ export interface Bot {
   name: string;
   emoji: string;
   color: string;
-  /** One-line role, e.g. "前端工程师". */
+  /** One-line role, e.g. "Frontend engineer". */
   title: string;
   /** Persona and workflow; becomes part of the system prompt. */
   description: string;
@@ -466,7 +466,7 @@ export interface PublicSettings {
   projectsRoot: string;
   defaultPermission: PermissionLevel;
   maxHops: number;
-  /** The app's logo and icon (Settings → 外观), for every device and the desktop app. */
+  /** The app's logo and icon (Settings → Appearance), for every device and the desktop app. */
   logo: LogoId;
   /** Actions no bot may take, in any project or mode, e.g. "Bash(*prod-server*)". */
   denyRules: string[];

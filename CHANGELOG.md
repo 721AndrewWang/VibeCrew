@@ -1,64 +1,73 @@
-# 更新记录
+# Changelog
 
-格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [未发布]
+## [Unreleased]
+
+### Added
+
+- **REA reverse engineering plugin** in the plugin library: see how a feature on a website or in a JavaScript/Electron app works without its source. A new `browser_debug_target` tool gives the bot the DevTools endpoint and target id of its `browser_act` page, so REA's web tools can inspect that page. Crew's headless Chrome now listens on a loopback-only debugging port for this.
+
+### Changed
+
+- The project is now English-only: UI, agent prompts, docs and code comments. The default UI language is English, and `@all` (or `@everyone`) mentions everyone in a group chat.
+- The desktop build downloads Electron and the AppImage tools from their official sources; set `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` to use a mirror.
 
 ## [0.2.0] - 2026-10-02
 
-第一个正式发布的版本。改名为 Crew，加上独立工作区、沙盒、对抗审查和一套「从使用中改进」的机制，并补齐了工程化。
+The first official release. Renamed to Crew, with isolated workspaces, a sandbox, adversarial review and a set of "improve from use" mechanisms, plus the engineering groundwork.
 
-### 工作方式
+### How you work
 
-- **独立工作区**：对话可以在自己的 git worktree 和分支里工作，每轮自动提交，在「改动」里看和主分支的差异，一键压成一个提交合并回去；主分支的新提交可以同步进来，冲突可以交给机器人解决。新工作区会带上 git 之外、但干活需要的本地文件（`.env`、`CLAUDE.md`、`.claude/` 的设置和 hook、`.git/info/exclude` 里的文件）。项目可以配准备命令、提交信息要求、不加 AI 署名、必须确认的操作。
-- **输入框开关**（和 Claude Code 一样）：每个对话单独切换权限模式、模型和思考强度；切换权限模式马上作用到正在进行的这一轮。上下文用量小圆环；回复底部显示实际用的模型。
-- **其他模型服务商**：DeepSeek、Kimi、智谱 GLM、通义千问、MiniMax、OpenRouter、Ollama，或任何兼容 Anthropic 接口的地址。
-- **聊天之外的文件改动会在对话里说一声**：手动改、别的编辑器、git 操作、Crew 的代码编辑器改了项目文件，对话里会有一条消息说明改了哪些文件、哪几行；盲审的机器人也能看到。
-- 浏览器的前进 / 后退可以切换对话，`#/chat/<id>` 链接能直接打开某个对话。
+- **Isolated workspaces**: a chat can work in its own git worktree and branch. Each turn is auto-committed; see the diff against the main branch under "Changes" and squash it into one commit to merge back in one click. New commits on the main branch can be synced in, and conflicts can be handed to an agent to resolve. A new workspace brings along local files that git does not track but the work needs (`.env`, `CLAUDE.md`, settings and hooks in `.claude/`, files in `.git/info/exclude`). Projects can configure a setup command, commit message requirements, no AI attribution, and actions that always need confirmation.
+- **Composer toggles** (like Claude Code): switch the permission mode, model and thinking effort per chat; switching the permission mode takes effect immediately on the turn in progress. A small ring shows context usage; the bottom of each reply shows the model actually used.
+- **Other model providers**: DeepSeek, Kimi, Zhipu GLM, Qwen, MiniMax, OpenRouter, Ollama, or any endpoint compatible with the Anthropic API.
+- **File changes made outside the chat are announced in the chat**: when project files are changed by hand, by another editor, by git operations or by Crew's code editor, the chat gets a message saying which files and which lines changed; blind-review agents see it too.
+- The browser's back / forward buttons switch between chats, and `#/chat/<id>` links open a specific chat directly.
 
-### 安全
+### Security
 
-- **沙盒**（默认开启）：机器人运行的命令关在 Claude Code 的沙盒（bubblewrap）里，只能写项目目录，网络只能连本机和允许的域名，不在名单上的主机直接拒绝；机器人自己关不掉。Linux 上需要 bubblewrap 和 socat。
-- **禁止的操作**：任何权限级别下都拦得住，全自动也不例外（它按命令文字匹配，只防误操作；真正的边界是沙盒）。
-- 审批卡片说明为什么要问：哪条「必须确认」规则（机器人的还是项目的）、哪个权限级别。「总是允许」会给复合命令的每一段都加规则，`cd`、`cat`、`grep` 这类只读命令不再需要确认。
-- 接口在入口检查请求，不合格的返回 400 并指出字段。
+- **Sandbox** (on by default): commands run by agents are confined to Claude Code's sandbox (bubblewrap); they can only write to the project directory, the network can only reach localhost and allowed domains, and hosts not on the list are rejected outright. Agents cannot turn it off themselves. Requires bubblewrap and socat on Linux.
+- **Blocked actions**: enforced at every permission level, including full auto (they match command text and only prevent accidents; the real boundary is the sandbox).
+- Approval cards explain why they ask: which "always ask" rule (the agent's or the project's) and which permission level. "Always allow" adds a rule for every segment of a compound command, and read-only commands such as `cd`, `cat` and `grep` no longer need confirmation.
+- The API validates requests at the entry point; invalid ones get a 400 that names the field.
 
-### 角色与成本
+### Roles and cost
 
-- **角色绑定成本和权限**：Pixel / Forge / Muse 用 Sonnet，Quill 用 Haiku，Lens 只读，Probe 只能改测试文件，Chief 用最强模型。每个机器人可以设「只能修改的路径」和「每月预算」；机器人页显示每个角色本月花了多少钱。
-- **每一轮的轨迹**：回复底部点「轨迹」，看每次模型调用读了多少 token、缓存命中多少、写了多少、调了什么工具。数据读自 Claude Code 自己的会话记录。
-- **省钱**：每轮只发新内容（较早的长消息缩成一行，`chat_history` 查全文；环境信息每个会话只发一次）；验收、审查角色每轮新会话；其他会话超过 6 万 token 就换新会话并带上最近 12 条消息；一次性的模型调用不再带 Claude Code 自带的 2.9 万 token。
+- **Roles tied to cost and permissions**: Pixel / Forge / Muse use Sonnet, Quill uses Haiku, Lens is read-only, Probe can only edit test files, Chief uses the strongest model. Each agent can have "paths it may edit" and a "monthly budget"; the agents page shows how much each role spent this month.
+- **Per-turn trace**: click "Trace" at the bottom of a reply to see, for each model call, how many tokens were read, how many were cache hits, how many were written, and which tools were called. The data is read from Claude Code's own session transcripts.
+- **Saving money**: each turn sends only new content (older long messages are shrunk to one line, with `chat_history` for the full text; environment info is sent once per session); acceptance and review roles use a new session every turn; other sessions switch to a new session past 60k tokens, carrying the last 12 messages; one-shot model calls no longer carry Claude Code's built-in 29k tokens.
 
-### 检查与证伪
+### Checking and refutation
 
-- **Skeptic 对抗审查**：只拿到用户的要求和改动的 diff，看不到队友的说明，任务是尽力证伪，只认能复现的反例。`/challenge` 调用；可以作为合并前的门槛；也可以按固定规则自动触发（改了样式、权限、依赖等文件，或超过 150 行；每个请求最多两次）。
-- **Lens 也盲审**：看不到队友的说明和验收结论；需要实测的地方写「需要实测」。
-- **浏览器工具支持暗色模式**（`colorScheme: dark`），颜色读真实的计算样式。
+- **Skeptic adversarial review**: receives only the user's request and the diff of the changes, never the teammates' explanations; its job is to try hard to refute the change, and only reproducible counterexamples count. Invoked with `/challenge`; can be used as a gate before merging; can also trigger automatically by fixed rules (changes to styles, permissions, dependencies and similar files, or more than 150 lines; at most twice per request).
+- **Lens reviews blind too**: it cannot see teammates' explanations or acceptance verdicts; where real testing is needed it writes "needs real testing".
+- **Browser tools support dark mode** (`colorScheme: dark`), and colors are read from real computed styles.
 
-### 从使用中改进（每一步都要你批准）
+### Improving from use (every step needs your approval)
 
-- **改进建议**：读最近的轮次、费用、证伪结果和你以前的决定，提出最多 3 条对机器人设置的小改动，必须引用至少两个不同请求里真实发生的事。可以先改再接受、拒绝（附理由）或撤回；接受后对比前后的表现。
-- **学成技能**（借鉴 Hermes Agent）：做了不少事、顺利完成、没被推翻的轮次可以起草成技能，先过固定的安全检查，你接受才保存；起草时参考你以前拒绝的理由和改过的地方。
-- **记忆提醒**：复杂的一轮之后，提醒机器人把以后用得上的经验记下来，只记用户说的和亲自验证过的。
-- **群聊路由（影子模式）**：没 @ 人的消息，Haiku 按两种顺序各猜一次该谁接，只记录不执行；攒够数据后用准确率下限和 AUROC 判断能不能信。
+- **Improvement suggestions**: reads recent turns, costs, refutation results and your earlier decisions, and proposes at most 3 small changes to agent settings, each of which must cite things that really happened in at least two different requests. You can edit before accepting, reject (with a reason) or withdraw; after accepting, performance before and after is compared.
+- **Learned skills** (inspired by Hermes Agent): turns that did a fair amount of work, completed smoothly and were not refuted can be drafted into skills. Drafts go through fixed safety checks first and are saved only when you accept; drafting takes your earlier rejection reasons and edits into account.
+- **Memory nudge**: after a complex turn, the agent is reminded to write down experience that will be useful later, recording only what the user said and what it verified first-hand.
+- **Group chat routing (shadow mode)**: for messages without an @, Haiku guesses who should take them, once in each of two orders, and only records the guess without acting on it; once enough data accumulates, an accuracy lower bound and AUROC decide whether it can be trusted.
 
-### 变更
+### Changed
 
-- 改名为 **Crew**。第一次启动会把 `~/.vibecrew` 搬到 `~/.crew`，把 `~/VibeCrewProjects` 搬到 `~/CrewProjects`。
-- 界面和图标改成黑白灰、线条图标；设置 → 外观有 6 个 logo 可选，Dock、托盘和窗口图标跟着变。
-- 自动模式下，机器人做日常工作时不再在聊天里征求同意。
+- Renamed to **Crew**. The first launch moves `~/.vibecrew` to `~/.crew` and `~/VibeCrewProjects` to `~/CrewProjects`.
+- The UI and icons are now black, white and gray with line icons; Settings → Appearance offers 6 logos, and the Dock, tray and window icons follow.
+- In auto mode, agents no longer ask for consent in the chat for routine work.
 
-### 可靠性与工程
+### Reliability and engineering
 
-- Crew 被强杀后重启，中断的一轮保留写到一半的内容；数据目录有格式版本号和迁移，迁移前自动备份。
-- 测试：Vitest（单元、集成，含真实 Claude Code 连本地假模型）和 Playwright（浏览器、桌面应用），共 200 多个；测试不会碰真实的 Crew 数据和 Claude 登录。
-- Biome 格式和 lint；GitHub Actions CI（每晚还会用最新的 Claude Code 跑一遍）；推送 `v*` 标签自动发布 AppImage。
-- 服务端统一日志；ARCHITECTURE、CONTRIBUTING 文档；`docs/mindmap.md` 开发记录思维导图。
+- When Crew is restarted after being killed, the interrupted turn keeps its half-written content; the data directory has a format version and migrations, with an automatic backup before migrating.
+- Tests: Vitest (unit and integration, including real Claude Code against a local fake model) and Playwright (browser and desktop app), over 200 in total; tests never touch real Crew data or the Claude login.
+- Biome formatting and lint; GitHub Actions CI (also runs nightly against the latest Claude Code); pushing a `v*` tag publishes the AppImage automatically.
+- Unified server logging; ARCHITECTURE and CONTRIBUTING docs; a `docs/mindmap.md` mind map of the development history.
 
 ## [0.1.0] - 2026-09-29
 
-第一个版本（当时叫 VibeCrew）：机器人团队、群聊和 @ 接力、实时预览、文件、终端、改动记录与撤销、定时任务、技能、录制演示、插件和 MCP、手机访问、桌面应用。
+The first version (then called VibeCrew): an agent team, group chats and @ handoffs, live preview, files, terminal, change history and undo, routines, skills, demo recording, plugins and MCP, mobile access, desktop app.
 
-[未发布]: https://github.com/krukteresa413-ops/VibeCrew/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/krukteresa413-ops/VibeCrew/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/krukteresa413-ops/VibeCrew/releases/tag/v0.2.0
 [0.1.0]: https://github.com/krukteresa413-ops/VibeCrew/commit/5981c6b

@@ -106,10 +106,10 @@ describe('isolated workspaces: lifecycle', () => {
   });
 
   it('refuses a merge while a bot works, then auto-commits the turn on the branch', async () => {
-    const sent = await api('POST', `/chats/${group.id}/messages`, { text: '请帮我改一下首页的标题' });
+    const sent = await api('POST', `/chats/${group.id}/messages`, { text: 'Please make a change to the home page title' });
     const early = await api('POST', `/chats/${group.id}/workspace/merge`, {});
     expect(early.status, early.error).toBe(409);
-    expect(early.error).toContain('机器人正在工作');
+    expect(early.error).toMatch(/working/i);
 
     // The bot turn happens in the worktree and is committed on the branch.
     const turn1 = await turnAfter(api, group.id, sent.seq);
@@ -123,17 +123,17 @@ describe('isolated workspaces: lifecycle', () => {
     ).toBe(false);
     expect(fs.existsSync(path.join(project.path, 'crew-demo.md')), 'main folder untouched').toBe(false);
     const log1 = git(ws.path, 'log', '--format=%an|%s', '-1');
-    expect(log1, 'turn auto-committed on the branch').toMatch(/^Crew Test\|Chief：/);
+    expect(log1, 'turn auto-committed on the branch').toMatch(/^Crew Test\|Chief:/);
     expect(git(ws.path, 'status', '--porcelain'), 'worktree clean after turn').toBe('');
 
     const st = await api('GET', `/chats/${group.id}/workspace`);
     expect({ ahead: st.ahead, behind: st.behind, files: st.files }).toEqual({ ahead: 1, behind: 0, files: [expect.objectContaining({ path: 'crew-demo.md', status: 'added' })] });
     const d = await api('GET', `/chats/${group.id}/workspace/diff?path=crew-demo.md`);
-    expect(d.diff, 'diff of a file vs base').toContain('+# 演示');
+    expect(d.diff, 'diff of a file vs base').toContain('+# Demo');
   });
 
   it('lets another chat work in the main folder at the same time', async () => {
-    const turn2 = await say(api, other.id, '帮我写一个说明文件');
+    const turn2 = await say(api, other.id, 'Please create a readme file');
     expect(turn2.status).toBe('done');
     expect(fs.existsSync(path.join(project.path, 'crew-demo.md')), 'other chat wrote in the main folder').toBe(true);
   });
@@ -144,7 +144,7 @@ describe('isolated workspaces: lifecycle', () => {
     expect(m.status, m.error).toBe(409);
     expect(m.error).toContain('crew-demo.md');
     const mainText = read(path.join(project.path, 'crew-demo.md'));
-    expect(mainText.includes('Pixel') || mainText.includes('由'), 'main still has its own version').toBe(true);
+    expect(/Pixel|\bby\b/i.test(mainText), 'main still has its own version').toBe(true);
 
     // Commit it in main: now both branches added the same file differently -> conflict.
     await api('POST', `/projects/${project.id}/git/commit`, { message: 'main: demo file' });
@@ -166,10 +166,10 @@ describe('isolated workspaces: lifecycle', () => {
   });
 
   it('squash-merges into main and keeps the workspace going from the merged state', async () => {
-    let m = await api('POST', `/chats/${group.id}/workspace/merge`, { message: '首页标题改版' });
+    let m = await api('POST', `/chats/${group.id}/workspace/merge`, { message: 'Redo the home page title' });
     expect(m.ok, JSON.stringify(m)).toBe(true);
     expect(m.files, JSON.stringify(m)).toBeGreaterThanOrEqual(1);
-    expect(git(project.path, 'log', '-1', '--format=%s')).toBe('首页标题改版');
+    expect(git(project.path, 'log', '-1', '--format=%s')).toBe('Redo the home page title');
     expect(git(project.path, 'rev-list', '--parents', '-1', 'HEAD').split(' '), 'squash commit has one parent').toHaveLength(2);
     expect(read(path.join(project.path, 'crew-demo.md')), 'main working tree updated').toBe(read(path.join(ws.path, 'crew-demo.md')));
     expect(git(project.path, 'status', '--porcelain')).toBe('');
@@ -193,7 +193,7 @@ describe('isolated workspaces: lifecycle', () => {
   });
 
   it('undoing a workspace turn restores the worktree, not the main folder', async () => {
-    await say(api, group.id, '再改一下');
+    await say(api, group.id, 'Make one more change');
     const turns = await api('GET', `/chats/${group.id}/turns`);
     const t = turns.items[0];
     expect(t.projectId, 'turn recorded against the workspace').toBe(ws.id);
@@ -215,7 +215,7 @@ describe('isolated workspaces: lifecycle', () => {
       'workspace project gone',
     ).toBe(false);
 
-    const turn5 = await say(api, group.id, '在主目录里改一下');
+    const turn5 = await say(api, group.id, 'Make a change in the main folder');
     expect(turn5.status).toBe('done');
     expect(git(project.path, 'status', '--porcelain'), 'bots work in the main folder again').toContain('crew-demo.md');
     git(project.path, 'checkout', '--', '.');
@@ -224,7 +224,7 @@ describe('isolated workspaces: lifecycle', () => {
   it('deleting a chat removes its worktree but keeps a branch with unmerged work', async () => {
     const ws2 = await api('POST', `/chats/${other.id}/workspace`);
     expect(ws2.status, ws2.error).toBe(200);
-    await say(api, other.id, '请写点东西');
+    await say(api, other.id, 'Please create something');
     await api('DELETE', `/chats/${other.id}`);
     await waitFor(() => !fs.existsSync(ws2.path), 10_000);
     expect(fs.existsSync(ws2.path), 'chat deletion removed the worktree').toBe(false);
@@ -308,7 +308,7 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
   });
 
   it('detects non-ASCII, binary and modify/delete conflicts and does not conclude an unfixed merge', async () => {
-    fs.writeFileSync(path.join(project.path, '首页.html'), '<h1>首页</h1>\n<p>原文</p>\n');
+    fs.writeFileSync(path.join(project.path, 'página.html'), '<h1>Home</h1>\n<p>Original</p>\n');
     fs.writeFileSync(path.join(project.path, 'logo.png'), png(1));
     fs.writeFileSync(path.join(project.path, 'about.html'), '<h1>about</h1>\n');
     await api('POST', `/projects/${project.id}/git/commit`, { message: 'add files' });
@@ -316,18 +316,18 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
     expect(ws.status, ws.error).toBe(200);
     W = ws.workspace.worktree;
     // The branch changes all three...
-    fs.writeFileSync(path.join(W, '首页.html'), '<h1>首页</h1>\n<p>分支的版本</p>\n');
+    fs.writeFileSync(path.join(W, 'página.html'), '<h1>Home</h1>\n<p>Branch version</p>\n');
     fs.writeFileSync(path.join(W, 'logo.png'), png(2));
-    fs.writeFileSync(path.join(W, 'about.html'), '<h1>about（分支）</h1>\n');
+    fs.writeFileSync(path.join(W, 'about.html'), '<h1>about (branch)</h1>\n');
     git(W, 'add', '-A');
     git(W, 'commit', '-qm', 'branch edits');
     // ...and main changes them differently, deleting about.html.
-    fs.writeFileSync(path.join(project.path, '首页.html'), '<h1>首页</h1>\n<p>main 的版本</p>\n');
+    fs.writeFileSync(path.join(project.path, 'página.html'), '<h1>Home</h1>\n<p>Main version</p>\n');
     fs.writeFileSync(path.join(project.path, 'logo.png'), png(3));
     fs.rmSync(path.join(project.path, 'about.html'));
     await api('POST', `/projects/${project.id}/git/commit`, { message: 'main edits' });
 
-    const all = ['首页.html', 'logo.png', 'about.html'];
+    const all = ['página.html', 'logo.png', 'about.html'];
     const m = await api('POST', `/chats/${group.id}/workspace/merge`, {});
     expect(m.ok, JSON.stringify(m)).toBe(false);
     expect(m.conflicts, 'merge sees all three conflicts').toEqual(expect.arrayContaining(all));
@@ -337,7 +337,7 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
     const st = await api('GET', `/chats/${group.id}/workspace`);
     expect(st.merging, 'status: merging').toBeTruthy();
     expect(
-      st.files.some((f: any) => f.path === '首页.html'),
+      st.files.some((f: any) => f.path === 'página.html'),
       'names unescaped: ' + JSON.stringify(st.files),
     ).toBe(true);
   });
@@ -355,20 +355,20 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
       .filter((x) => x.role === 'system')
       .map((x) => x.text)
       .join(' | ');
-    expect(notes, 'bot told what is still unresolved').toMatch(/合并还没完成/);
+    expect(notes, 'bot told what is still unresolved').toMatch(/merge (is )?(not|isn't) (finished|complete|done)/i);
     expect(notes).toContain('logo.png');
 
     const m = await api('POST', `/chats/${group.id}/workspace/merge`, {});
     expect(m.status, 'merge refused while conflicts remain — ' + m.error).toBe(409);
     const gc = await api('POST', `/projects/${ws.id}/git/commit`, { message: 'sneaky' });
     expect(gc.status, gc.error).toBe(409);
-    expect(gc.error, 'Git section commit refused with conflicts').toContain('冲突');
+    expect(gc.error, 'Git section commit refused with conflicts').toContain('conflict');
     expect(ok(W, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'), 'no marker commit on the branch (merge still pending)').toBe(true);
   });
 
   it('concludes the merge once conflicts are fixed and lands the result in main', async () => {
     // Fix them the way a bot would: text without markers, pick a binary, confirm the deletion.
-    fs.writeFileSync(path.join(W, '首页.html'), '<h1>首页</h1>\n<p>两边合在一起</p>\n');
+    fs.writeFileSync(path.join(W, 'página.html'), '<h1>Home</h1>\n<p>Both sides combined</p>\n');
     git(W, 'checkout', '--ours', 'logo.png');
     git(W, 'add', 'logo.png');
     git(W, 'rm', '-q', 'about.html');
@@ -376,23 +376,23 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
     expect(sy.ok, 'sync concludes the fixed merge — ' + JSON.stringify(sy)).toBe(true);
     const m = await api('POST', `/chats/${group.id}/workspace/merge`, { message: 'conflict test' });
     expect(m.ok, 'merge after fixing — ' + JSON.stringify(m)).toBe(true);
-    const home = read(path.join(project.path, '首页.html'));
+    const home = read(path.join(project.path, 'página.html'));
     expect(home, 'main has no conflict markers').not.toMatch(/^(<{7}|>{7})/m);
-    expect(home).toContain('两边合在一起');
+    expect(home).toContain('Both sides combined');
     expect(Buffer.compare(fs.readFileSync(path.join(project.path, 'logo.png')), png(2)), 'main has our binary').toBe(0);
     expect(fs.existsSync(path.join(project.path, 'about.html')), 'main has no about.html').toBe(false);
   });
 
   it('concludes a resolve-to-ours merge even when the status is empty', async () => {
-    fs.writeFileSync(path.join(W, '首页.html'), '<h1>首页</h1>\n<p>分支第二版</p>\n');
+    fs.writeFileSync(path.join(W, 'página.html'), '<h1>Home</h1>\n<p>Branch, second version</p>\n');
     git(W, 'commit', '-qam', 'branch 2');
-    fs.writeFileSync(path.join(project.path, '首页.html'), '<h1>首页</h1>\n<p>main 第二版</p>\n');
+    fs.writeFileSync(path.join(project.path, 'página.html'), '<h1>Home</h1>\n<p>Main, second version</p>\n');
     await api('POST', `/projects/${project.id}/git/commit`, { message: 'main 2' });
     let sy = await api('POST', `/chats/${group.id}/workspace/sync`);
     expect(sy.ok, 'second conflict — ' + JSON.stringify(sy)).toBe(false);
-    expect(sy.conflicts).toContain('首页.html');
-    git(W, 'checkout', '--ours', '首页.html');
-    git(W, 'add', '首页.html');
+    expect(sy.conflicts).toContain('página.html');
+    git(W, 'checkout', '--ours', 'página.html');
+    git(W, 'add', 'página.html');
     expect(git(W, 'status', '--porcelain'), 'status empty').toBe('');
     expect(ok(W, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'), 'but merge pending').toBe(true);
     sy = await api('POST', `/chats/${group.id}/workspace/sync`);
@@ -403,7 +403,7 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
   });
 
   it('refuses project switch, chat deletion and project removal while a bot works in the workspace', async () => {
-    const sent = await api('POST', `/chats/${group.id}/messages`, { text: '请改一下首页' });
+    const sent = await api('POST', `/chats/${group.id}/messages`, { text: 'Please make a change to the home page' });
     const plainDir = path.join(T, 'other-site');
     makeRepo(plainDir, { 'index.html': '<h1>other</h1>\n' });
     const other = await api('POST', '/projects', { mode: 'open', path: plainDir });
@@ -425,16 +425,16 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
     expect(wsd.status, wsd.error).toBe(200);
     writeConfig(false); // git can no longer commit
     try {
-      const t = await say(api, dm.id, '请写一个文件');
+      const t = await say(api, dm.id, 'Please create a file');
       const dmNotes = (await lastMessages(api, dm.id, 4))
         .filter((x) => x.role === 'system')
         .map((x) => x.text)
         .join(' | ');
       expect(t.status).toBe('done');
-      expect(dmNotes, 'failed turn commit is reported').toMatch(/没能把这一轮的改动提交到分支/);
+      expect(dmNotes, 'failed turn commit is reported').toMatch(/(couldn't|could not|failed to) commit/i);
       const cl = await api('DELETE', `/chats/${dm.id}/workspace`);
       expect(cl.status, cl.error).toBe(500);
-      expect(cl.error, 'close refused when work cannot be saved').toMatch(/没有关闭/);
+      expect(cl.error, 'close refused when work cannot be saved').toMatch(/not closed/);
       expect(fs.existsSync(path.join(wsd.path, 'crew-demo.md')), 'worktree and work still there').toBe(true);
       const lensDm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === bots.lens);
       const noId = await api('POST', `/chats/${lensDm.id}/workspace`);
@@ -484,7 +484,7 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
       st.files.map((x: any) => x.path),
       'files outside the package listed',
     ).toEqual(expect.arrayContaining(['packages/ui/button.ts', 'package.json']));
-    await say(api, mc.id, '请改一下页面');
+    await say(api, mc.id, 'Please make a change to the page');
     const m = await api('POST', `/chats/${mc.id}/workspace/merge`, {});
     expect(m.ok, JSON.stringify(m)).toBe(true);
     expect(m.files, 'monorepo merge lands everything').toBe(3);
@@ -512,7 +512,7 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
     const dc = await newGroup('Draft', bots.chief, dp.id);
     const dw = await api('POST', `/chats/${dc.id}/workspace`);
     expect(dw.status, dw.error).toBe(400);
-    expect(dw.error, 'uncommitted folder refused').toMatch(/还没有提交到 Git/);
+    expect(dw.error, 'uncommitted folder refused').toMatch(/hasn't been committed to Git/);
     expect(git(real, 'worktree', 'list').split('\n'), 'refusal left no worktree (only main + link workspace)').toHaveLength(2);
     expect(git(real, 'branch', '--list', 'crew/draft-*'), 'refusal left no branch').toBe('');
   });
@@ -536,7 +536,7 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
     expect(fs.existsSync(path.join(tw.path, 'new.html'))).toBe(true);
 
     // The base branch is being rebased in the project folder.
-    await say(api, tc.id, '请写点东西');
+    await say(api, tc.id, 'Please create something');
     git(tagged, 'checkout', '-qb', 'side', 'HEAD~1');
     fs.writeFileSync(path.join(tagged, 'index.html'), '<h1>side</h1>\n');
     git(tagged, 'commit', '-qam', 'side');

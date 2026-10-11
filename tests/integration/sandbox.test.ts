@@ -49,7 +49,7 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
       // the current script's markers count.
       reply: (r) => {
         const next = script[done().length];
-        return r.tools.includes('Bash') && next ? { tool: next } : { text: '好的，就这样。' };
+        return r.tools.includes('Bash') && next ? { tool: next } : { text: 'OK, that is it.' };
       },
     });
     crew = await startServer({ fakeAgent: false });
@@ -97,7 +97,7 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
         { id: 'toolu_sb1', name: 'Bash', input: { command: `echo sb-1; ${LOCAL} curl -sS -m 8 ${targetUrl}/one || echo blocked`, description: 'Reach the server' } },
         { id: 'toolu_sb2', name: 'Bash', input: { command: `echo sb-2; ${LOCAL} curl -sS -m 8 ${targetUrl}/two || echo blocked`, description: 'Try again outside', dangerouslyDisableSandbox: true } },
       ],
-      '去看看那台服务器',
+      'Go check that server',
     );
     expect(results).toHaveLength(2);
     expect(hits).toEqual([]);
@@ -111,14 +111,14 @@ describe.skipIf(!claudeCli() || !ip)('the sandbox', () => {
   it('reaches a host once the project allows it', async ({ skip }) => {
     if (!(await crew.api('GET', '/sandbox')).available) skip();
     expect((await crew.api('PATCH', `/projects/${projectId}`, { allowedDomains: [`${ip}`, 'nonsense host'] })).allowedDomains).toEqual([ip]);
-    const results = await run([{ id: 'toolu_sb3', name: 'Bash', input: { command: `echo sb-3; ${LOCAL} curl -sS -m 8 ${targetUrl}/three`, description: 'Reach the server' } }], '再看看');
+    const results = await run([{ id: 'toolu_sb3', name: 'Bash', input: { command: `echo sb-3; ${LOCAL} curl -sS -m 8 ${targetUrl}/three`, description: 'Reach the server' } }], 'Look again');
     expect(results[0]).toContain('pong');
     expect(hits).toEqual(['/three']);
   });
 
   it('still lets the bot talk to this machine', async ({ skip }) => {
     if (!(await crew.api('GET', '/sandbox').then((s) => s.available))) skip();
-    const results = await run([{ id: 'toolu_sb4', name: 'Bash', input: { command: `echo sb-4; ${LOCAL} curl -sS -m 8 ${crew.base}/api/health`, description: 'Ask Crew' } }], '本机呢');
+    const results = await run([{ id: 'toolu_sb4', name: 'Bash', input: { command: `echo sb-4; ${LOCAL} curl -sS -m 8 ${crew.base}/api/health`, description: 'Ask Crew' } }], 'And this machine?');
     expect(results[0]).toContain('"ok":true');
   });
 });

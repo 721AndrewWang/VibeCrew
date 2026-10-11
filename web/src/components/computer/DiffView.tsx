@@ -59,14 +59,14 @@ export function DiffView({ before, after }: { before: string; after: string }) {
         <span className="del">−{removed}</span>
         <span className="spacer" />
         <button className="btn sm ghost" onClick={() => setFull(!full)}>
-          {full ? '折叠未改动的行' : '显示完整文件'}
+          {full ? 'Collapse unchanged lines' : 'Show full file'}
         </button>
       </div>
       <div className="diff-body">
         {allRows.map((r, i) =>
           r.kind === 'gap' ? (
             <div key={i} className="diff-gap" onClick={() => setFull(true)}>
-              ⋯ {r.hidden} 行未改动
+              ⋯ {r.hidden} unchanged line{r.hidden === 1 ? '' : 's'}
             </div>
           ) : (
             <div key={i} className={`diff-row ${r.kind}`}>
@@ -102,7 +102,7 @@ export function UnifiedDiff({ text }: { text: string }) {
   if (!text.trim())
     return (
       <div className="muted" style={{ padding: 12 }}>
-        没有差异
+        No differences
       </div>
     );
   return (

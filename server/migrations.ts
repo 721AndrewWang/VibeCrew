@@ -19,7 +19,7 @@ export const SCHEMA_VERSION = Math.max(1, ...MIGRATIONS.map((m) => m.version));
 
 export class NewerDataError extends Error {
   constructor(found: number, supported: number) {
-    super(`数据目录是更新版本的 Crew 写的（schema ${found}，这个版本最高支持 ${supported}）。请升级 Crew，或者换一个数据目录（CREW_HOME）。`);
+    super(`The data directory was written by a newer version of Crew (schema ${found}; this version supports up to ${supported}). Upgrade Crew, or use a different data directory (CREW_HOME).`);
   }
 }
 

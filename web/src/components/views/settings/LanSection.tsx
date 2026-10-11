@@ -20,7 +20,7 @@ export function LanSection() {
     api
       .lan()
       .then((r) => !cancelled && setLan(r))
-      .catch((e) => !cancelled && toast('获取手机访问链接失败', (e as Error).message, 'error'));
+      .catch((e) => !cancelled && toast('Could not get phone access link', (e as Error).message, 'error'));
     return () => {
       cancelled = true;
     };
@@ -32,19 +32,20 @@ export function LanSection() {
       const r = await api.updateSettings({ lanEnabled: v });
       useStore.setState({ settings: r.settings, lanUrl: r.lanUrl });
     } catch (e) {
-      toast('切换失败', (e as Error).message, 'error');
+      toast('Could not switch', (e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Section icon={<Smartphone size={18} />} title="手机访问">
+    <Section icon={<Smartphone size={18} />} title="Phone access">
       <div className="setting-row">
         <div>
-          <div className="sr-title">允许手机访问</div>
+          <div className="sr-title">Allow phone access</div>
           <div className="hint">
-            开启后需要重启 Crew。手机和电脑在同一局域网时用局域网链接；装了 Tailscale 的话，手机在外面也能用 Tailscale 链接访问（只有你 Tailscale 里的设备连得上）。链接里带有访问令牌，不要分享给别人。
+            Restart Crew after turning this on. Use the LAN link when the phone and computer are on the same network. With Tailscale installed, the phone can also use the Tailscale link when you're
+            out (only devices in your Tailscale can connect). The links contain an access token, so don't share them.
           </div>
         </div>
         <Toggle on={enabled} disabled={busy} onChange={toggle} />
@@ -53,15 +54,17 @@ export function LanSection() {
         <div className="lan-box">
           {!lan ? (
             <div className="row muted">
-              <span className="spinner" /> 正在生成二维码…
+              <span className="spinner" /> Generating QR code…
             </div>
           ) : lan.url || lan.tailscaleUrl ? (
             <>
-              {lan.url && <AccessLink title="局域网：用手机相机扫码打开" url={lan.url} qr={lan.qr} />}
-              {lan.tailscaleUrl && <AccessLink title="Tailscale：在外面也能打开" url={lan.tailscaleUrl} qr={lan.tailscaleQr} hint="手机上也要装 Tailscale，并登录同一个账号。" />}
+              {lan.url && <AccessLink title="LAN: scan with your phone camera" url={lan.url} qr={lan.qr} />}
+              {lan.tailscaleUrl && (
+                <AccessLink title="Tailscale: works when you're out" url={lan.tailscaleUrl} qr={lan.tailscaleQr} hint="Install Tailscale on the phone too and sign in to the same account. " />
+              )}
             </>
           ) : (
-            <div className="hint">没有检测到局域网或 Tailscale 地址。请确认电脑已连接网络（或 Tailscale 已连上），然后重启 Crew。</div>
+            <div className="hint">No LAN or Tailscale address found. Make sure the computer is online (or Tailscale is connected), then restart Crew.</div>
           )}
         </div>
       )}
@@ -81,7 +84,7 @@ function AccessLink({ title, url, qr, hint }: { title: string; url: string; qr: 
           <code className="ellipsis">{url}</code>
           <button
             className="icon-btn sm"
-            title="复制链接"
+            title="Copy link"
             onClick={() =>
               void copyText(url).then(() => {
                 setCopied(true);
@@ -92,7 +95,7 @@ function AccessLink({ title, url, qr, hint }: { title: string; url: string; qr: 
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
         </div>
-        <div className="hint">{hint ?? ''}打开后可以在手机浏览器里「添加到主屏幕」，像 App 一样使用。</div>
+        <div className="hint">{hint ?? ''}Once open, use "Add to Home Screen" in the phone browser to use it like an app.</div>
       </div>
     </div>
   );

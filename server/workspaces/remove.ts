@@ -47,11 +47,15 @@ async function disposeWorkspace(ws: Workspace, deleteBranch: boolean) {
   if (exists && !deleteBranch) {
     let r: Awaited<ReturnType<typeof autoCommit>>;
     try {
-      r = await autoCommit(info.worktree, 'Crew：关闭工作区前保存改动');
+      r = await autoCommit(info.worktree, 'Crew: save changes before closing the workspace');
     } catch (e) {
-      throw new HttpError(500, `没能把工作区里的改动提交到分支（${gitError(e)}），为了不丢失改动，工作区没有关闭。`);
+      throw new HttpError(500, `Couldn't commit the workspace changes to the branch (${gitError(e)}), so the workspace was not closed to keep your changes safe.`);
     }
-    if (r.unresolved?.length) throw new HttpError(409, `工作区里还有冲突没解决（${r.unresolved.join('、')}），关闭会丢掉这些改动。先解决冲突，或者选择丢弃分支。`);
+    if (r.unresolved?.length)
+      throw new HttpError(
+        409,
+        `The workspace still has unresolved conflicts (${r.unresolved.join(', ')}), and closing it would lose those changes. Resolve the conflicts first, or choose to discard the branch.`,
+      );
   }
   await stopServices(ws);
   if (exists) {
@@ -67,14 +71,19 @@ async function disposeWorkspace(ws: Workspace, deleteBranch: boolean) {
 export async function doRemove(chatId: string, deleteBranch: boolean) {
   const chat = requireChat(chatId);
   const ws = workspaceOf(chat);
-  if (!ws) throw new HttpError(404, '这个对话没有独立工作区');
+  if (!ws) throw new HttpError(404, 'This chat has no separate workspace');
   const { branch } = ws.workspace;
   const keep = !deleteBranch && (await hasUnmergedWork(ws.workspace));
   await disposeWorkspace(ws, !keep);
   chat.workspaceId = null;
   restartBots(chat);
   emitChat(chat);
-  systemMessage(chat, keep ? `已关闭独立工作区，分支 ${branch} 保留在仓库里，里面有还没合并的改动。机器人回到项目目录工作。` : `已关闭独立工作区并删除分支 ${branch}，机器人回到项目目录工作。`);
+  systemMessage(
+    chat,
+    keep
+      ? `Closed the separate workspace. Branch ${branch} stays in the repo with its unmerged changes. Bots are back to working in the project folder.`
+      : `Closed the separate workspace and deleted branch ${branch}. Bots are back to working in the project folder.`,
+  );
 }
 
 /**
@@ -88,9 +97,9 @@ async function retire(ws: Workspace) {
   } catch (e) {
     await stopServices(ws);
     unregister(ws);
-    const body = `${(e as Error).message} 目录保留在 ${ws.workspace.worktree}（分支 ${ws.workspace.branch}）。`;
+    const body = `${(e as Error).message} The folder was kept at ${ws.workspace.worktree} (branch ${ws.workspace.branch}).`;
     log.warn(body);
-    notify('独立工作区没有删除', body, { level: 'warn' });
+    notify('Separate workspace not deleted', body, { level: 'warn' });
   }
 }
 
@@ -117,11 +126,11 @@ export async function reconcileWorkspaces() {
       chat.workspaceId = null;
       restartBots(chat);
       chats.set(chat);
-      systemMessage(chat, `找不到独立工作区的目录（${ws.workspace.worktree}），已切回项目目录。分支 ${ws.workspace.branch} 还在仓库里。`);
+      systemMessage(chat, `Couldn't find the separate workspace folder (${ws.workspace.worktree}), so this chat is back in the project folder. Branch ${ws.workspace.branch} is still in the repo.`);
     } else {
       // A turn cut short by a restart left its changes uncommitted: keep them on the branch.
-      const { commit } = await autoCommit(ws.workspace.worktree, '恢复：上次中断前未提交的改动').catch(() => ({ commit: null }));
-      if (commit) systemMessage(chat, '上次 Crew 退出时这里有未提交的改动，已经提交到分支上了。');
+      const { commit } = await autoCommit(ws.workspace.worktree, 'Recovered: uncommitted changes from before the last interruption').catch(() => ({ commit: null }));
+      if (commit) systemMessage(chat, 'There were uncommitted changes here when Crew last quit. They have been committed to the branch.');
     }
   }
   for (const c of chats.all()) {

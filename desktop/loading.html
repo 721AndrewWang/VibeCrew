@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
@@ -121,19 +121,19 @@
   <body>
     <main id="root">
       <img id="logo" alt="" />
-      <h1 id="title">正在启动 Crew…</h1>
-      <p id="hint">机器人小队马上就位</p>
+      <h1 id="title">Starting Crew...</h1>
+      <p id="hint">Your bot team is almost ready</p>
       <div class="spinner" id="spinner"></div>
       <pre id="detail" hidden></pre>
       <div class="actions" id="actions" hidden>
-        <button class="primary" id="retry">重试</button>
-        <button id="logs">打开日志</button>
+        <button class="primary" id="retry">Retry</button>
+        <button id="logs">Open Log</button>
       </div>
     </main>
     <script>
       const q = new URLSearchParams(location.search);
       const $ = (id) => document.getElementById(id);
-      // The logo chosen in Settings → 外观 (main.cjs passes it; its icons are in logos/).
+      // The logo chosen in Settings → Appearance (main.cjs passes it; its icons are in logos/).
       const logo = q.get('logo');
       $('logo').src = logo && /^[a-z]+$/.test(logo) ? `logos/${logo}/128x128.png` : 'icons/128x128.png';
       const msg = q.get('msg');
@@ -141,7 +141,7 @@
       if (q.get('state') === 'error') {
         document.getElementById('root').className = 'error';
         $('spinner').hidden = true;
-        $('hint').textContent = '可以重试；如果还不行，把下面的日志发给我们排查。';
+        $('hint').textContent = 'Try again. If it still fails, send us the log below so we can look into it.';
         const detail = q.get('detail');
         if (detail) {
           $('detail').textContent = detail;
@@ -153,7 +153,7 @@
       $('retry').onclick = () => {
         $('actions').hidden = true;
         $('spinner').hidden = false;
-        $('title').textContent = '正在重新启动…';
+        $('title').textContent = 'Restarting...';
         bridge?.retry();
       };
       $('logs').onclick = () => bridge?.openLogs();
