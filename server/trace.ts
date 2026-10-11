@@ -8,9 +8,23 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TraceStep, TraceTotals, TurnTrace } from '../shared/types';
 
-/** Claude Code keeps one folder per working directory, named by the path with everything but letters and digits turned into dashes. */
+/**
+ * Claude Code keeps one folder per working directory, named by the path with everything but
+ * letters and digits turned into dashes. The path is the one the CLI sees as its working
+ * directory: on POSIX that is the path with symlinks resolved (on macOS a temp folder under /var
+ * is really under /private/var), on Windows the path as given. A folder that is gone keeps the
+ * spelling it was recorded with.
+ */
 export function transcriptDir(cwd: string): string {
-  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  let real = cwd;
+  if (process.platform !== 'win32') {
+    try {
+      real = fs.realpathSync.native(cwd);
+    } catch {
+      /* no longer there */
+    }
+  }
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects', real.replace(/[^a-zA-Z0-9]/g, '-'));
 }
 
 export function transcriptPath(cwd: string, sessionId: string): string {

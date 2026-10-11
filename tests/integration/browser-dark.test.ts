@@ -1,13 +1,16 @@
 // The browser tools see a page's dark theme when asked: what a bot reads back is the colour the
 // page really renders, through the real CLI calling Crew's tools against the demo site.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { findChrome } from '../../server/config';
 import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, waitTurn } from '../helpers/server';
 
 const TOKEN = 'mock-secret-token';
 const BG = 'getComputedStyle(document.body).backgroundColor';
 
-describe.skipIf(!claudeCli())('dark mode in the browser tools', () => {
+// Without a browser the tool fails, the mock keeps asking for the same step, and the test only
+// ends by its timeout; skip it the way the CLI-less case is skipped.
+describe.skipIf(!claudeCli() || !findChrome())('dark mode in the browser tools', () => {
   let mock: MockProvider;
   let crew: CrewServer;
   let chatId: string;
@@ -21,7 +24,8 @@ describe.skipIf(!claudeCli())('dark mode in the browser tools', () => {
         return r.tools.some((t) => t.endsWith('browser_act')) && next ? { tool: { id: `toolu_dark_${mock.toolResults.length}`, ...next } } : { text: 'Had a look.' };
       },
     });
-    crew = await startServer({ fakeAgent: false });
+    // startServer drops CREW_* from the server's environment; the browser named there is wanted.
+    crew = await startServer({ fakeAgent: false, env: { CREW_CHROME_PATH: process.env.CREW_CHROME_PATH } });
     await crew.api('PATCH', '/settings', { authMode: 'provider', provider: { preset: 'custom', baseUrl: mock.url, model: 'mock-model', fastModel: 'mock-fast' }, providerToken: TOKEN });
     const b = await crew.api('GET', '/bootstrap');
     const chief = b.bots.find((x: any) => x.name === 'Chief');
