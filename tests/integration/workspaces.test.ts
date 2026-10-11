@@ -277,8 +277,12 @@ describe('isolated workspaces: conflicts, guards and edge cases', () => {
   const git = (dir: string, ...args: string[]) => gitIn(dir, server.env, ...args);
   const ok = (dir: string, ...args: string[]) => gitOk(dir, server.env, ...args);
   const IDENTITY = '[user]\n\tname = Crew Test\n\temail = test@example.invalid\n';
+  // Without an identity git still guesses one from the account and host name where the host name
+  // has a domain (a Mac on a LAN, say); useConfigOnly stops the guess so commits really fail.
+  const NO_IDENTITY = '[user]\n\tuseConfigOnly = true\n';
   /** Rewrites the test's global git config, with or without a commit identity. */
-  const writeConfig = (withIdentity: boolean) => fs.writeFileSync(server.env.GIT_CONFIG_GLOBAL, (withIdentity ? IDENTITY : '') + '[init]\n\tdefaultBranch = main\n[advice]\n\tdetachedHead = false\n');
+  const writeConfig = (withIdentity: boolean) =>
+    fs.writeFileSync(server.env.GIT_CONFIG_GLOBAL, (withIdentity ? IDENTITY : NO_IDENTITY) + '[init]\n\tdefaultBranch = main\n[advice]\n\tdetachedHead = false\n');
   const makeRepo = (dir: string, files: Record<string, string>) => initRepo(dir, server.env, files);
   const newGroup = (title: string, botId: string, projectId: string) => api('POST', '/chats', { title, botIds: [botId], projectId });
   const png = (n: number) => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, n, 1, 2, 3]);
