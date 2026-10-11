@@ -150,4 +150,24 @@ describe('turnTrace', () => {
       delete process.env.CLAUDE_CONFIG_DIR;
     }
   });
+
+  it('keys the transcript folder by the real path, the one Claude Code sees as its working directory', () => {
+    // macOS keeps temp folders under /var -> /private/var, and a project may sit behind a symlink
+    // anywhere; the CLI resolves its cwd, so the folder is named after the resolved path.
+    const home = tempDir('crew-trace');
+    process.env.CLAUDE_CONFIG_DIR = home;
+    try {
+      const real = path.join(home, 'site');
+      const link = path.join(home, 'link');
+      fs.mkdirSync(real);
+      fs.symlinkSync(real, link);
+      const key = fs.realpathSync.native(real).replace(/[^a-zA-Z0-9]/g, '-');
+      expect(transcriptPath(link, S)).toBe(path.join(home, 'projects', key, `${S}.jsonl`));
+      expect(transcriptPath(link, S)).toBe(transcriptPath(real, S));
+      // A folder that no longer exists keeps the spelling it was recorded with.
+      expect(transcriptPath(path.join(home, 'gone'), S)).toBe(path.join(home, 'projects', path.join(home, 'gone').replace(/[^a-zA-Z0-9]/g, '-'), `${S}.jsonl`));
+    } finally {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    }
+  });
 });

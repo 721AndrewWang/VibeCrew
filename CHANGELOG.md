@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - On macOS, the Chromium that `npx playwright install` puts in `~/Library/Caches/ms-playwright` is found for screenshots and browser tests (only the Linux cache was searched), as is a Chrome in `~/Applications`; Playwright's headless shell serves as a last resort.
+- A turn's trace is found for a project behind a symlink (on macOS, anything under `/tmp` or `/var`): Claude Code names the transcript folder after the resolved path.
 
 ## [0.2.0] - 2026-10-02
 
