@@ -611,7 +611,11 @@ export class FakeSession implements AgentSession {
  * step by step and answers what the user wrote meanwhile.
  */
 async function fakeFullDuplex(ask: string, say: (text: string) => Promise<void>, heard: string[], stopped: () => boolean, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
-  const result = ask.match(/Background job (job_\w+)[^\n]*/);
+  // A job's result is what the turn is about only when nothing the user wrote comes after it (a
+  // result posted while no turn could read it, after a restart, is just context for the next request).
+  const lastResult = ask.lastIndexOf('Background job job_');
+  const lastUser = Math.max(ask.lastIndexOf('[User'), ask.lastIndexOf('What the user asked for'));
+  const result = lastResult > lastUser ? ask.slice(lastResult).match(/Background job (job_\w+)[^\n]*/) : null;
   if (result) {
     await say(`The background job is over: ${result[0].replace(/^Background job /, '').slice(0, 160)}`);
     return;
