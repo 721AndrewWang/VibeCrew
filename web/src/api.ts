@@ -20,6 +20,7 @@ import type {
   RoutingReport,
   Skill,
   SkillCandidate,
+  Thread,
   Trigger,
   TriggerDetail,
   TriggerList,
@@ -195,8 +196,10 @@ export const api = {
   revertImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/revert`),
 
   // Two-layer mode: a chat's Router and its Workers.
-  workerLog: (id: string) => get<{ worker: Worker; messages: ChatMessage[] }>(`/api/workers/${q(id)}/messages`),
+  workerLog: (id: string) => get<{ worker: Worker; messages: ChatMessage[]; threads: Thread[] }>(`/api/workers/${q(id)}/messages`),
   stopWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/stop`),
+  /** Takes the Worker off a thread: its later events go to the Router again. */
+  unsubscribeWorker: (id: string, threadId: string) => post<Worker>(`/api/workers/${q(id)}/unsubscribe`, { threadId }),
   dismissWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/dismiss`),
   routerLog: (chatId: string) => get<{ messages: ChatMessage[] }>(`/api/chats/${q(chatId)}/router/messages`),
 };

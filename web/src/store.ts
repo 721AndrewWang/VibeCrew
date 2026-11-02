@@ -177,7 +177,7 @@ export const useStore = create<AppState>(() => ({
       projects: [],
       policies: '',
       maxCandidatesPerHour: 30,
-      router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3 },
+      router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false },
     },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },

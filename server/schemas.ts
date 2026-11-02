@@ -168,7 +168,7 @@ export const SettingsPatch = z
         projects: z.array(id).max(200),
         policies: text(10_000),
         maxCandidatesPerHour: z.number().int().min(0).max(1000),
-        router: z.object({ enabled: z.boolean(), model: text(200), workerModel: text(200), maxWorkers: z.number().int().min(1).max(8) }).partial(),
+        router: z.object({ enabled: z.boolean(), model: text(200), workerModel: text(200), maxWorkers: z.number().int().min(1).max(8), subscriptions: z.boolean() }).partial(),
       })
       .partial(),
   })
@@ -184,6 +184,9 @@ export const PreviewConsole = z.object({
     .min(1)
     .max(100),
 });
+
+/** The user takes a Worker off one of its Threads (ADR 003). */
+export const WorkerUnsubscribe = z.object({ threadId: id });
 
 export const ImprovementReject = z.object({ note: text(500).optional() });
 

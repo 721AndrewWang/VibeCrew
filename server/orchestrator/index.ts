@@ -1,6 +1,6 @@
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project } from '../../shared/types';
+import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project, Trigger } from '../../shared/types';
 import { crewServer } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
 import { buildSystemAppend, buildTurnPrompt, contextDelta } from '../agents/prompts';
@@ -15,6 +15,7 @@ import { FAKE_AGENT } from '../config';
 import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
+import { subscriptionsOn } from '../layers/subscriptions';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
 import { quietly } from '../quietWrites';
@@ -759,6 +760,7 @@ function routeToRouter(chat: Chat, msg: ChatMessage): ChatMessage {
   }
   const members = bots.all().filter((b) => chat.botIds.includes(b.id));
   const to = ALL_RE.test(msg.text) ? [] : parseMentions(routing, members);
+  takenByRouter(chat, msg.seq);
   emitChat(chat);
   const t = publishTrigger({
     source: 'user',
@@ -783,8 +785,21 @@ function routeToRouter(chat: Chat, msg: ChatMessage): ChatMessage {
   return msg;
 }
 
-/** Runs a routine: posts its prompt into the chat and queues the bot. */
-export function runInChat(chatId: string, botId: string, prompt: string, trigger: MessageTrigger, routineName?: string): ChatMessage {
+/**
+ * A message the two layers take (the Router, or Workers subscribed to its thread) is not the bots'
+ * to answer: once the chat is back with its lead, they must not get it again as a new request and
+ * redo what the Workers did. It stays readable with chat_history.
+ */
+function takenByRouter(chat: Chat, seq: number) {
+  for (const b of chat.botIds) chat.cursors[b] = Math.max(chat.cursors[b] ?? 0, seq);
+}
+
+/**
+ * Runs a routine: posts its prompt into the chat and queues the bot. `publish` records the run on
+ * the Trigger bus before it is routed: in two-layer mode, a run on a thread a Worker subscribes to
+ * has gone straight to that Worker (ADR 003), and the Router only observes it.
+ */
+export function runInChat(chatId: string, botId: string, prompt: string, trigger: MessageTrigger, routineName?: string, publish?: (msg: ChatMessage) => Trigger | null): ChatMessage {
   const chat = chats.get(chatId);
   if (!chat) throw new Error('Chat not found');
   const expanded = skills.expand(prompt.trim());
@@ -805,9 +820,26 @@ export function runInChat(chatId: string, botId: string, prompt: string, trigger
   bus.emit({ t: 'msg', msg });
   setLastMessage(chat, msg);
   emitChat(chat);
-  // Two-layer mode: the Router decides, told which member the routine names.
-  if (routerMode(chat)) routerEvent(chatId, { kind: 'routine', id: msg.id, at: msg.ts, seq: msg.seq, text: msg.prompt || msg.text, routine: routineName || 'routine', bot: bots.get(botId)?.name });
-  else {
+  const t = publish?.(msg) ?? null;
+  // Two-layer mode: the Router decides, told which member the routine names, unless subscribed Workers already have it.
+  if (routerMode(chat)) {
+    takenByRouter(chat, msg.seq);
+    chats.save();
+    if (!t?.filter.direct?.length) {
+      const threadId = t && subscriptionsOn(settings.get().superAgent) ? t.threadId : undefined;
+      routerEvent(chatId, {
+        kind: 'routine',
+        id: msg.id,
+        at: msg.ts,
+        seq: msg.seq,
+        text: msg.prompt || msg.text,
+        routine: routineName || 'routine',
+        bot: bots.get(botId)?.name,
+        triggerId: threadId && t?.id,
+        threadId,
+      });
+    }
+  } else {
     if (chat.router) chat.router.cursor = msg.seq;
     enqueue({ chatId, botId, trigger, hopsLeft: chat.maxHops, routineName });
   }

@@ -70,6 +70,8 @@ export interface SessionConfig {
   deniedReason?(toolName: string, input: unknown): string | null;
   /** Context size (tokens) past which a turn is asked to wrap up; read at each tool call, 0 = never. */
   wrapUpAt?(): number;
+  /** A Worker's events delivered while a turn runs (ADR 003): taken at each tool call of the main loop and added to its context. */
+  deliveries?(): string | null;
   /** Hide Claude Code's attribution (Co-Authored-By trailers, PR footers) in commits and PRs. */
   attributionOff?: boolean;
   /** Claude Code's command sandbox (see server/sandbox.ts); undefined runs commands unconfined. */
@@ -200,14 +202,16 @@ export class BotSession implements AgentSession {
         ],
         PostToolUse: [
           {
-            // A turn grown past the limit is asked to finish the step in hand and hand back.
+            // A turn grown past the limit is asked to finish the step in hand and hand back; a Worker
+            // gets the events that arrived on its threads meanwhile.
             hooks: [
               async (input) => {
                 if ((input as PostToolUseHookInput).agent_id || !this.active) return {};
                 const note = wrapUpNote(this.contextSize(), cfg.wrapUpAt?.() ?? 0, this.remindedAt);
-                if (!note) return {};
-                this.remindedAt = this.contextSize();
-                return { hookSpecificOutput: { hookEventName: 'PostToolUse' as const, additionalContext: note } };
+                if (note) this.remindedAt = this.contextSize();
+                const events = cfg.deliveries?.();
+                const context = [note, events].filter(Boolean).join('\n\n');
+                return context ? { hookSpecificOutput: { hookEventName: 'PostToolUse' as const, additionalContext: context } } : {};
               },
             ],
           },
@@ -363,6 +367,18 @@ export class FakeSession implements AgentSession {
     const emit = (m: unknown) => hooks.onMessage(m as SDKMessage);
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const started = Date.now();
+    // A demo Worker's delivered events (ADR 003): the ones in its prompt, and the ones it gets between steps.
+    const seen: string[] = [];
+    const handBack: { thread: string; event: string }[] = [];
+    const take = (text: string | null | undefined) => {
+      for (const m of (text || '').matchAll(/<event id="(tg_[^"]+)" thread="(th_[^"]+)"[^>]*>\n([\s\S]*?)\n<\/event>/g)) {
+        if (seen.includes(m[1])) continue;
+        seen.push(m[1]);
+        if (/not my task/i.test(m[3])) handBack.push({ thread: m[2], event: m[1] });
+      }
+      return !!text;
+    };
+    if (this.cfg.role === 'worker') take(prompt);
     const streamText = async (text: string) => {
       const msgId = `msg_fake_${++fakeCounter}`;
       emit({ type: 'stream_event', ...this.base(), event: { type: 'message_start', message: { id: msgId, content: [] } } });
@@ -399,6 +415,7 @@ export class FakeSession implements AgentSession {
         }
       }
       emit({ type: 'user', ...this.base(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: result, is_error: isError }] } });
+      take(this.cfg.deliveries?.());
       await sleep(200);
       return result;
     };
@@ -439,8 +456,12 @@ export class FakeSession implements AgentSession {
           // A complex request: a few more looks around, enough to count as real work.
           for (const pattern of ['*.html', '*.css', '*.js', '*.md']) await runTool('Glob', { pattern }, () => '(demo)');
         }
-        // A demo Worker on a "slow" task keeps working until it is stopped (or 30 s pass).
-        if (this.cfg.role === 'worker' && /\bslow\b/i.test(ask)) for (let i = 0; i < 300 && !this.stopped; i++) await sleep(100);
+        // A demo Worker on a "slow" task keeps working until it is stopped, an event comes in on its threads, or 30 s pass.
+        if (this.cfg.role === 'worker' && /\bslow\b/i.test(ask))
+          for (let i = 0; i < 300 && !this.stopped && !seen.length; i++) {
+            take(this.cfg.deliveries?.());
+            await sleep(100);
+          }
         if (/add|create|make|build/i.test(ask) && !this.stopped) {
           // Parallel demo Workers write files of their own, unless the task asks for a conflict.
           const name = this.cfg.role === 'worker' && !/conflict/i.test(ask) ? `crew-demo-${(++fakeCounter).toString(36)}.md` : 'crew-demo.md';
@@ -450,6 +471,14 @@ export class FakeSession implements AgentSession {
             hooks.beforeEdit(file);
             fs.writeFileSync(file, `# Demo\n\nWritten by ${this.botName} at ${new Date().toLocaleString('en-US')}.\n\nRequest: ${prompt.slice(0, 200)}\n`);
             return `File created successfully at: ${file}`;
+          });
+        }
+        // An event that says "not my task" goes back to the Router through the Worker's tool.
+        for (const h of handBack) {
+          await runTool('mcp__crew__hand_back', { thread: h.thread, event: h.event, note: 'Not part of my task.' }, async () => {
+            const r = await (this.cfg.fakeTools?.hand_back?.(h) ?? Promise.resolve({ text: 'No hand_back tool', isError: true }));
+            if (r.isError) throw new Error(r.text);
+            return r.text;
           });
         }
         const others = this.mentionables.filter((n) => n !== this.botName);
@@ -462,7 +491,7 @@ export class FakeSession implements AgentSession {
             : twoSteps
               ? "Step one is done; I'll take the next step myself.\n[continue]"
               : this.cfg.role === 'worker'
-                ? `${this.stopped ? 'Stopped' : 'Done'}. In demo mode I only looked around${/add|create|make|build/i.test(ask) ? ' and wrote a demo file' : ''}; no model was called.`
+                ? `${this.stopped ? 'Stopped' : 'Done'}. In demo mode I only looked around${/add|create|make|build/i.test(ask) ? ' and wrote a demo file' : ''}; no model was called.${seen.length ? ` Read ${seen.length} event${seen.length === 1 ? '' : 's'} sent to me directly: ${seen.join(', ')}.` : ''}${handBack.length ? ` Handed ${handBack.map((h) => h.event).join(', ')} back to the Router.` : ''}`
                 : 'Done. In **demo mode** I only created `crew-demo.md`, to show change tracking and undo.',
         );
       }

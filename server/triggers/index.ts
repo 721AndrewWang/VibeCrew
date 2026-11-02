@@ -10,14 +10,31 @@
 // user; explicit requests are acted on by the chat exactly as before.
 
 import fs from 'node:fs';
-import type { Chat, ConsoleEntry, FilteredSource, Project, Routine, SuperAgentSettings, Thread, Trigger, TriggerDetail, TriggerList, TriggerRef, TriggerSource } from '../../shared/types';
+import type {
+  Chat,
+  ConsoleEntry,
+  FilteredSource,
+  Project,
+  Routine,
+  SuperAgentSettings,
+  Thread,
+  Trigger,
+  TriggerDetail,
+  TriggerList,
+  TriggerRef,
+  TriggerSource,
+  Worker,
+  WorkerDelivery,
+} from '../../shared/types';
 import { bus, notify } from '../bus';
 import { DATA, FAKE_AGENT } from '../config';
-import { routerEvent, routerMode } from '../layers';
+import { countRouterEvents, deliverToWorker, noteDirect, type RouterEvent, routerEvent, routerMode } from '../layers';
+import type { HandedBack } from '../layers/prompts';
+import { receivers, subscriptionsOn } from '../layers/subscriptions';
 import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
 import { chatProjectId } from '../projects';
-import { chats, messages, projects, routines, settings, TRIGGER_LIMITS, threads, triggerLog, triggerPayloadFile, uid } from '../store';
+import { bots, chats, messages, projects, routines, settings, TRIGGER_LIMITS, threads, triggerLog, triggerPayloadFile, uid, workers } from '../store';
 import { type FastInput, FILTERED_SOURCES, fastPath, fingerprintOf, reachedSlowPath } from './fastPath';
 import { type Decided, fakeDecide, modelDecide, type SlowItem, SlowQueue } from './slowPath';
 
@@ -51,6 +68,8 @@ export interface TriggerInput {
   facts?: FastInput['facts'];
   related?: string[];
   action?: string;
+  /** The Worker whose action this event is (its own landing): its subscriptions do not count. */
+  origin?: string;
 }
 
 export const chatThread = (chat: Chat): ThreadSpec => ({ key: `chat:${chat.id}`, kind: 'chat', title: chat.title, chatId: chat.id, projectId: chatProjectId(chat) });
@@ -113,10 +132,9 @@ function publish(input: TriggerInput, sa: SuperAgentSettings): Trigger {
     filter: { verdict: 'drop', stage: 'fast', rule: '', reason: '' },
     action: input.action,
   };
-  t.filter = fastPath(
-    { source: t.source, explicit: t.explicit, rootProjectId: rootProject(t.projectId), subjects, fingerprint: t.fingerprint, facts: input.facts ?? {} },
-    { settings: sa, thread, recent: triggerLog.recent(50, (r) => r.threadId === thread.id), candidatesLastHour: candidatesSince(now - HOUR), now },
-  );
+  const fast: FastInput = { source: t.source, explicit: t.explicit, rootProjectId: rootProject(t.projectId), subjects, fingerprint: t.fingerprint, facts: input.facts ?? {} };
+  const to = receiversFor(thread, t.explicit || t.source === 'user' || t.source === 'routine', input.origin);
+  t.filter = fastPath(fast, { ...fastContext(sa, thread, now), subscribers: to.map((w) => w.id) });
   if (t.ref.kind === 'payload') {
     fs.mkdirSync(DATA.triggerPayloads, { recursive: true });
     fs.writeFileSync(triggerPayloadFile(t.id), JSON.stringify(input.payload ?? null));
@@ -128,10 +146,19 @@ function publish(input: TriggerInput, sa: SuperAgentSettings): Trigger {
   threads.set(thread);
   // The log line is written at once: so is a new thread it points at (counts can catch up later).
   if (isNew) threads.flush();
+  if (t.filter.rule === 'subscribed') deliverDirect(t, thread, to, fast);
   save(t);
   if (t.filter.verdict === 'candidate') slow.push(slowItem(t, thread));
   return t;
 }
+
+const fastContext = (sa: SuperAgentSettings, thread: Thread, now: number) => ({
+  settings: sa,
+  thread,
+  recent: triggerLog.recent(50, (r) => r.threadId === thread.id),
+  candidatesLastHour: candidatesSince(now - HOUR),
+  now,
+});
 
 function save(t: Trigger) {
   triggerLog.append(t);
@@ -156,6 +183,20 @@ export function closeThread(key: string) {
   open.closedAt = Date.now();
   threads.set(open);
   threads.flush();
+}
+
+/** A thread to subscribe to: the open one with this key, or a new one stored now (it may have no trigger yet). */
+export function ensureThread(spec: ThreadSpec): Thread {
+  const thread = openThread(spec, Date.now());
+  if (!threads.has(thread.id)) {
+    threads.set(thread);
+    threads.flush();
+  }
+  return thread;
+}
+
+export function threadsOf(ids: string[] | undefined): Thread[] {
+  return (ids || []).map((id) => threads.get(id)).filter((t): t is Thread => !!t);
 }
 
 function latestRequest(thread: Thread): string[] {
@@ -236,6 +277,7 @@ const NOTICED: Record<TriggerSource, string> = {
   turn: 'a failed turn',
   'outside-edit': 'an outside edit',
   'preview-console': 'a preview console error',
+  landing: "a Worker's merge",
 };
 
 export function noticeText(t: Trigger): string {
@@ -286,6 +328,150 @@ function deliver(t: Trigger) {
   notify('Crew noticed something', t.summary.slice(0, 140), { chatId: chat.id, level: 'info' });
 }
 
+// ---------------------------------------------------------------- direct routing to subscribed Workers (ADR 003)
+
+/** What the Router's <direct> lines call each source. */
+const DIRECT_NAME: Record<TriggerSource, string> = {
+  user: 'message',
+  routine: 'routine run',
+  turn: 'turn result',
+  'outside-edit': 'outside edit',
+  'preview-console': 'console error',
+  landing: 'Worker merge',
+};
+
+/** The Workers a Trigger on this thread goes straight to: none while subscriptions are off, and never on a chat's thread (the Router's own). */
+function receiversFor(thread: Thread, explicit: boolean, origin?: string): Worker[] {
+  if (!subscriptionsOn(settings.get().superAgent) || thread.kind === 'chat') return [];
+  return receivers(workers.all(), { threadId: thread.id, explicit, origin, live: (w) => routerMode(chats.get(w.chatId)) });
+}
+
+/**
+ * Environment triggers delivered directly that no receiver has read yet: the Workers still holding
+ * them, and what the fast path needs to route them again if none does. In memory: a restart stops
+ * every Worker, and a stale event would only confuse.
+ */
+const unread = new Map<string, { waiting: Set<string>; fast: FastInput }>();
+
+const DELIVERY_CHARS = 4000;
+
+/** What a Worker is given: a routine's prompt in full, else the payload (cut to its first words when rendered). */
+function deliveryText(t: Trigger): string {
+  if (t.ref.kind !== 'payload') {
+    const m = messages.get(t.ref.chatId, t.ref.messageId);
+    if (m) return (m.prompt || m.text).slice(0, DELIVERY_CHARS);
+  }
+  return detailText(t).slice(0, DELIVERY_CHARS);
+}
+
+function deliverDirect(t: Trigger, thread: Thread, to: Worker[], fast: FastInput) {
+  const ids = to.map((w) => w.id);
+  t.filter.direct = ids;
+  t.action = `Sent straight to ${ids.join(', ')} (subscribed to "${thread.title}")`;
+  const item: WorkerDelivery = { triggerId: t.id, threadId: thread.id, at: t.at, source: t.source, explicit: t.explicit, summary: t.summary, text: deliveryText(t) };
+  if (!t.explicit) unread.set(t.id, { waiting: new Set(ids), fast });
+  for (const w of to) deliverToWorker(w, item);
+  // One Router decision avoided per chat whose Workers got it.
+  for (const chatId of new Set(to.map((w) => w.chatId))) {
+    countRouterEvents(chatId, 'direct', 1);
+    noteDirect(chatId, {
+      id: t.id,
+      source: DIRECT_NAME[t.source],
+      thread: thread.title,
+      workers: to.filter((w) => w.chatId === chatId).map((w) => w.id),
+      summary: t.explicit ? t.summary : undefined,
+    });
+  }
+}
+
+/** A Worker's session read these delivered triggers: nobody else needs to. */
+export function deliveriesRead(ids: string[]) {
+  for (const id of ids) unread.delete(id);
+}
+
+/**
+ * A Worker went idle without reading these. Once no other receiver holds one either, it goes back
+ * to the normal path (rules, cheap model, Router) as if nobody had subscribed; with `drop` (the
+ * user stopped the chat) it is let go instead.
+ */
+export function deliveriesUnread(workerId: string, ids: string[], opts: { drop?: boolean } = {}) {
+  for (const id of ids) {
+    const u = unread.get(id);
+    if (!u) continue;
+    u.waiting.delete(workerId);
+    if (u.waiting.size) continue;
+    unread.delete(id);
+    if (!opts.drop) reroute(id, u.fast, `${workerId} finished before reading it`);
+  }
+}
+
+/** The chats that counted a direct delivery count it no more: their Router (or its filter) has it after all. */
+function uncount(workerIds: string[]) {
+  for (const chatId of new Set(workerIds.map((id) => workers.get(id)?.chatId).filter((c): c is string => !!c))) countRouterEvents(chatId, 'direct', -1);
+}
+
+function reroute(id: string, fast: FastInput, why: string) {
+  const t = triggerLog.get(id);
+  const thread = threads.get(t?.threadId);
+  if (!t || !thread || !superAgentOn()) return;
+  const direct = t.filter.direct;
+  uncount(direct || []);
+  t.filter = { ...fastPath(fast, fastContext(settings.get().superAgent, thread, Date.now())), direct };
+  t.action = `${why}; back to the filter`;
+  save(t);
+  if (t.filter.verdict === 'candidate') slow.push(slowItem(t, thread));
+}
+
+/** A routine run or an environment trigger, as the Router reads it. */
+function routerEventOf(t: Trigger, handedBack: HandedBack): RouterEvent | null {
+  if (t.ref.kind === 'routine') {
+    const m = messages.get(t.ref.chatId, t.ref.messageId);
+    if (!m) return null;
+    const r = routines.get(t.ref.routineId);
+    return {
+      kind: 'routine',
+      id: m.id,
+      at: m.ts,
+      seq: m.seq,
+      text: m.prompt || m.text,
+      routine: r?.name || 'routine',
+      bot: bots.get(r?.botId)?.name,
+      triggerId: t.id,
+      threadId: t.threadId,
+      handedBack,
+    };
+  }
+  if (t.explicit) return null;
+  return { kind: 'environment', id: t.id, at: t.at, source: t.source, summary: t.summary, reason: t.filter.reason, handedBack };
+}
+
+/**
+ * A Worker gives a trigger it received back to its Router (by default its latest one from the
+ * thread): a routine run stays explicit, an environment event stays one (it still cannot start
+ * work). Once per trigger, however many Workers got it. Null when it received nothing there.
+ */
+export function handBackTrigger(w: Worker, threadId: string, triggerId?: string, note?: string): Trigger | null {
+  const mine = (r: Trigger) => r.threadId === threadId && !!r.filter.direct?.includes(w.id);
+  const t = triggerId ? triggerLog.get(triggerId.trim()) : triggerLog.recent(1, mine)[0];
+  if (!t || !mine(t)) return null;
+  unread.delete(t.id);
+  if (t.filter.handedBack) return t;
+  t.filter = { ...t.filter, handedBack: { by: w.id, at: Date.now() } };
+  t.action = `Handed back to the Router by ${w.id}`;
+  countRouterEvents(w.chatId, 'direct', -1);
+  const ev = routerEventOf(t, { by: w.id, note: note?.trim() || undefined });
+  if (ev && routerMode(chats.get(w.chatId))) routerEvent(w.chatId, ev);
+  save(t);
+  return t;
+}
+
+/** Routine runs in this chat that went straight to Workers and stayed with them: the Router does not take them again after a restart. */
+export function directRuns(chatId: string): Set<string> {
+  const ids = new Set<string>();
+  for (const t of triggerLog.all()) if (t.chatId === chatId && t.ref.kind === 'routine' && t.filter.rule === 'subscribed' && !t.filter.handedBack) ids.add(t.ref.messageId);
+  return ids;
+}
+
 // ---------------------------------------------------------------- sources without a home path
 
 /** Console output the preview reported (BrowserTab forwards errors while the feature is on). */
@@ -334,6 +520,7 @@ export function listTriggers(q: { source?: string; verdict?: string; threadId?: 
       // One model call decides its whole batch at one time.
       slowCalls: new Set(judged.map((t) => t.filter.slow!.decidedAt)).size,
       slowCostUsd: judged.reduce((s, t) => s + (t.filter.slow?.costUsd || 0), 0),
+      direct: all.filter((t) => t.filter.rule === 'subscribed').length,
     },
   };
 }
@@ -353,10 +540,11 @@ export function triggerDetail(id: string): TriggerDetail | null {
 
 // ---------------------------------------------------------------- retention
 
-/** Drops triggers past the limits, and threads none of the remaining triggers belong to. */
+/** Drops triggers past the limits, and threads none of the remaining triggers belong to and no Worker subscribes to. */
 export function pruneTriggers(now = Date.now()) {
   triggerLog.prune(now);
   const live = new Set(triggerLog.all().map((t) => t.threadId));
+  for (const w of workers.all()) if (!w.dismissedAt) for (const id of w.threads || []) live.add(id);
   for (const th of threads.all()) if (!live.has(th.id) && th.lastAt < now - 60_000) threads.delete(th.id);
 }
 

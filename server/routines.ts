@@ -82,17 +82,19 @@ export function runRoutine(r: Routine, reason: 'schedule' | 'manual' | 'event' =
     emit(r);
     return;
   }
-  const msg = runInChat(chat.id, bot.id, r.prompt, { type: 'routine', routineId: r.id }, r.name);
-  publishTrigger({
-    source: 'routine',
-    summary: `Routine "${r.name}" ran ${WHY[reason === 'event' && r.trigger.type === 'git_commit' ? 'commit' : reason]}: ${r.prompt}`,
-    thread: routineThread(r, chat),
-    ref: { kind: 'routine', routineId: r.id, chatId: chat.id, messageId: msg.id },
-    chatId: chat.id,
-    projectId: chatProjectId(chat),
-    explicit: true,
-    action: `Posted in "${chat.title}" for ${bot.name}`,
-  });
+  // Recorded before it is routed: a Worker subscribed to the routine's thread takes it without the Router (ADR 003).
+  runInChat(chat.id, bot.id, r.prompt, { type: 'routine', routineId: r.id }, r.name, (msg) =>
+    publishTrigger({
+      source: 'routine',
+      summary: `Routine "${r.name}" ran ${WHY[reason === 'event' && r.trigger.type === 'git_commit' ? 'commit' : reason]}: ${r.prompt}`,
+      thread: routineThread(r, chat),
+      ref: { kind: 'routine', routineId: r.id, chatId: chat.id, messageId: msg.id },
+      chatId: chat.id,
+      projectId: chatProjectId(chat),
+      explicit: true,
+      action: `Posted in "${chat.title}" for ${bot.name}`,
+    }),
+  );
   r.lastRunAt = Date.now();
   r.runCount = (r.runCount || 0) + 1;
   r.lastStatus = 'running';
