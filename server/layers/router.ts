@@ -18,12 +18,14 @@ import { botModel } from '../claudeAuth';
 import { FAKE_AGENT, HOME_DIR } from '../config';
 import { MODEL_OPTIONS } from '../data/catalog';
 import { logger } from '../log';
-import { systemMessage } from '../orchestrator/chatLog';
+import { emitChat, systemMessage } from '../orchestrator/chatLog';
 import { agentEnv } from '../orchestrator/turnContext';
 import { bots, chats, messages, routerLogId, settings } from '../store';
+import { directRuns, handBackTrigger } from '../triggers';
 import { monthSpend } from '../usage';
 import { BatchQueue } from './batch';
-import { explicitEvent, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type TeamMember } from './prompts';
+import { type DirectLine, explicitEvent, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type TeamMember } from './prompts';
+import { subscriptionsOn } from './subscriptions';
 import { routerMcpServer, routerTools, type TurnCtx } from './tools';
 import { runLogged } from './turn';
 import { type recoverWorkers, workerLines } from './workers';
@@ -38,6 +40,8 @@ const RECAP_MESSAGES = 12;
  */
 const ROUTER_CWD = path.join(HOME_DIR, 'router');
 const TOPIC_MARK = '—— New topic ——';
+/** Direct deliveries kept for the Router's next batch at most; it observes them, it does not decide. */
+const OBSERVED_MAX = 50;
 
 /** Group chats run in two layers while the Super-agent and its Router switch are both on. */
 export function routerMode(chat: Chat | null | undefined): boolean {
@@ -69,6 +73,8 @@ class ChatRouter {
   state: RouterInfo['state'] = 'idle';
   detail?: string;
   since = Date.now();
+  /** Triggers that went straight to this chat's Workers since the Router's last turn (ADR 003). */
+  observed: DirectLine[] = [];
   /** The session outgrew rotateAtTokens: the next turn starts a new one, with a recap. */
   private rotateAt: number | null = null;
   private readonly tools = routerTools(() => this.current);
@@ -114,6 +120,7 @@ class ChatRouter {
   private getSession(chat: Chat, lead: Bot): AgentSession {
     if (this.session && !this.session.closed) return this.session;
     const rs = settings.get().superAgent.router;
+    const subscribed = subscriptionsOn(settings.get().superAgent);
     fs.mkdirSync(ROUTER_CWD, { recursive: true });
     const team: TeamMember[] = bots
       .all()
@@ -123,7 +130,7 @@ class ChatRouter {
       cwd: ROUTER_CWD,
       model: botModel(rs.model),
       systemAppend: '',
-      systemPrompt: routerSystemPrompt({ lead: lead.name, leadTitle: lead.title, chat: chat.title, role: lead.description, team, maxWorkers: rs.maxWorkers }),
+      systemPrompt: routerSystemPrompt({ lead: lead.name, leadTitle: lead.title, chat: chat.title, role: lead.description, team, maxWorkers: rs.maxWorkers, subscriptions: subscribed }),
       // No Bash, Read, Edit, Write, WebFetch or Task: the Router coordinates, Workers execute.
       tools: [],
       resume: chat.router?.sessionId,
@@ -131,7 +138,7 @@ class ChatRouter {
       allowRules: ['mcp__crew_router'],
       askRules: [],
       denyRules: settings.get().denyRules || [],
-      mcpServers: { crew_router: routerMcpServer(this.tools) as McpServerConfig },
+      mcpServers: { crew_router: routerMcpServer(this.tools, { subscriptions: subscribed }) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],
       env: agentEnv(),
@@ -201,7 +208,11 @@ class ChatRouter {
     } else if (!this.session && !chat.router?.sessionId) recapWhy = 'you are taking over this conversation as its Router';
 
     const related = [...new Set(batch.flatMap((e) => [e.id, ...((e.kind === 'user' || e.kind === 'routine') && e.triggerId ? [e.triggerId] : [])]))];
-    this.current = { chatId: chat.id, lead, explicit: batch.some(explicitEvent), related, userMessageIds: batch.flatMap((e) => (e.kind === 'user' ? [e.id] : [])) };
+    // A routine's thread is what a Worker dispatched for its run subscribes to.
+    const threads = [...new Set(batch.flatMap((e) => (e.kind === 'routine' && e.threadId ? [e.threadId] : [])))];
+    this.current = { chatId: chat.id, lead, explicit: batch.some(explicitEvent), related, userMessageIds: batch.flatMap((e) => (e.kind === 'user' ? [e.id] : [])), threads };
+    const direct = this.observed.splice(0);
+    if (subscriptionsOn(settings.get().superAgent)) countRouterEvents(chat.id, 'decided', batch.length);
     this.setState('thinking');
     const { msg, session } = await runLogged({
       logId: routerLogId(chat.id),
@@ -220,7 +231,7 @@ class ChatRouter {
         recapWhy ??= 'the previous session could not be resumed';
         return true;
       },
-      content: () => renderBatch(batch, workerLines(chat.id), Date.now(), recapWhy ? this.recap(chat, firstSeq, recapWhy) : undefined),
+      content: () => renderBatch(batch, workerLines(chat.id), Date.now(), recapWhy ? this.recap(chat, firstSeq, recapWhy) : undefined, direct),
       hooks: () => ({
         beforeEdit: () => {},
         // The deny-everything-else gate, behind `tools: []`: only the Router's own tools run.
@@ -289,6 +300,22 @@ function routerOf(chatId: string): ChatRouter {
   return r;
 }
 
+/** A Trigger went straight to the chat's Workers: the Router sees it in its next batch, whenever that comes. */
+export function noteDirect(chatId: string, line: DirectLine) {
+  if (!chats.get(chatId)) return;
+  const r = routerOf(chatId);
+  r.observed.push(line);
+  if (r.observed.length > OBSERVED_MAX) r.observed.splice(0, r.observed.length - OBSERVED_MAX);
+}
+
+/** The chat's counts of events its Router decided on and events that went straight to its Workers (Router decisions avoided). */
+export function countRouterEvents(chatId: string, key: 'decided' | 'direct', delta: number) {
+  const chat = chats.get(chatId);
+  if (!chat || !delta) return;
+  chat.router = { ...chat.router, [key]: Math.max(0, (chat.router?.[key] ?? 0) + delta) };
+  emitChat(chat);
+}
+
 /** Puts an event in the chat's Router inbox; it is handled in the Router's next turn. */
 export function routerEvent(chatId: string, ev: RouterEvent) {
   if (!chats.get(chatId)) return;
@@ -314,7 +341,7 @@ export function resetRouter(chatId: string) {
   routers.get(chatId)?.reset();
   const chat = chats.get(chatId);
   if (chat?.router?.sessionId) {
-    chat.router = { cursor: chat.router.cursor };
+    chat.router = { ...chat.router, sessionId: undefined };
     chats.save();
   }
 }
@@ -338,13 +365,15 @@ export function closeRouterSessions() {
  * On start, for chats in two-layer mode: give the Router again the user's messages it had not been
  * handed yet, and tell it about the Workers a restart cut off.
  */
-export function resumeRouters(interrupted: ReturnType<typeof recoverWorkers>['interrupted']) {
+export function resumeRouters({ interrupted, undelivered }: Pick<ReturnType<typeof recoverWorkers>, 'interrupted' | 'undelivered'>) {
   for (const chat of chats.all()) {
     if (!routerMode(chat)) continue;
     const cursor = chat.router?.cursor;
     if (cursor !== undefined) {
+      // Routine runs that went straight to a Worker are not the Router's (those a restart cut off come below).
+      const direct = directRuns(chat.id);
       for (const m of messages.sorted(chat.id)) {
-        if (m.seq <= cursor || m.role !== 'user' || m.uiOnly) continue;
+        if (m.seq <= cursor || m.role !== 'user' || m.uiOnly || direct.has(m.id)) continue;
         if (m.trigger?.type === 'routine') routerEvent(chat.id, { kind: 'routine', id: m.id, at: m.ts, seq: m.seq, text: m.prompt || m.text, routine: 'routine' });
         else routerEvent(chat.id, { kind: 'user', id: m.id, at: m.ts, seq: m.seq, text: m.prompt || m.text, attachments: m.attachments?.length });
       }
@@ -352,6 +381,8 @@ export function resumeRouters(interrupted: ReturnType<typeof recoverWorkers>['in
     for (const w of interrupted.filter((x) => x.chatId === chat.id)) {
       routerEvent(chat.id, { kind: 'worker', id: w.id, at: Date.now(), bot: bots.get(w.botId)?.name || 'deleted bot', title: w.title, status: 'stopped', report: w.report?.text || '' });
     }
+    // Routine runs that waited in a Worker's inbox when Crew stopped: the Router takes them now.
+    for (const u of undelivered.filter((x) => x.worker.chatId === chat.id)) handBackTrigger(u.worker, u.threadId, u.triggerId, 'Crew restarted before it took this run');
   }
   log.debug(`${routers.size} routers resumed`);
 }

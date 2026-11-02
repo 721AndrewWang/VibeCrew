@@ -6,8 +6,8 @@
 
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import type { Bot, Chat, ChatMessage, Project, Worker, WorkerStatus } from '../../shared/types';
-import { crewServer } from '../agents/crewTools';
+import type { Bot, Chat, ChatMessage, Project, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
+import { type CrewContext, crewServer } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
 import { buildSystemAppend, buildTurnPrompt, contextDelta, renderUserMessage } from '../agents/prompts';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
@@ -26,18 +26,18 @@ import { reviewDiff } from '../review';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
-import { chatThread, publishTrigger } from '../triggers';
+import { chatThread, deliveriesRead, deliveriesUnread, ensureThread, handBackTrigger, publishTrigger, type ThreadSpec, threadsOf, workspaceThread } from '../triggers';
 import { monthSpend } from '../usage';
 import { ensureWatch } from '../watcher';
 import { checkGit, createWorkerWorkspace, retireWorkerWorkspace, runSetup, type Workspace, workspaceOf } from '../workspaces';
 import { doCreate } from '../workspaces/create';
-import { type WorkerLine, workerPrompt } from './prompts';
+import { deliveredNote, type WorkerLine, workerPrompt } from './prompts';
 import { leadOf, routerEvent } from './router';
+import { ACTIVE, pushInbox, subscriptionsOn } from './subscriptions';
 import { runLogged } from './turn';
 
 const log = logger('workers');
 
-export const ACTIVE: ReadonlySet<WorkerStatus> = new Set(['starting', 'running', 'waiting']);
 const REPORT_CHARS = 6000;
 /** Finished Workers are dismissed (worktree removed) after this long without news. */
 const IDLE_DISMISS_MS = 6 * 3600_000;
@@ -95,12 +95,14 @@ export function listWorkers(chatId?: string): Worker[] {
 
 /** The Router's <workers> lines. */
 export function workerLines(chatId: string): WorkerLine[] {
+  const subscribed = subscriptionsOn(settings.get().superAgent);
   return chatWorkers(chatId).map((w) => ({
     id: w.id,
     bot: bots.get(w.botId)?.name || 'deleted bot',
     status: w.status,
     title: w.title,
     note: isActive(w) ? w.detail : w.report ? `report: ${preview(w.report.text).slice(0, 100)}` : undefined,
+    threads: subscribed ? threadsOf(w.threads).map((t) => ({ id: t.id, title: t.title })) : undefined,
   }));
 }
 
@@ -128,6 +130,9 @@ export interface DispatchInput {
   related: string[];
   /** The user's messages in the batch: the Worker gets them verbatim, with their attachments. */
   userMessageIds: string[];
+  /** Subscribe it to the threads it works on (ADR 003): the chat's workspace once it is ready, and these (the batch's routines). */
+  subscribe?: boolean;
+  threads?: string[];
 }
 
 /** Starts a Worker in the background and returns it at once (the gates are the caller's). */
@@ -148,6 +153,11 @@ export function startWorker(chat: Chat, bot: Bot, input: DispatchInput): Worker 
     costUsd: 0,
     related: input.related.slice(0, 20),
   };
+  // A blind reviewer stays blind: nothing from the environment or other Workers reaches it.
+  if (input.subscribe && !bot.blindReview)
+    w.threads = threadsOf(input.threads)
+      .filter((t) => t.kind !== 'chat')
+      .map((t) => t.id);
   save(w);
   liveOf(w.id).first = { userMessageIds: input.userMessageIds };
   void launch(w).catch((e) => {
@@ -184,10 +194,14 @@ async function launch(w: Worker) {
       return finish(w, 'error', `${other.id} is already working in the chat's folder, and Workers can't have a workspace of their own here (${reason})`);
     }
     save(w, { projectId: chatProjectId(chat), shared: reason, detail: undefined });
+    const folder = projects.get(chatProjectId(chat));
+    if (w.threads && folder) subscribe(w, workspaceThread(folder));
   } else {
     // The chat's branch is where Workers' changes come together: the chat moves into a workspace first.
     if (!workspaceOf(chat)) save(w, { detail: "Moving the chat into a workspace of its own (Workers' changes are merged there)" });
     const chatWs = await whenChatFree(chat.id, async () => workspaceOf(chats.get(chat.id) || chat) ?? ((await doCreate(chat.id)) as Workspace));
+    // Where its changes land, shared with the chat's other Workers: their merges, hand edits, console errors.
+    if (w.threads) subscribe(w, workspaceThread(chatWs));
     save(w, { detail: 'Creating its own workspace' });
     const { ws, base } = await whenChatFree(chat.id, () => createWorkerWorkspace(chatWs, w));
     // On disk before any work happens there: after a crash, startup finds the worktrees by these records.
@@ -214,16 +228,118 @@ async function runLoop(w: Worker) {
   if (l.running) return;
   l.running = true;
   try {
-    while (!l.stop && (l.first || w.pending?.length) && !w.dismissedAt) {
+    // A routine run delivered to it is a request of its own; environment events only ride along.
+    while (!l.stop && (l.first || w.pending?.length || w.inbox?.some((d) => d.explicit)) && !w.dismissedAt) {
       const first = l.first;
       l.first = undefined;
       const followUps = w.pending || [];
-      save(w, { pending: [] });
-      await runTurn(w, first, followUps);
+      const delivered = w.inbox || [];
+      save(w, { pending: [], ...(delivered.length ? { inbox: [] } : {}) });
+      deliveriesRead(delivered.filter((d) => !d.explicit).map((d) => d.triggerId));
+      await runTurn(w, first, followUps, delivered);
     }
   } finally {
     l.running = false;
+    settleInbox(w);
   }
+}
+
+// ---------------------------------------------------------------- subscriptions (ADR 003)
+
+/** Adds a thread to the Worker's subscriptions, storing the thread if nothing has happened on it yet. */
+function subscribe(w: Worker, spec: ThreadSpec) {
+  const th = ensureThread(spec);
+  if (!w.threads?.includes(th.id)) save(w, { threads: [...(w.threads || []), th.id] });
+}
+
+/** The Worker leaves a thread (its own call, or the user's): later events there go to the Router again. */
+export function unsubscribeWorker(w: Worker, threadId: string): boolean {
+  if (!w.threads?.includes(threadId)) return false;
+  save(w, { threads: w.threads.filter((id) => id !== threadId) });
+  return true;
+}
+
+/** A Trigger on one of its threads. A routine run wakes a finished Worker; anything else waits for its session's next step. */
+export function deliverToWorker(w: Worker, d: WorkerDelivery) {
+  const inbox = pushInbox(w.inbox, d);
+  const dropped = (w.inbox || []).filter((x) => !inbox.includes(x)).map((x) => x.triggerId);
+  save(w, { inbox, received: (w.received || 0) + 1 });
+  if (dropped.length) deliveriesUnread(w.id, dropped, { drop: true });
+  const l = liveOf(w.id);
+  if (d.explicit && !l.running && w.status !== 'starting') {
+    l.stop = false;
+    l.quiet = false;
+    void runLoop(w);
+  }
+}
+
+/** What arrived while a turn runs, for the session's next step (the PostToolUse hook); routine runs wait for a turn of their own. */
+function takeDeliveries(id: string): string | null {
+  const w = workers.get(id);
+  const env = (w?.inbox || []).filter((d) => !d.explicit);
+  if (!w || !env.length) return null;
+  save(w, { inbox: (w.inbox || []).filter((d) => d.explicit) });
+  deliveriesRead(env.map((d) => d.triggerId));
+  return deliveredNote(env);
+}
+
+/**
+ * The Worker went idle with deliveries its session never read (they came after its last step, or
+ * it was stopped): a routine run goes to the Router, an environment event back to the normal path
+ * unless another Worker read it. All dropped when the user stopped the whole chat.
+ */
+function settleInbox(w: Worker) {
+  const l = liveOf(w.id);
+  const left = w.inbox || [];
+  if (!left.length || l.running) return;
+  save(w, { inbox: [] });
+  deliveriesUnread(
+    w.id,
+    left.filter((d) => !d.explicit).map((d) => d.triggerId),
+    { drop: l.quiet },
+  );
+  if (!l.quiet) for (const d of left.filter((x) => x.explicit)) handBackTrigger(w, d.threadId, d.triggerId, 'It stopped before taking this run');
+}
+
+/** The Worker's thread tools: each returns what the model is told, or throws. */
+function threadHandlers(id: string): NonNullable<CrewContext['threads']> {
+  const mine = (threadId: string) => {
+    const w = workers.get(id);
+    const t = String(threadId || '').trim();
+    if (!w?.threads?.includes(t)) throw new Error(`You do not subscribe to ${t || 'that thread'}. Each event you got names its thread (thread="th_…").`);
+    return { w, t };
+  };
+  return {
+    unsubscribe(threadId) {
+      const { w, t } = mine(threadId);
+      unsubscribeWorker(w, t);
+      return `Unsubscribed from ${t}; its events go to the Router again.`;
+    },
+    handBack(threadId, triggerId, note) {
+      const { w, t } = mine(threadId);
+      const tg = handBackTrigger(w, t, triggerId, note);
+      if (triggerId && !tg) throw new Error(`${triggerId} did not come to you on ${t}.`);
+      unsubscribeWorker(w, t);
+      return tg ? `Gave ${tg.id} back to the Router, and unsubscribed from ${t}.` : `Unsubscribed from ${t}; you had received no event there to give back.`;
+    },
+  };
+}
+
+/** The same tools for the demo agent, which calls them without an MCP client. */
+function fakeThreadTools(id: string): SessionConfig['fakeTools'] {
+  const h = threadHandlers(id);
+  const run = async (fn: () => string) => {
+    try {
+      return { text: fn() };
+    } catch (e) {
+      return { text: (e as Error).message, isError: true };
+    }
+  };
+  const s = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  return {
+    unsubscribe_thread: (a) => run(() => h.unsubscribe(String(a.thread))),
+    hand_back: (a) => run(() => h.handBack(String(a.thread), s(a.event), s(a.note))),
+  };
 }
 
 function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): AgentSession {
@@ -233,11 +349,13 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
   const conf = project ? configOf(project) : null;
   const cwd = project?.path || os.homedir();
   const lead = leadOf(chat);
+  // Read when the session starts: switching subscriptions on or off refreshes Worker sessions.
+  const subscribed = subscriptionsOn(settings.get().superAgent) && !!w.threads;
   const cfg: SessionConfig = {
     cwd,
     model: botModel(workerModel(chat)),
     effort: eff.effort || undefined,
-    systemAppend: buildSystemAppend({ bot: eff, chat, project, team: bots.all(), skills: skills.list(), worker: { lead: lead?.name || 'the lead', shared: w.shared } }),
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team: bots.all(), skills: skills.list(), worker: { lead: lead?.name || 'the lead', shared: w.shared, subscriptions: subscribed } }),
     resume: w.sessionId,
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
@@ -245,6 +363,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
     denyRules: settings.get().denyRules || [],
     deniedReason: (toolName, input) => deniedReason(toolName, input, cwd),
     wrapUpAt: () => settings.get().wrapUpAtTokens,
+    deliveries: subscribed ? () => takeDeliveries(w.id) : undefined,
     attributionOff: !!conf?.noAttribution,
     sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
     mcpServers: {
@@ -257,12 +376,14 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
         currentPage: () => (w.projectId ? previewPageOf(w.projectId) : undefined),
         actKey: w.id,
         worker: true,
+        threads: subscribed ? threadHandlers(w.id) : undefined,
       }) as McpServerConfig,
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
     env: agentEnv(),
     role: 'worker',
+    fakeTools: subscribed ? fakeThreadTools(w.id) : undefined,
   };
   const onSessionId = (sid: string) => {
     if (w.sessionId !== sid) save(w, { sessionId: sid });
@@ -274,7 +395,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
 }
 
 /** The turn's prompt: the task (and the user's own words) the first time, follow-ups after. */
-async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | null, first: Live['first'], followUps: string[]) {
+async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | null, first: Live['first'], followUps: string[], delivered: WorkerDelivery[]) {
   const l = liveOf(w.id);
   const lead = leadOf(chat);
   const context = contextLines(project);
@@ -307,13 +428,15 @@ async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | nul
       followUps,
       userWords: users.map((m) => ({ seq: m.seq, text: renderUserMessage(m) })),
       conflict,
+      threads: first ? threadsOf(w.threads).map((t) => ({ id: t.id, title: t.title, kind: t.kind })) : undefined,
+      delivered,
     });
   }
   const imgs = first ? imageBlocks(users) : [];
   return imgs.length ? [{ type: 'text' as const, text }, ...imgs] : text;
 }
 
-async function runTurn(w: Worker, first: Live['first'], followUps: string[]) {
+async function runTurn(w: Worker, first: Live['first'], followUps: string[], delivered: WorkerDelivery[] = []) {
   const chat = chats.get(w.chatId);
   const bot = bots.get(w.botId);
   if (!chat || !bot) return finish(w, 'error', 'The chat or its member no longer exists');
@@ -342,7 +465,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[]) {
       save(w, { sessionId: undefined });
       return true;
     },
-    content: () => promptFor(w, chat, bot, project, first, followUps),
+    content: () => promptFor(w, chat, bot, project, first, followUps, delivered),
     hooks: (stream) => ({
       beforeEdit: () => {},
       canUseTool: permissionGate({ chat, bot, project, cwd, stream, status: (s) => status(s.state, s.detail), who: `${bot.name} (Worker "${w.title}")` }),
@@ -373,6 +496,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[]) {
   const outcome = l.stop || msg.status === 'stopped' ? 'stopped' : msg.status === 'done' ? 'done' : 'error';
   const text = (outcome === 'error' ? `Failed: ${msg.error || 'unknown error'}\n\n${msg.text}` : msg.text).trim().slice(0, REPORT_CHARS);
   save(w, { turns: w.turns + 1, costUsd: w.costUsd + (msg.meta?.costUsd || 0), landing: landing ?? w.landing });
+  if (landing) publishLanding(w, chat, bot, landing);
   publishResult(w, chat, bot, msg, outcome);
   finish(w, outcome, outcome === 'error' ? (msg.error || '').split('\n')[0].slice(0, 160) : undefined, text);
 }
@@ -452,11 +576,37 @@ function publishResult(w: Worker, chat: Chat, bot: Bot, msg: ChatMessage, outcom
   });
 }
 
+/**
+ * Another Worker's merge, for the Workers sharing the chat's branch (ADR 003). Written by Crew from
+ * facts (who, which files, which commit), never from the Worker's own words: not a channel between Workers.
+ */
+function publishLanding(w: Worker, chat: Chat, bot: Bot, landing: NonNullable<Worker['landing']>) {
+  const chatWs = workspaceOf(chat);
+  if (!subscriptionsOn(settings.get().superAgent) || !chatWs || !landing.commit || !landing.files.length) return;
+  const files = landing.files;
+  const list = `${files.slice(0, 8).join(', ')}${files.length > 8 ? ` and ${files.length - 8} more` : ''}`;
+  const text = `${bot.name}'s Worker ${w.id} ("${w.title}") merged ${files.length} file${files.length === 1 ? '' : 's'} into ${chatWs.workspace.branch} (commit ${landing.commit}): ${list}`;
+  publishTrigger({
+    source: 'landing',
+    summary: text,
+    thread: workspaceThread(chatWs),
+    ref: { kind: 'payload' },
+    payload: { text, files: files.slice(0, 200), commit: landing.commit, workerId: w.id },
+    chatId: chat.id,
+    projectId: chatWs.id,
+    subjects: files,
+    related: [w.id],
+    origin: w.id,
+  });
+}
+
 /** Records how the turn (or the start) ended and tells the Router, unless the whole chat was stopped. */
 function finish(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string, text?: string) {
   const l = liveOf(w.id);
   const report = { at: Date.now(), status: outcome, text: text ?? (detail ? `${outcome === 'error' ? 'Failed' : 'Stopped'}: ${detail}` : '') };
   save(w, { status: outcome, detail, report });
+  // It never got to run (a failed start): what was delivered to it goes on.
+  if (!l.running) settleInbox(w);
   if (l.quiet) return;
   const bot = bots.get(w.botId);
   routerEvent(w.chatId, { kind: 'worker', id: w.id, at: Date.now(), bot: bot?.name || 'deleted bot', title: w.title, status: outcome, report: report.text, landing: landingText(w) });
@@ -511,7 +661,12 @@ export async function dismissWorker(w: Worker) {
   const l = live.get(w.id);
   l?.session?.close();
   live.delete(w.id);
-  save(w, { dismissedAt: Date.now(), pending: [] });
+  deliveriesUnread(
+    w.id,
+    (w.inbox || []).map((d) => d.triggerId),
+    { drop: true },
+  );
+  save(w, { dismissedAt: Date.now(), pending: [], ...(w.inbox?.length ? { inbox: [] } : {}), ...(w.threads?.length ? { threads: [] } : {}) });
   const ws = projects.get(w.projectId);
   if (ws?.workspace?.workerId === w.id) await retireWorkerWorkspace(ws as Workspace).catch((e) => log.warn('retire worker workspace:', gitError(e)));
 }
@@ -527,6 +682,11 @@ export async function forgetWorkers(chatId: string) {
   for (const w of chatWorkers(chatId, { all: true })) {
     live.get(w.id)?.session?.close();
     live.delete(w.id);
+    deliveriesUnread(
+      w.id,
+      (w.inbox || []).map((d) => d.triggerId),
+      { drop: true },
+    );
     workers.delete(w.id);
     messages.deleteChat(w.id);
     bus.emit({ t: 'worker_deleted', id: w.id });
@@ -576,13 +736,20 @@ export function closeWorkerSessions() {
  * On start: Workers a restart cut off are stopped, and their chats' Routers will be told (returned);
  * long-dismissed ones are forgotten. Returns the ids whose workspaces stay.
  */
-export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupted: Worker[] } {
+export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupted: Worker[]; undelivered: { worker: Worker; threadId: string; triggerId: string }[] } {
   const interrupted: Worker[] = [];
+  const undelivered: { worker: Worker; threadId: string; triggerId: string }[] = [];
   for (const w of workers.all()) {
     if (w.dismissedAt && now - w.dismissedAt > KEEP_DISMISSED_MS) {
       workers.delete(w.id);
       messages.deleteChat(w.id);
       continue;
+    }
+    // Routine runs still in its inbox go to the Router (resumeRouters); stale environment events are dropped.
+    if (w.inbox?.length) {
+      for (const d of w.inbox) if (d.explicit) undelivered.push({ worker: w, threadId: d.threadId, triggerId: d.triggerId });
+      w.inbox = [];
+      workers.set(w);
     }
     if (!ACTIVE.has(w.status)) continue;
     w.status = 'stopped';
@@ -601,6 +768,7 @@ export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupt
         .map((w) => w.id),
     ),
     interrupted,
+    undelivered,
   };
 }
 

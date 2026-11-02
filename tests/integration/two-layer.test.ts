@@ -54,7 +54,7 @@ describe('in demo mode', () => {
 
   it('leaves the lead in charge while off (the default), even with the Super-agent on', async () => {
     const b = await crew.api('GET', '/bootstrap');
-    expect(b.settings.superAgent.router).toEqual({ enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3 });
+    expect(b.settings.superAgent.router).toEqual({ enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false });
     await crew.api('PATCH', '/settings', { superAgent: { enabled: true } });
     const sent = await send('Hello');
     const reply = await waitTurn(crew.api, group.id, sent.seq);
@@ -197,6 +197,10 @@ describe('in demo mode', () => {
     const reply = await waitTurn(crew.api, group.id, sent.seq);
     expect(reply.router).toBeUndefined();
     expect(reply.botId).toBe(group.leadBotId);
+    // The messages the Router already handled ("Split this: …") are not handed to the lead again as
+    // new ones, so it answers this one alone instead of redoing the Workers' tasks.
+    const turns = (await chatMessages(crew, group.id)).filter((m) => m.seq > sent.seq && m.role === 'bot');
+    expect(turns.map((m) => m.botId)).toEqual([group.leadBotId]);
   });
 });
 

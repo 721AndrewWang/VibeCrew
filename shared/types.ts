@@ -93,8 +93,12 @@ export interface Chat {
   effort?: Effort;
   /** botId -> how full its context window was after its last turn (the composer's ring). */
   context?: Record<ID, ContextUsage>;
-  /** Two-layer mode (ADR 002): the Router's Claude Code session, and the seq of the last chat message it was given. */
-  router?: { sessionId?: string; cursor?: number };
+  /**
+   * Two-layer mode (ADR 002): the Router's Claude Code session, and the seq of the last chat message
+   * it was given. With subscriptions on (ADR 003): how many events its Router decided on, and how
+   * many went straight to subscribed Workers instead (Router decisions avoided).
+   */
+  router?: { sessionId?: string; cursor?: number; decided?: number; direct?: number };
 }
 
 /** A bot's context window use, as Claude Code's /context reports it. */
@@ -494,12 +498,13 @@ export interface PublicSettings {
 
 /**
  * Where an event came from. user and routine are always explicit requests; the others are
- * environment events the filter decides on.
+ * environment events the filter decides on. landing (Crew merged a Worker's branch into its chat's
+ * branch) only ever goes to the Workers subscribed to that workspace (ADR 003).
  */
-export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console';
+export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing';
 
 /** Sources whose fast-path rule the user can change. */
-export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine'>;
+export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing'>;
 
 /**
  * Per source, deterministic: act on explicit requests only (the rest is recorded as dropped), let
@@ -535,6 +540,21 @@ export interface RouterSettings {
   workerModel: string;
   /** Workers active at once in one chat. */
   maxWorkers: number;
+  /** Thread subscriptions (ADR 003): later events on a Worker's Threads go straight to it, without a Router call. */
+  subscriptions: boolean;
+}
+
+/** A Trigger delivered straight to a Worker because it subscribes to the Trigger's Thread. */
+export interface WorkerDelivery {
+  triggerId: ID;
+  threadId: ID;
+  at: number;
+  source: TriggerSource;
+  /** A routine run: the user's own words, which wake the Worker. Else data from the environment. */
+  explicit: boolean;
+  summary: string;
+  /** Inlined: the routine's prompt, or the payload's first words. */
+  text: string;
 }
 
 export type WorkerStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'stopped';
@@ -574,6 +594,12 @@ export interface Worker {
   /** Follow-ups from the Router waiting for the current turn to end. */
   pending?: string[];
   dismissedAt?: number;
+  /** The Threads it subscribes to (ADR 003): their later Triggers come to it directly. */
+  threads?: ID[];
+  /** Triggers delivered to it that its session has not read yet. */
+  inbox?: WorkerDelivery[];
+  /** Triggers it received directly, in all. */
+  received?: number;
 }
 
 /** A chat's Router as it is right now (not stored). */
@@ -604,6 +630,10 @@ export interface TriggerFilter {
   slow?: { backend: string; costUsd: number; batch: number; decidedAt: number; invalid?: string };
   /** The notice an act decision posted. */
   delivered?: { chatId: ID; messageId: ID };
+  /** The subscribed Workers it went straight to (rule subscribed), with no Router call. */
+  direct?: ID[];
+  /** A Worker it went to handed it back to its Router. */
+  handedBack?: { by: ID; at: number };
 }
 
 /** A semi-structured environment event: small by itself, with ids pointing at everything else. */
@@ -652,7 +682,8 @@ export interface TriggerList {
   triggers: Trigger[];
   threads: Record<ID, Thread>;
   /** Over everything still in the log. */
-  stats: { total: number; act: number; drop: number; candidate: number; slowCalls: number; slowCostUsd: number };
+  /** direct: went straight to subscribed Workers. */
+  stats: { total: number; act: number; drop: number; candidate: number; slowCalls: number; slowCostUsd: number; direct: number };
 }
 
 /** A Trigger with its payload resolved ("read more") and its neighbours, for walking the graph. */

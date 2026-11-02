@@ -20,6 +20,8 @@ export interface CrewContext {
   actKey?: string;
   /** A Worker (two-layer mode) never talks to the user, so it gets no notify_user. */
   worker?: boolean;
+  /** A Worker with subscriptions on (ADR 003): leaving a thread, or giving an event back to the Router. Each returns what to tell the model, or throws. */
+  threads?: { unsubscribe(threadId: string): string; handBack(threadId: string, triggerId?: string, note?: string): string };
 }
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
@@ -47,6 +49,36 @@ const colorScheme = z
   .describe(
     'Color scheme: dark emulates the system dark mode (prefers-color-scheme: dark), so a page with a dark theme switches to it. Defaults to light. To check dark mode, always look with this; do not just infer it from the CSS.',
   );
+
+const attempt = (fn: () => string) => {
+  try {
+    return text(fn());
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+};
+
+/** A Worker's way off a thread it was subscribed to when it was dispatched. */
+function threadTools(t: NonNullable<CrewContext['threads']>) {
+  return [
+    tool(
+      'unsubscribe_thread',
+      'Stop receiving a thread\'s events (the thread id is on each <event> you get, thread="th_…"). Its later events go to the Router again.',
+      { thread: z.string().describe('The thread id, th_…') },
+      async ({ thread }) => attempt(() => t.unsubscribe(thread)),
+    ),
+    tool(
+      'hand_back',
+      'An event that came to you is outside your task: unsubscribe from its thread and give the event to the Router, which decides who handles it. Without event, the latest one you got from that thread goes back.',
+      {
+        thread: z.string().describe('The thread id, th_…'),
+        event: z.string().optional().describe('The event id, tg_…'),
+        note: z.string().max(500).optional().describe('For the Router, in a sentence: why it is not yours'),
+      },
+      async ({ thread, event, note }) => attempt(() => t.handBack(thread, event, note)),
+    ),
+  ];
+}
 
 export function crewServer(ctx: CrewContext) {
   const projectId = () => {
@@ -234,6 +266,7 @@ export function crewServer(ctx: CrewContext) {
           return text('Saved.');
         },
       ),
+      ...(ctx.threads ? threadTools(ctx.threads) : []),
       ...(ctx.worker
         ? []
         : [

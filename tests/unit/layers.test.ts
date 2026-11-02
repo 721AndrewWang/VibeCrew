@@ -173,12 +173,13 @@ describe('the gates', () => {
 
 describe('settings', () => {
   it('fills in the Router settings, off by default, and clamps what is stored', () => {
-    expect(normalizeRouter(undefined)).toEqual({ enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3 });
+    expect(normalizeRouter(undefined)).toEqual({ enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false });
     expect(normalizeRouter({ enabled: true, model: ' haiku ', workerModel: 'claude-opus-5-5', maxWorkers: 99 })).toEqual({
       enabled: true,
       model: 'haiku',
       workerModel: 'claude-opus-5-5',
       maxWorkers: 8,
+      subscriptions: false,
     });
     expect(normalizeRouter({ enabled: 'yes', maxWorkers: 0 })).toMatchObject({ enabled: false, maxWorkers: 1 });
     // An older settings file, written before the Router existed.

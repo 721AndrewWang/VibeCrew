@@ -17,7 +17,8 @@ import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { frictionReport } from './friction';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
-import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, routerInfos, stopWorker } from './layers';
+import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, refreshWorkerSessions, routerInfos, stopWorker, unsubscribeWorker } from './layers';
+import { subscriptionsOn } from './layers/subscriptions';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
@@ -62,12 +63,13 @@ import {
   SkillDraftRequest,
   SkillSave,
   Upload,
+  WorkerUnsubscribe,
 } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, improvements, messages, projects, routerLogId, routines, type Settings, settings, workers } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
-import { listTriggers, publishConsole, triggerDetail } from './triggers';
+import { listTriggers, publishConsole, threadsOf, triggerDetail } from './triggers';
 import { normalizeSuperAgent } from './triggers/fastPath';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
 import { usageOf } from './usage';
@@ -212,6 +214,8 @@ export function apiRouter() {
     if (patch.denyRules || patch.sandbox) invalidateAllSessions();
     // The Router's model and limits are in its session.
     if (b.superAgent?.router || b.superAgent?.enabled === false) invalidateRouters();
+    // A Worker's thread tools, prompt and event hook are fixed when its session starts.
+    if (patch.superAgent && subscriptionsOn(patch.superAgent) !== subscriptionsOn(cur.superAgent)) refreshWorkerSessions(() => true);
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -263,7 +267,17 @@ export function apiRouter() {
     if (!w) throw new HttpError(404, 'Worker not found');
     return w;
   };
-  r.get('/workers/:id/messages', (req, res) => res.json({ worker: worker(req.params.id), messages: messages.list(req.params.id, { limit: 200 }) }));
+  r.get('/workers/:id/messages', (req, res) => {
+    const w = worker(req.params.id);
+    res.json({ worker: w, messages: messages.list(req.params.id, { limit: 200 }), threads: threadsOf(w.threads) });
+  });
+  // The user takes a Worker off a thread: that thread's later events go to the Router again (ADR 003).
+  r.post('/workers/:id/unsubscribe', (req, res) => {
+    const w = worker(req.params.id);
+    const { threadId } = body(WorkerUnsubscribe, req.body);
+    if (!unsubscribeWorker(w, threadId)) throw new HttpError(404, 'The Worker does not subscribe to that thread');
+    res.json(w);
+  });
   r.post('/workers/:id/stop', async (req, res) => {
     await stopWorker(worker(req.params.id).id, { why: 'The user stopped the task' });
     res.json(worker(req.params.id));

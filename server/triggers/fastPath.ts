@@ -129,6 +129,8 @@ export interface FastContext {
   /** Triggers (any thread) that went to the slow path in the last hour. */
   candidatesLastHour: number;
   now: number;
+  /** The Workers that would receive it straight away, by their subscriptions to the thread (ADR 003). */
+  subscribers?: string[];
 }
 
 /** Whether a trigger got as far as the cheap model (or is waiting for it). */
@@ -142,15 +144,20 @@ const SOURCE_NAME: Record<TriggerSource, string> = {
   turn: 'Bot turn results',
   'outside-edit': 'Outside edits',
   'preview-console': 'Preview console errors',
+  landing: "Workers' merges",
 };
 
 export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   const act = (rule: string, reason: string): TriggerFilter => ({ verdict: 'act', stage: 'fast', rule, reason });
   const drop = (rule: string, reason: string): TriggerFilter => ({ verdict: 'drop', stage: 'fast', rule, reason });
+  const subscribers = ctx.subscribers ?? [];
+  const direct = () => act('subscribed', `Sent straight to ${subscribers.length === 1 ? 'the Worker' : `${subscribers.length} Workers`} subscribed to this thread; no Router decision`);
   // The user's own messages and routines, and a bot handing work to a teammate: the chat acts on them as always.
-  if (t.explicit || t.source === 'user' || t.source === 'routine') return act('explicit-request', 'An explicit request; handled by the chat without a model');
+  if (t.explicit || t.source === 'user' || t.source === 'routine') return subscribers.length ? direct() : act('explicit-request', 'An explicit request; handled by the chat without a model');
   // A Worker's turn result already went straight to the Router that dispatched it.
   if (t.facts.routed) return act('routed', 'A Worker reported back; delivered to its Router directly');
+  // Another Worker's merge matters only to the Workers sharing the workspace; the Router has its report.
+  if (t.source === 'landing') return subscribers.length ? direct() : drop('no-subscribers', 'No other Worker is working on this branch right now');
 
   const source = t.source;
   const rule = ctx.settings.sources[source];
@@ -166,6 +173,13 @@ export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
     if (!t.facts.errors) return drop('no-errors', 'Only warnings or logs, no errors');
     subjects = subjects.filter((s) => !isConsoleNoise(s));
     if (!subjects.length) return drop('known-noise', 'Only known noise (dev-server messages, favicon, browser hints)');
+  }
+
+  // Subscribed: the thread's Workers take it, so the rules that save model calls (allow-lists, cooldown, budget) do not apply.
+  if (subscribers.length) {
+    const twin = ctx.recent.find((r) => r.fingerprint === t.fingerprint && ctx.now - r.at < DUPLICATE_MS && r.filter.rule === 'subscribed');
+    if (twin) return drop('duplicate', `Same as ${twin.id}, which already went to this thread's Workers`);
+    return direct();
   }
 
   const projects = ctx.settings.projects;

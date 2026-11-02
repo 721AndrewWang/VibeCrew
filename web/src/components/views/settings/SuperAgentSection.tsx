@@ -218,6 +218,17 @@ function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; s
       </div>
       {saved.enabled && (
         <>
+          <div className="setting-row" data-testid="router-subscriptions">
+            <div>
+              <div className="sr-title">Direct routing to Workers</div>
+              <div className="hint">
+                Each Worker subscribes to the threads it works on: the chat's workspace and the routine it was dispatched for. Later events there (the routine's next runs, other Workers' merges, files
+                edited by hand, preview console errors) go straight to those Workers without a Router call; the Router still sees them, and a Worker can hand one back. Events from the environment only
+                reach Workers that are already working; they never start work. Off: every event goes through the Router.
+              </div>
+            </div>
+            <Toggle on={saved.subscriptions} onChange={(v) => void save({ router: { ...saved, subscriptions: v } }, v ? 'Direct routing on' : 'Direct routing off')} />
+          </div>
           <div className="field">
             <label>Router model</label>
             <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>

@@ -1,4 +1,4 @@
-import { Bot as BotIcon, Clock, FilePen, MessageCircle, Radio, RefreshCw, TerminalSquare } from 'lucide-react';
+import { Bot as BotIcon, Clock, FilePen, GitMerge, MessageCircle, Radio, RefreshCw, TerminalSquare } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Thread, Trigger, TriggerDetail, TriggerList, TriggerSource } from '../../../../shared/types';
 import { api } from '../../api';
@@ -13,6 +13,7 @@ export const SOURCE_LABEL: Record<TriggerSource, string> = {
   turn: 'Turn result',
   'outside-edit': 'Outside edit',
   'preview-console': 'Console error',
+  landing: 'Worker merge',
 };
 
 const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
@@ -21,6 +22,7 @@ const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
   turn: BotIcon,
   'outside-edit': FilePen,
   'preview-console': TerminalSquare,
+  landing: GitMerge,
 };
 
 const VERDICT: Record<Trigger['filter']['verdict'], { label: string; cls: string }> = {
@@ -177,6 +179,7 @@ export function TriggersView() {
               In the log <b>{stats.total}</b>
             </span>
             <span>Acted on {stats.act}</span>
+            {stats.direct > 0 && <span title="Went straight to the Workers subscribed to their thread, with no Router decision">Straight to Workers {stats.direct}</span>}
             <span>Dropped {stats.drop}</span>
             {stats.candidate > 0 && <span>Deciding {stats.candidate}</span>}
             <span>

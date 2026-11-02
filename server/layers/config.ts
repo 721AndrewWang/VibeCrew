@@ -10,6 +10,8 @@ export const DEFAULT_ROUTER: RouterSettings = {
   // Empty: the chat's model switch, else the default model, which is Claude Code's strongest unless changed.
   workerModel: '',
   maxWorkers: 3,
+  // ADR 003: off keeps every event going through the Router, as in ADR 002.
+  subscriptions: false,
 };
 
 export const MAX_WORKERS_LIMIT = 8;
@@ -25,5 +27,6 @@ export function normalizeRouter(raw: unknown): RouterSettings {
     model: model(r.model, DEFAULT_ROUTER.model),
     workerModel: model(r.workerModel, DEFAULT_ROUTER.workerModel),
     maxWorkers: Number.isFinite(max) ? Math.max(1, Math.min(MAX_WORKERS_LIMIT, Math.round(max))) : DEFAULT_ROUTER.maxWorkers,
+    subscriptions: r.subscriptions === true,
   };
 }

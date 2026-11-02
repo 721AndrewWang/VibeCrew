@@ -12,6 +12,7 @@ import { monthSpend } from '../usage';
 import { workspaceOf } from '../workspaces';
 import { dispatchRefusal, messageRefusal, replyRefusal } from './gates';
 import { firstWords, REPLY_WORDS } from './prompts';
+import { subscriptionsOn } from './subscriptions';
 import { activeWorkers, chatWorkers, landingText, messageWorker, sharedWorkerActive, startWorker, stopWorker } from './workers';
 
 /** What the Router's current turn is about; tools read it while that turn runs. */
@@ -24,6 +25,8 @@ export interface TurnCtx {
   related: string[];
   /** The user's messages in the batch, which a dispatched Worker gets verbatim. */
   userMessageIds: string[];
+  /** The batch's routine threads: a Worker dispatched now subscribes to them (ADR 003). */
+  threads: string[];
 }
 
 type Result = { text: string; isError?: boolean };
@@ -107,7 +110,8 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
         maxHops: Math.max(1, chat.maxHops),
       });
       if (refused || !member) return fail(refused || 'No member to run it as.');
-      const w = startWorker(chat, member, { title, task, related: c.related, userMessageIds: c.userMessageIds });
+      const subscribe = subscriptionsOn(settings.get().superAgent) && args.subscribe !== false;
+      const w = startWorker(chat, member, { title, task, related: c.related, userMessageIds: c.userMessageIds, subscribe, threads: c.threads });
       return ok(`Started ${w.id} as ${member.name}: "${w.title}". It works in the background and its report will arrive as an event; don't wait for it.`);
     },
 
@@ -160,7 +164,7 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
 }
 
 /** The handlers as Claude Code sees them. */
-export function routerMcpServer(h: Record<string, Handler>) {
+export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?: boolean } = {}) {
   const wrap = (name: string) => async (args: Record<string, unknown>) => {
     const r = await h[name](args);
     return { content: [{ type: 'text' as const, text: r.text }], isError: r.isError || undefined };
@@ -182,6 +186,14 @@ export function routerMcpServer(h: Record<string, Handler>) {
           title: z.string().max(80).describe('A few words naming the task, shown to the user'),
           task: z.string().describe('A self-contained brief: the goal, the files or pages involved, what counts as done'),
           bot: z.string().optional().describe('The member to run it as (a name from the team list); default you'),
+          ...(o.subscriptions
+            ? {
+                subscribe: z
+                  .boolean()
+                  .optional()
+                  .describe("Subscribe it to the chat's workspace and this batch's routines, so their later events go to it directly (default true); false for a one-off task"),
+              }
+            : {}),
         },
         wrap('dispatch_worker'),
       ),

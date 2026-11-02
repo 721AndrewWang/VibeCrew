@@ -1746,6 +1746,24 @@ body.resizing iframe {
   font-size: 13px;
 }
 
+.agent-threads {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-thread {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.wb-direct {
+  font-size: 12px;
+  margin-right: 10px;
+}
+
 .agent-task {
   margin: 6px 0 0;
   padding: 8px 10px;

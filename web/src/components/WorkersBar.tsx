@@ -4,7 +4,7 @@
 
 import { ChevronDown, ChevronRight, GitBranch, Network, ScrollText, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { Chat, Worker, WorkerStatus } from '../../../shared/types';
+import type { Chat, Thread, Worker, WorkerStatus } from '../../../shared/types';
 import { api } from '../api';
 import { loadLog, openModal, routerModeOf, toast, useStore, WORKER_ACTIVE } from '../store';
 import { cx, fmtRelative } from '../utils';
@@ -53,6 +53,14 @@ function WorkerRow({ w, chat }: { w: Worker; chat: Chat }) {
       <button className="wr-main" onClick={() => openModal({ kind: 'agentLog', chatId: chat.id, workerId: w.id })} title="Open its transcript">
         <span className="wr-title">
           <b>{w.title}</b> <span className="muted">· {bot?.name || 'deleted bot'}</span>
+          {w.threads?.length ? (
+            <span className="muted wr-subs" title="Threads it subscribes to: their later events come to it directly, without the Router">
+              {' '}
+              · {w.threads.length} thread{w.threads.length === 1 ? '' : 's'}
+              {w.received ? `, ${w.received} event${w.received === 1 ? '' : 's'} direct` : ''}
+              {w.inbox?.length ? `, ${w.inbox.length} unread` : ''}
+            </span>
+          ) : null}
         </span>
         <span className="wr-note muted">{workerNote(w)}</span>
       </button>
@@ -81,8 +89,12 @@ export function WorkersBar({ chat }: { chat: Chat }) {
         .sort((a, b) => a.createdAt - b.createdAt),
     [all, chat.id],
   );
+  const subs = useStore((s) => s.settings.superAgent.router.subscriptions);
   const [open, setOpen] = useState(true);
   if (!on && !workers.length) return null;
+  const direct = chat.router?.direct ?? 0;
+  const decided = chat.router?.decided ?? 0;
+  const share = direct + decided ? Math.round((direct / (direct + decided)) * 100) : 0;
   const active = workers.filter((w) => WORKER_ACTIVE.has(w.status)).length;
   const routerText =
     router?.state === 'thinking'
@@ -108,11 +120,43 @@ export function WorkersBar({ chat }: { chat: Chat }) {
           )}
         </button>
         <span className="spacer" />
+        {(subs || direct > 0) && (
+          <span
+            className="muted wb-direct"
+            data-testid="router-avoided"
+            title={`Events that went straight to the Workers subscribed to their thread, so the Router did not have to decide on them. The Router decided on ${decided} event${decided === 1 ? '' : 's'}${direct + decided ? `; ${share}% of this chat's events skipped it` : ''}.`}
+          >
+            {direct} Router decision{direct === 1 ? '' : 's'} avoided
+          </span>
+        )}
         <button className="link-btn" onClick={() => openModal({ kind: 'agentLog', chatId: chat.id })} title="Every Router turn, with the events it handled">
           <ScrollText size={12} /> Router log
         </button>
       </div>
       {open && workers.map((w) => <WorkerRow key={w.id} w={w} chat={chat} />)}
+    </div>
+  );
+}
+
+/** The threads a Worker subscribes to (ADR 003), each with Unsubscribe, and what came to it directly. */
+function WorkerThreads({ w, known }: { w: Worker; known: Thread[] }) {
+  const list = w.threads || [];
+  return (
+    <div className="agent-threads" data-testid="worker-threads">
+      <div className="muted">
+        Subscribed to {list.length} thread{list.length === 1 ? '' : 's'}: their later events come straight to it, without the Router.
+        {w.received ? ` ${w.received} event${w.received === 1 ? '' : 's'} so far.` : ''}
+        {w.inbox?.length ? ` ${w.inbox.length} not read yet.` : ''}
+      </div>
+      {list.map((id) => (
+        <div key={id} className="agent-thread" data-thread={id}>
+          <span>{known.find((t) => t.id === id)?.title || 'Thread'}</span> <span className="mono muted">{id}</span>
+          <span className="spacer" />
+          <button className="btn ghost sm" title="Its later events go to the Router again" onClick={() => void act(() => api.unsubscribeWorker(w.id, id), "Couldn't unsubscribe it")}>
+            Unsubscribe
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -124,6 +168,7 @@ export function AgentLogDialog({ chatId, workerId, onClose }: { chatId: string; 
   const bots = useStore((s) => s.bots);
   const live = useStore((s) => (workerId ? s.workers[workerId] : undefined));
   const [fetched, setFetched] = useState<Worker | undefined>();
+  const [threads, setThreads] = useState<Thread[]>([]);
   const st = useStore((s) => s.msgs[logId]);
   const projects = useStore((s) => s.projects);
   const names = useMemo(() => Object.values(bots).map((b) => b.name), [bots]);
@@ -133,6 +178,7 @@ export function AgentLogDialog({ chatId, workerId, onClose }: { chatId: string; 
         logId,
         api.workerLog(workerId).then((r) => {
           setFetched(r.worker);
+          setThreads(r.threads || []);
           return r;
         }),
       );
@@ -175,6 +221,7 @@ export function AgentLogDialog({ chatId, workerId, onClose }: { chatId: string; 
             )}{' '}
             {workerNote(w)}
           </div>
+          {w.threads && <WorkerThreads w={w} known={threads} />}
           <details>
             <summary>The task from the Router</summary>
             <pre className="agent-task">{w.task}</pre>

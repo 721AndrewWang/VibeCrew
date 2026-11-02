@@ -127,7 +127,7 @@ async function main() {
   const layers = recoverLayers();
   await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
-  resumeRouters(layers.interrupted);
+  resumeRouters(layers);
   startRoutines();
   startOutsideEditNotes();
   void checkAuth(true).then((a) => {
