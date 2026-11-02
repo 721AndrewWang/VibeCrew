@@ -36,6 +36,7 @@ import { cronExpr } from './config';
 import { tickRefusal } from './gates';
 import { maintainerPrompt, tickPrompt, watchdogRecap, watchdogSystemPrompt } from './prompts';
 import { registerWatchdogRecall } from './recall';
+import { recoverWatchdog } from './recovery';
 import { isTransient, nextCheck, progressOf, WATCH_MAX_CHECKS } from './signals';
 import { auditSnaps, isQuiet, renderSnapshot, type Snapshot, snapshotFlags, type WorkerSnap } from './snapshot';
 import { type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
@@ -652,6 +653,8 @@ export function invalidateWatchdog() {
 }
 
 export function startWatchdog() {
+  // Ticks and questions a restart cut off, before anything new is recorded (ADR 105).
+  recoverWatchdog();
   watchdogTicks.prune();
   watchdogActions.prune();
   loop.sync();
