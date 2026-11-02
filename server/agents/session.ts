@@ -649,7 +649,8 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
     const body = m[2].trim();
     const short = (body.split('\n').find((l) => l.trim()) || '').slice(0, 60);
     if (a.kind === 'worker') replies.push(`${a.bot} ${a.status === 'done' ? 'finished' : `ended (${a.status})`}: "${a.title}".`);
-    else if (a.kind === 'environment') replies.push(`Crew noticed: ${short}`);
+    // Quoted without Crew's prompt tags: the chat takes no tool output (ADR 103).
+    else if (a.kind === 'environment') replies.push(`Crew noticed: ${short.replace(/<[^>]*(>|$)/g, '').trim()}`);
     else if (/\b(add|create|make|build|fix|change|write|slow|split)\b/i.test(body)) {
       const parts = /\bsplit\b/i.test(body) ? 2 : 1;
       const started: string[] = [];
@@ -668,7 +669,17 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
     } else replies.push(`(Demo Router) Noted: "${short}". Nothing to dispatch for that.`);
   }
   const text = replies.join(' ').split(/\s+/).slice(0, 90).join(' ');
-  if (text) await call('reply', { text });
+  // A finished Worker's report asks the user to look at the work; anything else reports a decision.
+  const kind = /kind="worker"[^>]*status="done"/.test(prompt) ? 'acceptance' : 'decision';
+  if (text) {
+    const sent = await call('reply', { text, kind });
+    // Refused (the chat profile): one shorter, plainer try, as a model would after reading why.
+    if (sent.startsWith('Error:'))
+      await call('reply', {
+        text: text.replace(/[`<>]/g, '').split(/\s+/).slice(0, 40).join(' '),
+        kind: 'decision',
+      });
+  }
   await say('Handled this batch (demo mode, no model called).');
 }
 

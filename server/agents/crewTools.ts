@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ConsoleEntry } from '../../shared/types';
 import { act, consoleCheck, debugTarget, screenshot } from '../browser';
 import { notify } from '../bus';
+import { asyncGuide, asyncProfileFor, asyncRefusal, shapeAsync } from '../channels/profiles';
 import { devServer } from '../devserver';
 import { createDraft, type DraftFields, showCommand } from '../drafts';
 import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
@@ -39,6 +40,13 @@ export interface CrewContext {
 export async function draftAction(ctx: Pick<CrewContext, 'botId' | 'chatId' | 'projectId' | 'workerId'>, args: DraftFields): Promise<{ text: string; isError?: boolean }> {
   const cwd = projects.get(ctx.projectId())?.path;
   if (!cwd && args.kind !== 'message') return { text: 'This conversation has no project folder to run that in.', isError: true };
+  // The asynchronous profile (ADR 103): a draft is written for its surface, dense and structured.
+  const profile = asyncProfileFor(args.kind, args.channel);
+  if (profile && args.body?.trim()) {
+    const refused = asyncRefusal(profile, args.body);
+    if (refused) return { text: `The draft was not saved: ${refused}`, isError: true };
+    args = { ...args, body: shapeAsync(profile, args.body) };
+  }
   try {
     const d = await createDraft(args, { chatId: ctx.chatId, botId: ctx.botId, workerId: ctx.workerId, cwd: cwd || '' });
     return {
@@ -359,7 +367,7 @@ export function crewServer(ctx: CrewContext) {
         : []),
       tool(
         'draft_external_action',
-        "Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields and shows it to the user, who approves or discards it with one click; it never runs on its own. This is the only way to do these things: Crew's command guard refuses git push, gh pr create and the like.",
+        `Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields and shows it to the user, who approves or discards it with one click; it never runs on its own. This is the only way to do these things: Crew's command guard refuses git push, gh pr create and the like. ${asyncGuide()}`,
         {
           kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'message']).describe('What to do'),
           remote: z.string().optional().describe('git-push: the remote (default origin)'),

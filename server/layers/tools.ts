@@ -5,8 +5,11 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { FAMILY_IDS, isFamily } from '../../shared/families';
-import type { Bot, ChatMessage, SkillFamily } from '../../shared/types';
+import type { Bot, ChatMessage, ReplyKind, SkillFamily } from '../../shared/types';
 import { bus, notify } from '../bus';
+import { reportDetail } from '../channels/details';
+import { CHAT_PROFILE, isReplyKind } from '../channels/profiles';
+import { notifyRouterReply } from '../channels/webhook';
 import { emitChat, preview, setLastMessage } from '../orchestrator/chatLog';
 import { RECALL_TOOL, recallText } from '../recall';
 import { projectFamilies } from '../skills';
@@ -30,6 +33,10 @@ export interface TurnCtx {
   userMessageIds: string[];
   /** The batch's routine threads: a Worker dispatched now subscribes to them (ADR 003). */
   threads: string[];
+  /** The Workers whose reports are in the batch: a reply carries them as Details (ADR 103). */
+  reports?: string[];
+  /** Reports already attached to a reply in this turn. */
+  attached?: Set<string>;
 }
 
 type Result = { text: string; isError?: boolean };
@@ -60,9 +67,22 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
       const t = turn();
       if (!t) return fail('No turn is in progress.');
       const text = str(args.text).trim();
-      const refused = replyRefusal(text);
+      const kind: ReplyKind = isReplyKind(args.kind) ? args.kind : 'decision';
+      const refused = replyRefusal(text, kind);
       if (refused) return fail(refused);
       const { c, chat } = t;
+      // The reports this reply is about: the ones it names, else the batch's not yet attached.
+      const about = Array.isArray(args.about) ? args.about.map(str).filter(Boolean) : [];
+      c.attached ??= new Set();
+      const attached = c.attached;
+      const ids = about.length ? about : (c.reports || []).filter((id) => !attached.has(id));
+      const details = ids.flatMap((id) => {
+        const w = workerOf(chat.id, id);
+        const d = w && reportDetail(w, bots.get(w.botId)?.name || 'deleted bot', landingText(w));
+        if (!d) return [];
+        attached.add(w.id);
+        return [d];
+      });
       const msg: ChatMessage = {
         id: uid('m_'),
         chatId: chat.id,
@@ -75,14 +95,16 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
         status: 'done',
         router: true,
         trigger: { type: 'system' },
+        channel: { kind, ...(details.length ? { details } : {}) },
       };
       messages.put(msg);
       bus.emit({ t: 'msg', msg });
       setLastMessage(chat, msg);
       chat.unread = (chat.unread || 0) + 1;
       emitChat(chat);
+      void notifyRouterReply(chat, msg).catch(() => {});
       notify(c.lead.name, preview(text).slice(0, 100), { chatId: chat.id, level: 'success' });
-      return ok('Sent to the user.');
+      return ok(details.length ? `Sent to the user, with ${details.map((d) => d.workerId).join(', ')}'s full report under Details.` : 'Sent to the user.');
     },
 
     async dispatch_worker(args) {
@@ -196,8 +218,12 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
     tools: [
       tool(
         'reply',
-        `Post a message to the user in the chat, as you. The only way the user hears from you. At most ${REPLY_WORDS} words: what you started, results, a decision or acceptance you need.`,
-        { text: z.string().describe('The message, in the language the user writes in') },
+        `Post a message to the user in the chat, as you. The only way the user hears from you. At most ${REPLY_WORDS} words and ${CHAT_PROFILE.maxLines} lines, no code blocks, logs, diffs or other tool output. Say what kind it is: a decision (what you decided or started, and what came of it), a question (something only the user can answer), or an acceptance request (finished work for the user to check). Workers' full reports are attached under Details by themselves.`,
+        {
+          text: z.string().describe('The message, in the language the user writes in'),
+          kind: z.enum(['decision', 'question', 'acceptance']).optional().describe('decision (default), question, or acceptance'),
+          about: z.array(z.string()).optional().describe("The Workers (wk_…) whose reports this message sums up; default: this batch's reports not yet attached"),
+        },
         wrap('reply'),
       ),
       tool(

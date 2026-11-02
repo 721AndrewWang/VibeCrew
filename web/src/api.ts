@@ -24,6 +24,7 @@ import type {
   Project,
   PublicSettings,
   RecordedStep,
+  ReplyKind,
   Routine,
   RoutingReport,
   Skill,
@@ -39,6 +40,9 @@ import type {
   WatchdogProposal,
   WatchdogTick,
   WatchdogWatch,
+  WebhookDelivery,
+  WebhookFormat,
+  WebhookInfo,
   Worker,
   WorkspaceMergeResult,
   WorkspaceStatus,
@@ -238,6 +242,11 @@ export const api = {
   approveDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/approve`),
   discardDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/discard`),
   audit: (limit = 200) => get<{ enabled: boolean; entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),
+  // ADR 103: a project's Router-notification webhook (the URL itself never comes back).
+  projectWebhook: (projectId: string) => get<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`),
+  saveProjectWebhook: (projectId: string, body: { url?: string; format?: WebhookFormat; enabled?: boolean; kinds?: ReplyKind[] }) => put<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`, body),
+  deleteProjectWebhook: (projectId: string) => del<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`),
+  testProjectWebhook: (projectId: string) => post<{ delivery: WebhookDelivery }>(`/api/projects/${q(projectId)}/webhook/test`),
   guardCheck: (command: string, projectId?: string | null) => post<{ enabled: boolean; verdict: GuardVerdict }>('/api/guard/check', { command, projectId: projectId || null }),
 };
 

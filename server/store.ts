@@ -29,6 +29,7 @@ import type {
   WatchdogWatch,
   Worker,
 } from '../shared/types';
+import { normalizeWebhooks, type WebhookConfig } from './channels/webhookConfig';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { DEFAULT_GATEWAY, normalizeGateway } from './gateway/config';
 import { SCHEMA_VERSION } from './migrations';
@@ -246,6 +247,8 @@ export interface Settings {
   gatewayTokens: Record<string, string>;
   /** The command guard, the credential-stripped environment and the audit log (ADR 007). */
   safety: SafetySettings;
+  /** Outgoing webhooks for Router notifications, by project id (ADR 103); the URLs never leave the server except to themselves. */
+  webhooks: Record<string, WebhookConfig>;
   initialized: boolean;
 }
 
@@ -275,6 +278,7 @@ const DEFAULT_SETTINGS: Settings = {
   gateway: DEFAULT_GATEWAY,
   gatewayTokens: {},
   safety: DEFAULT_SAFETY,
+  webhooks: {},
   initialized: false,
 };
 
@@ -290,6 +294,7 @@ class SettingsStore {
     this.data.gateway = normalizeGateway(this.data.gateway);
     if (!this.data.gatewayTokens || typeof this.data.gatewayTokens !== 'object') this.data.gatewayTokens = {};
     this.data.safety = normalizeSafety(this.data.safety);
+    this.data.webhooks = normalizeWebhooks(this.data.webhooks);
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();

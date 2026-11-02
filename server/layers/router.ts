@@ -244,7 +244,15 @@ class ChatRouter {
     const related = [...new Set(batch.flatMap((e) => [e.id, ...((e.kind === 'user' || e.kind === 'routine') && e.triggerId ? [e.triggerId] : [])]))];
     // A routine's thread is what a Worker dispatched for its run subscribes to.
     const threads = [...new Set(batch.flatMap((e) => (e.kind === 'routine' && e.threadId ? [e.threadId] : [])))];
-    this.current = { chatId: chat.id, lead, explicit: batch.some(explicitEvent), related, userMessageIds: batch.flatMap((e) => (e.kind === 'user' ? [e.id] : [])), threads };
+    this.current = {
+      chatId: chat.id,
+      lead,
+      explicit: batch.some(explicitEvent),
+      related,
+      userMessageIds: batch.flatMap((e) => (e.kind === 'user' ? [e.id] : [])),
+      threads,
+      reports: batch.flatMap((e) => (e.kind === 'worker' ? [e.id] : [])),
+    };
     const direct = this.observed.splice(0);
     if (subscriptionsOn(settings.get().superAgent)) countRouterEvents(chat.id, 'decided', batch.length);
     this.setState('thinking');
