@@ -178,4 +178,15 @@ describe('what a Worker reads', () => {
     expect(later).toContain('Events on threads you subscribe to, since your last turn');
     expect(later).not.toContain('You subscribe to these threads');
   });
+
+  it('with the chain of recall (ADR 005), a cut payload names its recall handle', () => {
+    const long = delivery({ text: 'word '.repeat(200) });
+    expect(renderDelivery(long, NOW)).not.toContain('recall id=');
+    expect(renderDelivery(long, NOW, true)).toContain(' … (+140 words: recall id=tg_1)');
+    expect(deliveredNote([long], NOW, true)).toContain('recall id=tg_1');
+    expect(workerPrompt({ context: [], lead: 'Chief', delivered: [long], recall: true, now: NOW })).toContain('recall id=tg_1');
+    // Short payloads and the user's routine runs are not cut either way.
+    expect(renderDelivery(delivery({ text: 'TypeError: x is undefined at App.tsx:3' }), NOW, true)).not.toContain('recall id=');
+    expect(renderDelivery(delivery({ source: 'routine', explicit: true, text: 'word '.repeat(200) }), NOW, true)).not.toContain('recall id=');
+  });
 });

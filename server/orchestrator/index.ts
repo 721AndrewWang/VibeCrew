@@ -19,6 +19,7 @@ import { subscriptionsOn } from '../layers/subscriptions';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
 import { quietly } from '../quietWrites';
+import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { parseVerdict, reviewDiff } from '../review';
 import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
@@ -93,6 +94,10 @@ const sessions = new Map<string, AgentSession>();
 const staleSessions = new Set<string>();
 /** The context lines a session was last sent; later turns send only what changed. */
 const contextSent = new WeakMap<AgentSession, string[]>();
+/** Sessions started with the chain of recall on (their tools are fixed): the budgets their prompts use. */
+const recallSessions = new WeakMap<AgentSession, Budget>();
+/** Recall sessions resumed from a transcript, whose first turn says recall replaced chat_history. */
+const recallResumed = new WeakSet<AgentSession>();
 /** Chats whose workspace is being changed by git (merge, sync…): new turns wait until it is done. */
 const locked = new Set<string>();
 /** Chats waiting for their workspace's setup command (see holdTurns). */
@@ -124,11 +129,12 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   const team = bots.all();
   const conf = project ? configOf(project) : null;
   const eff = effectiveBot(chat, bot);
+  const recall = recallBudget();
   const cfg: SessionConfig = {
     cwd: project?.path || os.homedir(),
     model: botModel(eff.model, { role: 'bot', botId: bot.id }),
     effort: eff.effort || undefined,
-    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list() }),
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list(), recall: !!recall }),
     resume: bot.freshSession ? undefined : chat.sessions[bot.id],
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
@@ -149,6 +155,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
           const pid = chatProjectId(chats.get(chat.id));
           return pid ? previewPageOf(pid) : undefined;
         },
+        recall: !!recall,
       }) as McpServerConfig,
       ...pluginServers(bot),
     },
@@ -164,6 +171,8 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   const members = team.filter((b) => chat.botIds.includes(b.id)).map((b) => b.name);
   const session = FAKE ? new FakeSession(cfg, bot.name, members, onSessionId) : new BotSession(cfg, onSessionId);
   sessions.set(key, session);
+  if (recall) recallSessions.set(session, recall);
+  if (recall && cfg.resume) recallResumed.add(session);
   return session;
 }
 
@@ -438,7 +447,8 @@ async function runTurn(job: Job) {
   const review = bot.blindReview && project ? await reviewDiff(project) : undefined;
   /** The prompt for this session: the full context the first time, then only what changed. */
   const contentFor = (s: AgentSession) => {
-    const promptText = buildTurnPrompt({
+    const recall = recallSessions.get(s);
+    const opts = {
       bot,
       chat,
       unseen,
@@ -449,7 +459,15 @@ async function runTurn(job: Job) {
       review,
       recap: rotatedFrom !== null ? { tokens: rotatedFrom } : undefined,
       nudge: rotatedFrom === null && nudgeNext.delete(sessionKey(chat.id, bot.id)),
-    });
+    };
+    let promptText = buildTurnPrompt(opts);
+    if (recall) {
+      // The same turn without Inline & Spill, for the before/after the log and the turn keep.
+      const without = promptText;
+      promptText = buildTurnPrompt({ ...opts, context: contextDelta(contextSent.get(s), context, 'env'), recall });
+      if (recallResumed.delete(s)) promptText = `${RECALL_RESUME_NOTE}\n\n${promptText}`;
+      msg.meta = { ...msg.meta, injected: measureInjected(`${chat.title} / ${bot.name}`, promptText, without) };
+    }
     contextSent.set(s, context);
     return imgs.length ? [{ type: 'text' as const, text: promptText }, ...imgs] : promptText;
   };

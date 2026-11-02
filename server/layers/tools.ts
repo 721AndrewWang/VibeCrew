@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { Bot, ChatMessage } from '../../shared/types';
 import { bus, notify } from '../bus';
 import { emitChat, preview, setLastMessage } from '../orchestrator/chatLog';
+import { RECALL_TOOL, recallText } from '../recall';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
 import { monthSpend } from '../usage';
 import { workspaceOf } from '../workspaces';
@@ -134,6 +135,13 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
       return (await stopWorker(w.id, { why: `${t.c.lead.name} stopped the task` })) ? ok(`Stopping ${w.id}; its report will say how far it got.`) : ok(`${w.id} is not running (${w.status}).`);
     },
 
+    async recall(args) {
+      const t = turn();
+      if (!t) return fail('No turn is in progress.');
+      const r = recallText(str(args.id), { chatId: t.chat.id }, Number(args.from) || 0);
+      return 'error' in r ? fail(r.error) : ok(r.text);
+    },
+
     async list_workers(args) {
       const t = turn();
       if (!t) return fail('No turn is in progress.');
@@ -164,7 +172,7 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
 }
 
 /** The handlers as Claude Code sees them. */
-export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?: boolean } = {}) {
+export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?: boolean; recall?: boolean } = {}) {
   const wrap = (name: string) => async (args: Record<string, unknown>) => {
     const r = await h[name](args);
     return { content: [{ type: 'text' as const, text: r.text }], isError: r.isError || undefined };
@@ -211,6 +219,20 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
         wrap('list_workers'),
         { annotations: { readOnlyHint: true } },
       ),
+      ...(o.recall
+        ? [
+            tool(
+              'recall',
+              RECALL_TOOL,
+              {
+                id: z.string().max(200).describe('The id to read: #12, chat, env, tg_…, th_… or wk_…'),
+                from: z.number().int().min(0).optional().describe('Read on from this word, as a cut text says (from=N)'),
+              },
+              wrap('recall'),
+              { annotations: { readOnlyHint: true } },
+            ),
+          ]
+        : []),
     ],
   });
 }

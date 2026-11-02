@@ -182,6 +182,7 @@ export const useStore = create<AppState>(() => ({
       policies: '',
       maxCandidatesPerHour: 30,
       router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false },
+      recall: { enabled: false, inlineWords: 50 },
       watchdog: { enabled: false, model: 'claude-sonnet-5', everyMinutes: 15, maxTicksPerHour: 4, maxActionsPerTick: 3, dailyBudgetUsd: 1, stuckMinutes: 20 },
     },
   },

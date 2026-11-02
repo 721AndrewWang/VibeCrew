@@ -243,6 +243,8 @@ export interface ChatMessage {
     model?: string;
     trace?: TraceRef;
     verdict?: { refuted: number };
+    /** Estimated tokens of the prompt Crew injected, and of the same prompt without Inline & Spill (only while recall is on). */
+    injected?: { tokens: number; without: number };
   };
   /** Files changed by this bot turn. */
   changes?: { files: string[]; reverted?: boolean };
@@ -641,8 +643,51 @@ export interface SuperAgentSettings {
   maxCandidatesPerHour: number;
   /** Two-layer mode: a resident Router per group chat that dispatches Workers (ADR 002). */
   router: RouterSettings;
+  /** Inline & Spill context and the recall tool (ADR 005). */
+  recall: RecallSettings;
   /** The Watchdog: an external control loop on a timer (ADR 006). */
   watchdog: WatchdogSettings;
+}
+
+export interface RecallSettings {
+  /** Prompts inline by locality and spill the rest behind ids; agents get recall(id). Needs superAgent.enabled. */
+  enabled: boolean;
+  /** Words of anything not adjacent to the turn that are inlined before the rest spills. */
+  inlineWords: number;
+}
+
+/** Kinds recall resolves; later milestones register more (background jobs). */
+export type RecallKind = 'message' | 'chat' | 'env' | 'trigger' | 'thread' | 'worker' | (string & {});
+
+/** A next hop: an id to recall, how it relates, and one line about it. */
+export interface RecallLink {
+  id: string;
+  rel: string;
+  summary: string;
+}
+
+/** An object as recall sees it: rendered under the Inline & Spill budgets. */
+export interface RecallNode {
+  id: string;
+  kind: RecallKind;
+  title: string;
+  attrs: [string, string][];
+  /** The full content; only the start is inlined, the rest is a read-more away. */
+  body: string;
+  /** Content from the environment (pages, files, tool output): rendered as data, not instructions. */
+  untrusted?: boolean;
+  /** Neighbours: the previous and next message, the message it answers. */
+  around: RecallLink[];
+  links: RecallLink[];
+}
+
+export interface RecallResult {
+  id: string;
+  /** What the agent reads. */
+  text: string;
+  node: RecallNode;
+  /** Estimated tokens of text. */
+  tokens: number;
 }
 
 export interface WatchdogSettings {

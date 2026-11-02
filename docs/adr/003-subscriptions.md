@@ -118,7 +118,7 @@ All new fields are optional and `normalizeRouter` fills in the new setting, so n
 - **Subscribing to other Threads on request.** The Router cannot name arbitrary Threads for a Worker, and a Worker cannot subscribe to more on its own. The two kinds above cover what Crew's events are about today; new trigger sources (CI, review comments) will bring their own Threads and are the natural place for this.
 - **Waking idle Workers for environment events** (speculative execution). A finished Worker that subscribes to the workspace does not get to fix a console error on its own; the error takes the normal path to the Router, which tells the user.
 - **Mid-tool input.** A delivered event waits for the next tool call; a long Bash command is not interrupted. That is the full-duplex milestone.
-- **A recall tool.** Delivered events inline about 60 words; the Worker reads files, `git log` and the preview console itself for the rest. Walking Triggers by id is a later milestone.
+- **A recall tool.** Delivered events inline about 60 words; the Worker reads files, `git log` and the preview console itself for the rest. Walking Triggers by id came with ADR 005: with the chain of recall on, a cut delivery names `recall id=tg_…`, and recall lists a Thread's subscribers, a Worker's subscriptions and the Workers a Trigger went straight to.
 - **Direct routing of user messages.** Chat threads stay with the Router.
 - **Persisting the Router's `<direct>` list and unread environment events across a restart.** They are dropped, as candidates cut off by a restart are; unread routine runs are handed to the Router.
 

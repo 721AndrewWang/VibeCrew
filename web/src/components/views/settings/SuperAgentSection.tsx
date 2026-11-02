@@ -1,6 +1,6 @@
-import { Network, Radio, Save, ShieldCheck } from 'lucide-react';
+import { Link2, Network, Radio, Save, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
-import type { FilteredSource, RouterSettings, SourceMode, SuperAgentSettings, WatchdogSettings } from '../../../../../shared/types';
+import type { FilteredSource, RecallSettings, RouterSettings, SourceMode, SuperAgentSettings, WatchdogSettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
 import { cx, gatewayOptions } from '../../../utils';
@@ -50,7 +50,7 @@ function toForm(s: SuperAgentSettings): Form {
   return { sources, projects: s.projects, policies: s.policies, maxCandidatesPerHour: s.maxCandidatesPerHour };
 }
 
-function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router' | 'watchdog'> {
+function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router' | 'recall' | 'watchdog'> {
   const sources = {} as SuperAgentSettings['sources'];
   for (const { id } of SOURCES) {
     sources[id] = {
@@ -180,6 +180,7 @@ export function SuperAgentSection() {
             </button>
           </div>
           <RouterSettingsBlock saved={saved.router} save={save} saving={saving} />
+          <RecallSettingsBlock saved={saved.recall} save={save} saving={saving} />
           <WatchdogSettingsBlock saved={saved.watchdog} save={save} saving={saving} />
         </>
       )}
@@ -265,6 +266,43 @@ function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; s
           <div className="row">
             <span className="spacer" />
             <button className="btn primary" disabled={saving || !dirty} onClick={() => void save({ router: { ...saved, ...form } }, 'Router settings saved')}>
+              {saving ? <span className="spinner" /> : <Save size={14} />} Save
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Inline & Spill context and the recall tool (ADR 005). */
+function RecallSettingsBlock({ saved, save, saving }: { saved: RecallSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
+  const [words, setWords] = useState(saved.inlineWords);
+  return (
+    <div className="router-settings" data-testid="recall-settings">
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">
+            <Link2 size={14} /> Chain of recall (Inline &amp; Spill)
+          </div>
+          <div className="hint">
+            Prompts carry the id of every message, trigger, thread and Worker they mention. What is next to the current turn is sent generously, everything else only its first words, and the rest
+            stays behind its id; bots and Routers read it with a recall tool that also lists the ids of related objects, so they can follow a trigger to its thread and its Workers. It replaces
+            chat_history. Usually fewer tokens per call, sometimes an extra lookup. Off: prompts are built as before.
+          </div>
+        </div>
+        <Toggle on={saved.enabled} onChange={(v) => void save({ recall: { ...saved, enabled: v } }, v ? 'Chain of recall on' : 'Chain of recall off')} />
+      </div>
+      {saved.enabled && (
+        <>
+          <div className="field">
+            <label>Words inlined before the rest spills</label>
+            <input className="input num-input" type="number" min={20} max={200} value={words} onChange={(e) => setWords(Math.max(20, Math.min(200, Number(e.target.value) || 20)))} />
+            <div className="hint">For anything not next to the current turn: older messages, Worker reports, recalled objects. The latest message and the user&apos;s words get more.</div>
+          </div>
+          <div className="row">
+            <span className="spacer" />
+            <button className="btn primary" disabled={saving || words === saved.inlineWords} onClick={() => void save({ recall: { ...saved, inlineWords: words } }, 'Recall settings saved')}>
               {saving ? <span className="spinner" /> : <Save size={14} />} Save
             </button>
           </div>

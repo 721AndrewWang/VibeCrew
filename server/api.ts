@@ -44,6 +44,7 @@ import {
 } from './projects';
 import { barkUrlOk, sendBark } from './push';
 import { quietly } from './quietWrites';
+import { recallOn, recallText } from './recall';
 import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
 import { cleanDomains, sandboxStatus } from './sandbox';
@@ -207,6 +208,7 @@ export function apiRouter() {
         ...b.superAgent,
         sources,
         router: { ...cur.superAgent.router, ...b.superAgent.router },
+        recall: { ...cur.superAgent.recall, ...b.superAgent.recall },
         watchdog: { ...cur.superAgent.watchdog, ...b.superAgent.watchdog },
       });
     }
@@ -234,6 +236,7 @@ export function apiRouter() {
     }
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
     const routesChanged = !!patch.gateway && sessionView(patch.gateway) !== sessionView(cur.gateway);
+    const recallBefore = recallOn();
     settings.update(patch);
     // Sessions get the gateway's address, credential and target when they start.
     if (routesChanged) {
@@ -245,9 +248,11 @@ export function apiRouter() {
     }
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
-    if (patch.denyRules || patch.sandbox) invalidateAllSessions();
+    // Recall's tool (and the system prompt that names it) is fixed when a session starts.
+    const recallChanged = recallOn() !== recallBefore || (recallBefore && !!b.superAgent?.recall);
+    if (patch.denyRules || patch.sandbox || recallChanged) invalidateAllSessions();
     // The Router's model and limits are in its session.
-    if (b.superAgent?.router || b.superAgent?.enabled === false) invalidateRouters();
+    if (b.superAgent?.router || b.superAgent?.enabled === false || recallChanged) invalidateRouters();
     // A Worker's thread tools, prompt and event hook are fixed when its session starts.
     if (patch.superAgent && subscriptionsOn(patch.superAgent) !== subscriptionsOn(cur.superAgent)) refreshWorkerSessions(() => true);
     // The Watchdog's timer and limits follow the switches.
@@ -310,6 +315,15 @@ export function apiRouter() {
     if (!d) throw new HttpError(404, 'Trigger not found (it may have aged out of the log)');
     res.json(d);
   });
+  // Chain of recall (ADR 005): what an agent in this chat would read for an id.
+  r.get('/recall/:id', (req, res) => {
+    if (!recallOn()) throw new HttpError(404, 'The chain of recall is off');
+    const chatId = str(req.query.chatId);
+    if (!chatId || !chats.get(chatId)) throw new HttpError(400, 'chatId must name a chat');
+    const r = recallText(req.params.id, { chatId }, Number(req.query.from) || 0);
+    if ('error' in r) throw new HttpError(404, r.error);
+    res.json(r);
+  });
   r.post('/triggers/preview-console', (req, res) => {
     const b = body(PreviewConsole, req.body);
     res.json({ trigger: publishConsole({ project: getProject(b.projectId), chatId: b.chatId, page: b.page, entries: b.entries }) });
@@ -365,7 +379,8 @@ export function apiRouter() {
   r.get('/improvements', (_req, res) => res.json(listImprovements()));
   r.get('/friction', (req, res) => {
     const days = Math.max(1, Math.min(90, Math.round(Number(req.query.days) || 7)));
-    res.json(frictionReport(days));
+    // While the chain of recall is on, the bots read older messages with recall.
+    res.json(frictionReport(days, Date.now(), recallOn() ? 'recall' : 'chat_history'));
   });
   r.post('/improvements/run', async (_req, res) => res.json(await proposeImprovements()));
   r.post('/improvements/:id/accept', (req, res) => res.json(acceptImprovement(req.params.id)));

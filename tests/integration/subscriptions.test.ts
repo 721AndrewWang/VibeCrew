@@ -206,4 +206,23 @@ describe('direct routing to subscribed Workers (demo mode)', () => {
     const stats = (await crew.api('GET', '/triggers')).stats;
     expect(stats.direct).toBeGreaterThanOrEqual(3);
   });
+
+  it('lets recall (ADR 005) walk the subscriptions: Worker -> its threads -> subscribers, and a run -> who it went to', async () => {
+    await settle();
+    await crew.api('PATCH', '/settings', { superAgent: { recall: { enabled: true } } });
+    const recall = (id: string) => crew.api('GET', `/recall/${encodeURIComponent(id)}?chatId=${group.id}`);
+    const linked = (text: string, rel: string, prefix: string) => [...text.matchAll(new RegExp(`^- ${rel} (${prefix}\\S*):`, 'gm'))].map((m) => m[1]);
+    // The routine's Worker: subscribed to the routine's thread and to the chat's workspace.
+    const w = (await workers()).find((x) => x.threads?.length === 2);
+    const run = (await crew.api('GET', '/triggers?source=routine')).triggers.find((t: any) => t.filter.direct?.includes(w.id));
+    const wk = await recall(w.id);
+    expect(linked(wk.text, 'subscribes', 'th_').sort()).toEqual([...w.threads].sort());
+    const th = await recall(run.threadId);
+    expect(th.text).toContain('kind: routine');
+    expect(linked(th.text, 'subscriber', 'wk_')).toEqual([w.id]);
+    const tg = await recall(run.id);
+    expect(tg.text).toContain('act (fast: subscribed)');
+    expect(linked(tg.text, 'delivered to', 'wk_')).toEqual([w.id]);
+    await crew.api('PATCH', '/settings', { superAgent: { recall: { enabled: false } } });
+  });
 });
