@@ -41,6 +41,7 @@ tests/
 
 - **Never touch real data.** `startServer()` gives each server a temporary `CREW_HOME` and clears the `CLAUDE*`, `ANTHROPIC_*` and `CREW_*` environment variables. Any new test you write must do the same.
 - When you need model replies, use `tests/helpers/mockProvider.ts` to start a local Anthropic-compatible API and connect the real `claude` CLI to it. No account or key is needed, and it costs nothing.
+- To test something that depends on elapsed time (the Watchdog's "stuck" rule, cooldowns), start the server with `startServer({ clock: true })` and move its clock with `crew.shiftClock(ms)`; only `Date.now()` moves, timers still run in real time. To kill and restart a server mid-run, start it with `{ dir }` and call `kill()`, then `startServer({ dir })` again.
 - e2e tests use the `crew` fixture from `tests/e2e/fixtures.ts`, one separate server per test. Any error on the page fails the test. Use `openChat(page, crew, id)` to open a chat by URL, and `.chat-item[data-chat="<id>"]` to click a chat in the sidebar; don't match by title text (titles can contain each other).
 - When fixing a bug, first write a test that reproduces it.
 

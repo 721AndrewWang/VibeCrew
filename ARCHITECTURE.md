@@ -1,6 +1,11 @@
 # Crew architecture
 
-This document covers the parts Crew is made of, how a message becomes an agent's reply, and a few design decisions that are easy to trip over. For usage see the [README](README.md); for the development workflow see [CONTRIBUTING](CONTRIBUTING.md).
+Crew runs a team of AI agents on your own machine: a Node server drives Claude Code sessions, and a React UI shows them as chats next to a live preview, files, a terminal and the changes. This document covers the parts Crew is made of, how a message becomes an agent's reply, and the design decisions that are easy to trip over. For usage see the [README](README.md); for the development workflow see [CONTRIBUTING](CONTRIBUTING.md).
+
+Crew works in two ways, and you choose per switch:
+
+- **Plain Crew** (the default). You write in a chat; one bot answers at a time; in a group chat the lead answers or hands off with @-mentions; nothing happens unless you write or a routine runs.
+- **Super-agent mode** (opt-in). A group chat becomes one agent you talk to. It takes events from anywhere (your messages, routines, test runs, console errors, files edited by hand), settles most of them with rules in code, answers you in a few words, runs several tasks at once in isolated **Workers**, watches its own progress with a **Watchdog**, and recovers after a crash. It is a set of switches, all off by default: with all of them off Crew starts no extra process, writes no extra file and makes no extra model call. [Super-agent mode](#super-agent-mode) explains it from the top, with what each switch turns on and what it costs; each part then has its own section.
 
 ## Overview
 
@@ -48,7 +53,7 @@ This document covers the parts Crew is made of, how a message becomes an agent's
 shared/  Types (types.ts) and logo definitions (logos.ts) shared by server and UI
 ```
 
-Everything marked "off unless" above is part of the **Super-agent mode**: one continuous agent per group chat that takes events from anywhere, runs several tasks in parallel, watches itself and recovers. How those parts fit together is in [Super-agent mode](#super-agent-mode); each part has its own section after it.
+Every line marked "off unless" above is a part of Super-agent mode; [below](#super-agent-mode) is how they fit together.
 
 ## The journey of a message
 
@@ -89,24 +94,35 @@ Agents only know what was said in the chat. `server/outsideEdits.ts` watches pro
 
 ## Super-agent mode
 
-Without it, a chat is a set of manual sessions: one bot answers at a time, nothing happens unless the user writes, and the user follows every session. The Super-agent mode (design notes in [docs/superagent](docs/superagent/design-notes.md), decisions in [ADRs 001-010](docs/adr/)) turns a group chat into one agent the user talks to, which is **continuous** (one Router keeps the chat's context), **efficient** (Workers run tasks in parallel, in their own worktrees, and long commands run in the background), **proactive** (events from the environment are filtered and acted on, quietly by default) and **durable** (a Watchdog outside the chats notices stuck or failed work and restarts it). It is a set of switches, all off by default; with all of them off Crew starts no extra process, writes no extra file and makes no extra model call (`tests/integration/super-agent-off.test.ts`).
+Without it, a chat is a set of manual sessions: one bot answers at a time, nothing happens unless the user writes, and the user follows every session. Super-agent mode (design notes in [docs/superagent](docs/superagent/design-notes.md), decisions in [ADRs 001-010 and 105](docs/adr/)) turns a group chat into one agent the user talks to, which is **continuous** (one Router keeps the chat's context), **efficient** (Workers run tasks in parallel, in their own worktrees, and long commands run in the background), **proactive** (events from the environment are filtered and acted on, quietly by default) and **durable** (a Watchdog outside the chats notices stuck or failed work, and a restart recovers what was in flight). It is a set of switches, all off by default; with all of them off Crew starts no extra process, writes no extra file and makes no extra model call, after a restart too (`tests/integration/super-agent-off.test.ts`).
 
-### The switches and what each costs
+### The parts in one minute
 
-| Switch (where) | Turns on | Needs | Costs |
-| --- | --- | --- | --- |
-| `superAgent.enabled` (Settings → Super-agent) | The Trigger bus: every event becomes a Trigger on a Thread, filtered in code, candidates judged by a cheap model against your policies | — | `triggers/` (at most 2,000 / 14 days); a Haiku call per batch of up to 8 candidates, at most `maxCandidatesPerHour` (30) |
-| `superAgent.router.enabled` | Two layers in group chats: a resident Router and isolated Workers | the bus | One resident Claude Code process per two-layer group chat once it has had an event (the Router, on a light model) and one per Worker session (the strongest model, closed after 15 idle minutes), a git worktree per Worker; `workers.json`, `router/`, Router and Worker logs |
-| `superAgent.router.subscriptions` | Direct routing: Workers subscribe to Threads and get their events without a Router decision | two layers | Nothing extra; it saves Router turns and puts short events into Workers' context |
-| `superAgent.recall.enabled` | Inline & Spill prompts and the `recall` tool for every chat, Worker and Router session | the bus | Nothing extra; smaller prompts, a few more tool calls; idle sessions restart when toggled |
-| `superAgent.watchdog.enabled` | The Watchdog: a timer, and a session only when a tick finds something | the bus | A timer; one turn per flagged tick on a light model, at most `maxTicksPerHour` (4) and `dailyBudgetUsd` ($1); `watchdog/` |
-| `Bot.fullDuplex` (bot editor) | Background jobs (`start`/`stop`/`status`) and mid-turn input for that bot | — | Up to 4 background processes per chat; a small sandboxed helper session per command while the sandbox is on; sub-tasks are the bot's own spend; `jobs/` |
-| `gateway.enabled` (Settings → Model gateway) | A local gateway: per-role routes, failover between providers and accounts, spend windows, optional masking | — | One HTTP listener on 127.0.0.1; no model call of its own; `gateway/calls.jsonl` |
-| `safety.guard`, `safety.stripCredentials` (Settings → Safety, on) | The command guard and credential-free agent environments | — | Nothing; they only refuse and remove |
-| `safety.audit` (Settings → Safety, off) | The audit log of drafts, approvals, runs and guard refusals | — | `audit.jsonl` (5,000 / 180 days), commands written to disk |
-| `Project.skillFamilies` (project settings) | Lifecycle skill families in system prompts and Worker playbooks | — | Context: every enabled skill is in the prompt |
+- **Trigger bus** (`triggers/`): every event becomes a small record (a Trigger) on a Thread of related ones. Rules in code settle most of them (the fast path); a cheap model judges the rest against policies you write (the slow path).
+- **Router and Workers** (`layers/`): each group chat gets a resident Router that reads everything needing a decision, answers you in at most 100 words and dispatches Workers; each Worker does one task in its own session and git worktree, as one of the chat's members, and its work is merged into the chat's branch.
+- **Direct routing**: a Worker subscribes to the Threads of its task (its folder, its routine) and gets their events between its steps, with no Router decision.
+- **Full duplex** (`jobs/`, per bot): long commands and sub-tasks run in the background; the result comes back as a new event.
+- **Chain of recall** (`recall/`): every injected object carries an id, prompts stay small, and a `recall` tool walks from any id to its neighbours.
+- **Watchdog** (`watchdog/`): a timer outside the chats; rules flag stuck, looping or failed Workers and other trouble, and only then does a session look and nudge, stop or restart, within hard limits.
+- **Model gateway** (`gateway/`): every session's calls go out under its role, with failover between providers and accounts and spend windows.
+- **Safety** (`guard.ts`, `drafts.ts`, `audit.ts`): a command guard in every session, actions in your name only as drafts you approve, credential-free environments, an optional audit log. On by default except the audit log, and not tied to the other switches.
 
-To try the whole mode: turn on the Super-agent, then the Router (and its subscriptions), the chain of recall and the Watchdog; mark the bots that run long commands as full duplex; optionally put the Router and the Watchdog on a light model group and Workers on the strongest in the model gateway.
+### Turning it on, and what each switch costs
+
+| Switch | Where | Needs | Runs | Writes in `~/.crew` | Model calls |
+| --- | --- | --- | --- | --- | --- |
+| `superAgent.enabled` | Settings → Super-agent → Watch events and filter them | — | Nothing extra (in the server) | `triggers/` (at most 2,000 Triggers / 14 days) | One cheap (Haiku) call per batch of up to 8 candidates, at most `maxCandidatesPerHour` (30) |
+| `superAgent.router.enabled` | Settings → Super-agent → Router and Workers | the bus | A resident Claude Code process per two-layer group chat once it has had an event (the Router); one per Worker session, closed after 15 idle minutes; a git worktree per Worker | `workers.json`, `router/`, Router and Worker logs in `messages/`, worktrees | A Router turn per batch of events (Sonnet by default); each Worker's turns (the strongest model) |
+| `superAgent.router.subscriptions` | Settings → Super-agent → Direct routing to Workers | two layers | Nothing extra | Nothing new (subscriptions live on the Worker) | Fewer Router turns; short events in Workers' context |
+| `superAgent.recall.enabled` | Settings → Super-agent → Chain of recall | the bus | Nothing extra; idle sessions restart when it is toggled | Nothing new | Smaller prompts, sometimes one extra tool call |
+| `superAgent.watchdog.enabled` | Settings → Super-agent → Watchdog | the bus | A timer; a session only when a tick finds something | `watchdog/` | One turn per flagged tick on a light model, at most `maxTicksPerHour` (4) and `dailyBudgetUsd` ($1) |
+| `Bot.fullDuplex` | Bot editor → Full duplex | — | Up to 4 background processes per chat; with the sandbox on, a small helper session per command | `jobs/` (14 days, 200 per chat) | Sub-tasks are the bot's own spend |
+| `gateway.enabled` | Settings → Model gateway | — | One HTTP listener on 127.0.0.1 | `gateway/calls.jsonl` | None of its own; a refused try is handed on to the next member |
+| `safety.guard`, `safety.stripCredentials` (on) | Settings → Safety | — | Nothing | Nothing | None |
+| `safety.audit` (off) | Settings → Safety → Audit log | — | Nothing | `audit.jsonl` (5,000 / 180 days), commands included | None |
+| `Project.skillFamilies` | Projects → Lifecycle skill families | — | Nothing | Nothing | Context: every enabled skill is in the prompt |
+
+To try the whole mode: turn on the Super-agent, then the Router (and its direct routing), the chain of recall and the Watchdog; mark the bots that run long commands as full duplex; optionally put the Router and the Watchdog on a light model group and Workers on the strongest in the model gateway. To see it work, open a group chat (the Workers bar above the composer shows the Router and its Workers), the Triggers page (every event and how it was settled) and the Watchdog page (its ticks and actions); drafted actions wait above the composer.
 
 ### One event through the whole system
 
@@ -123,6 +139,18 @@ To try the whole mode: turn on the Super-agent, then the Router (and its subscri
 ### Where the parts meet
 
 The milestones were built apart; [ADR 010](docs/adr/010-integration-notes.md) lists each seam, how it is wired and its test (`tests/integration/seams.test.ts`): a job's result reaches the Workers subscribed to the folder it ran in; recall resolves job ids for the Workers that got their result, and the Watchdog's actions, ticks and watches for the chat they concern; the Watchdog reads the audit log beside the friction log; per-role routing covers the Router, Workers and the Watchdog; the `<untrusted>` wrapper and the command guard apply to Workers, background jobs and the Watchdog alike.
+
+[ADR 105](docs/adr/105-hardening.md) walks the whole flow with every switch on (`tests/integration/super-agent-flow.test.ts`, in demo mode and with the real Claude Code through the gateway; `tests/e2e/super-agent.spec.ts` in the browser) and fixed what broke there: Crew's own MCP servers set `alwaysLoad` so Claude Code's tool search never hides `recall`, `hand_back`, `start` or `chat_history` (and the Router and the Watchdog, which have no other tools, run with tool search off); summaries keep the ids they name (`preview()` no longer strips `_` inside a word); the Watchdog's `restart_worker` is refused for a Worker a restart cut off, one the user stopped, or one the Router already replaced for the same request (`watchdog/duplicates.ts`).
+
+### After a crash
+
+Every part recovers or fails cleanly on start, and nothing is done twice ([ADR 105](docs/adr/105-hardening.md), `tests/integration/restart.test.ts`):
+
+- **Workers** cut off mid-turn are stopped (`Crew restarted`), their worktrees committed, their Routers told; they keep their subscriptions, and a Worker the Router resumes receives its Threads' events again.
+- **Routers** get again the user's messages past their cursor, and (`layers/recovery.ts`, read off the Router's own log) the messages a turn cut off by the crash took without dispatching anything, plus Workers' reports no finished turn read. A re-handed event says so, and a cut-off one tells the Router to check its Workers before dispatching. What a Worker was already dispatched for is not handed again; what the user stopped is not either.
+- **Background jobs** are marked stopped and their output posted without a turn; a command still running in its own process group is stopped first (`jobs/orphans.ts`, matched by its recorded process group and start time).
+- **The Watchdog** settles a tick or a maintainer's question the crash cut off (`watchdog/recovery.ts`): the next tick looks at the same window, the question's log says to ask again, and watches on Workers the restart cut off are closed.
+- **Triggers** still waiting for the slow path are marked `interrupted`; the gateway starts on a new port, which new sessions pick up.
 
 ### The security model across the mode
 
