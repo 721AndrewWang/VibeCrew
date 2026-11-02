@@ -42,6 +42,12 @@ export const DATA = {
   triggerPayloads: path.join(HOME_DIR, 'triggers', 'payloads'),
   /** Two-layer mode's Workers (server/layers): written on the first dispatch. */
   workers: path.join(HOME_DIR, 'workers.json'),
+  /** The Watchdog (server/watchdog): created on its first write, so only once it is on. */
+  watchdog: path.join(HOME_DIR, 'watchdog'),
+  watchdogTicks: path.join(HOME_DIR, 'watchdog', 'ticks.jsonl'),
+  watchdogActions: path.join(HOME_DIR, 'watchdog', 'actions.jsonl'),
+  watchdogWatches: path.join(HOME_DIR, 'watchdog', 'watches.json'),
+  watchdogProposals: path.join(HOME_DIR, 'watchdog', 'proposals.json'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

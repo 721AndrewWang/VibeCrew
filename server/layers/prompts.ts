@@ -5,6 +5,8 @@
 // full (they are what the work is for), a Worker's report only its first words with the handle that
 // reads the rest, and environment events their summary, fenced and marked as data.
 
+import { renderWatchdogNote, WATCHDOG_MARK } from '../watchdog/prompts';
+
 export const REPLY_WORDS = 100;
 const REPORT_WORDS = 80;
 const USER_CHARS = 4000;
@@ -155,7 +157,7 @@ export function workerPrompt(o: {
     out.push(`Your task from ${o.lead} (the chat's Router): "${o.title || 'Task'}"\n\n${o.task.trim()}`);
     if (o.userWords?.length) out.push(`The user's own words that led to it, for reference:\n\n${o.userWords.map((u) => `[User · #${u.seq}]\n${u.text.trim()}`).join('\n\n')}`);
   }
-  for (const f of o.followUps || []) out.push(`Follow-up from ${o.lead}:\n\n${f.trim()}`);
+  for (const f of o.followUps || []) out.push(f.startsWith(WATCHDOG_MARK) ? renderWatchdogNote(f) : `Follow-up from ${o.lead}:\n\n${f.trim()}`);
   if (o.conflict)
     out.push(
       `(Crew could not merge your branch into the chat's branch \`${o.conflict.branch}\`: they conflict in ${o.conflict.files.join(', ')}. First run \`git merge ${o.conflict.branch}\` here, resolve the conflicts keeping both sides' intent, and commit; then carry on.)`,

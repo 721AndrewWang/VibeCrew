@@ -2263,3 +2263,145 @@
     grid-column: 1 / -1;
   }
 }
+
+/* ---------------------------------------------------------------- Watchdog */
+.wd-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 16px;
+}
+.wd-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+.wd-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.wd-meter {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+.wd-meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-2);
+}
+.wd-meter-head b {
+  color: var(--text);
+}
+.wd-meter-bar {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.wd-meter-bar i {
+  display: block;
+  height: 100%;
+  background: var(--text-2);
+}
+.wd-meter-bar i.full {
+  background: var(--text);
+}
+.wd-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.wd-col h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+.wd-col h3:first-child {
+  margin-top: 0;
+}
+.wd-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.wd-card:not(.pending) {
+  opacity: 0.7;
+}
+.wd-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wd-diff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+.wd-diff pre {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+}
+.wd-diff pre.before {
+  color: var(--text-2);
+}
+.wd-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.wd-row-main {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wd-row.refused {
+  color: var(--text-2);
+}
+.wd-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wd-chat .agent-log {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 200px;
+}
+.wd-compose {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.wd-compose textarea {
+  flex: 1;
+  resize: vertical;
+}
+@media (max-width: 900px) {
+  .wd-grid,
+  .wd-diff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

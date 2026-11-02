@@ -216,7 +216,7 @@ export interface ChatMessage {
    * see too. stall: the chain stopped without a handoff and the lead was woken. trigger: the
    * Super-agent's event filter thought an event worth the user's attention (always uiOnly).
    */
-  notice?: 'outside-edit' | 'stall' | 'trigger';
+  notice?: 'outside-edit' | 'stall' | 'trigger' | 'watchdog';
   /** The turn was cut short by a restart of Crew; what it had written is kept. */
   interrupted?: boolean;
   error?: string;
@@ -524,6 +524,106 @@ export interface SuperAgentSettings {
   maxCandidatesPerHour: number;
   /** Two-layer mode: a resident Router per group chat that dispatches Workers (ADR 002). */
   router: RouterSettings;
+  /** The Watchdog: an external control loop on a timer (ADR 006). */
+  watchdog: WatchdogSettings;
+}
+
+export interface WatchdogSettings {
+  /** A timer-driven session that checks Workers and errors and can intervene; needs superAgent.enabled. */
+  enabled: boolean;
+  model: string;
+  /** How often the timer ticks. */
+  everyMinutes: number;
+  /** Ticks that call the model, per hour at most; the rest are skipped. */
+  maxTicksPerHour: number;
+  /** Actions (nudge, stop, restart, notify, watch, propose) per turn at most. */
+  maxActionsPerTick: number;
+  /** What the Watchdog's turns may cost per day; past it, ticks are skipped and questions refused. */
+  dailyBudgetUsd: number;
+  /** A Worker with no progress for this long is flagged as stuck. */
+  stuckMinutes: number;
+}
+
+/** One tick of the Watchdog (or a maintainer's turn): whether the model was called and why. */
+export interface WatchdogTick {
+  id: ID;
+  at: number;
+  kind: 'tick' | 'manual' | 'maintainer';
+  outcome: 'ran' | 'skipped' | 'error';
+  /** Why it ran (the flags) or was skipped (quiet, healthy, limit, budget, busy). */
+  reason: string;
+  flags: string[];
+  actions: number;
+  costUsd: number;
+  /** Its turn in the Watchdog's log. */
+  messageId?: ID;
+}
+
+export type WatchdogActionKind = 'nudge' | 'stop' | 'restart' | 'notify' | 'watch' | 'resolve' | 'propose';
+
+/** Something the Watchdog did, or tried to do and a gate refused. */
+export interface WatchdogAction {
+  id: ID;
+  at: number;
+  tickId: ID;
+  kind: WatchdogActionKind;
+  /** A Worker, chat, watch or proposal id. */
+  target: string;
+  chatId?: ID;
+  text: string;
+  refused?: string;
+}
+
+/** A failure the Watchdog keeps re-checking until it is healthy. */
+export interface WatchdogWatch {
+  id: ID;
+  /** What is watched: a Worker id, or any key the Watchdog chose. */
+  subject: string;
+  note: string;
+  createdAt: number;
+  nextAt: number;
+  checks: number;
+  /** Opened by code (a transient error) or by the Watchdog. */
+  by: 'code' | 'watchdog';
+  resolvedAt?: number;
+  resolution?: string;
+}
+
+/** A change the Watchdog proposes; nothing is applied until a maintainer accepts it. */
+export interface WatchdogProposal {
+  id: ID;
+  at: number;
+  /** The trigger policies, or a bot's role description (its prompt). */
+  target: 'policies' | 'bot';
+  botId?: ID;
+  botName?: string;
+  before: string;
+  after: string;
+  rationale: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'stale';
+  decidedAt?: number;
+}
+
+/** The Watchdog as it is right now (not stored). */
+export interface WatchdogInfo {
+  enabled: boolean;
+  state: 'off' | 'idle' | 'thinking' | 'error';
+  detail?: string;
+  nextTickAt?: number;
+  ticksLastHour: number;
+  actionsToday: number;
+  spentTodayUsd: number;
+  lastTick?: WatchdogTick;
+  pendingProposals: number;
+  openWatches: number;
+}
+
+export interface WatchdogOverview extends WatchdogInfo {
+  settings: WatchdogSettings;
+  ticks: WatchdogTick[];
+  actions: WatchdogAction[];
+  watches: WatchdogWatch[];
+  proposals: WatchdogProposal[];
 }
 
 export interface RouterSettings {
@@ -978,6 +1078,7 @@ export type ServerEvent =
   | { t: 'worker'; worker: Worker }
   | { t: 'worker_deleted'; id: ID }
   | { t: 'router'; router: RouterInfo }
+  | { t: 'watchdog'; watchdog: WatchdogInfo }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */

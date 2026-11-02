@@ -475,6 +475,23 @@ export function messageWorker(w: Worker, text: string): 'started' | 'queued' {
   return busy ? 'queued' : 'started';
 }
 
+/**
+ * A Worker that failed or was stopped starts over in a new session, from a recap: its task again,
+ * what it reported last, where its work is, and the note. Its branch and workspace stay.
+ */
+export function restartWorker(w: Worker, recap: string) {
+  if (isActive(w) || w.dismissedAt) throw new Error(`Only a failed or stopped Worker can be restarted (this one is ${w.dismissedAt ? 'dismissed' : w.status})`);
+  const l = liveOf(w.id);
+  l.session?.close();
+  l.session = null;
+  l.context = undefined;
+  l.stop = false;
+  l.quiet = false;
+  l.first = { userMessageIds: [] };
+  save(w, { sessionId: undefined, status: 'starting', detail: 'Restarting in a new session', pending: [recap] });
+  void runLoop(w);
+}
+
 /** Stops a Worker's turn (or its start). `quiet`: the whole chat was stopped, so the Router is not told. */
 export async function stopWorker(id: string, opts: { quiet?: boolean; why?: string } = {}): Promise<boolean> {
   const w = workers.get(id);

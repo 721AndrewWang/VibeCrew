@@ -18,6 +18,10 @@ import type {
   SuperAgentSettings,
   Thread,
   Trigger,
+  WatchdogAction,
+  WatchdogProposal,
+  WatchdogTick,
+  WatchdogWatch,
   Worker,
 } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
@@ -424,3 +428,12 @@ export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });
 export const workers = new Collection<Worker>(DATA.workers);
 /** Where `messages` keeps a chat's Router turns. */
 export const routerLogId = (chatId: string) => `rt_${chatId}`;
+
+/** The Watchdog's ledger: every tick (run or skipped) and maintainer turn, and every action it took or was refused. */
+export const WATCHDOG_LIMITS = { max: 5000, maxAgeMs: 30 * 86_400_000 };
+export const watchdogTicks = new JsonlLog<WatchdogTick>(DATA.watchdogTicks, WATCHDOG_LIMITS);
+export const watchdogActions = new JsonlLog<WatchdogAction>(DATA.watchdogActions, WATCHDOG_LIMITS);
+export const watchdogWatches = new Collection<WatchdogWatch>(DATA.watchdogWatches, { mkdir: true });
+export const watchdogProposals = new Collection<WatchdogProposal>(DATA.watchdogProposals, { mkdir: true });
+/** Where `messages` keeps the Watchdog's turns and the maintainers' messages to it. */
+export const WATCHDOG_LOG = 'watchdog';

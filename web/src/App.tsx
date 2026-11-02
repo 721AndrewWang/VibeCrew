@@ -13,6 +13,7 @@ import { RoutinesView } from './components/views/RoutinesView';
 import { SettingsView } from './components/views/SettingsView';
 import { SkillsView } from './components/views/SkillsView';
 import { TriggersView } from './components/views/TriggersView';
+import { WatchdogView } from './components/views/WatchdogView';
 import { AgentLogDialog } from './components/WorkersBar';
 import { closeModal, useStore } from './store';
 import { cx } from './utils';
@@ -94,6 +95,7 @@ export function App() {
         {view === 'routines' && <RoutinesView />}
         {view === 'projects' && <ProjectsView />}
         {view === 'triggers' && <TriggersView />}
+        {view === 'watchdog' && <WatchdogView />}
         {view === 'settings' && <SettingsView />}
       </main>
       <Modals />

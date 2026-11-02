@@ -398,7 +398,24 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
   );
 }
 
-export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, names, root }: { msg: ChatMessage; chat: Chat; bot?: Bot; showHead: boolean; names: string[]; root?: string }) {
+export const BotMessage = memo(function BotMessage({
+  msg,
+  chat,
+  bot,
+  showHead,
+  names,
+  root,
+  label,
+}: {
+  msg: ChatMessage;
+  chat: Chat;
+  bot?: Bot;
+  showHead: boolean;
+  names: string[];
+  root?: string;
+  /** Who speaks when it is not a bot (the Watchdog). */
+  label?: string;
+}) {
   const live = msg.status === 'streaming';
   const workProjectId = useStore((s) => chatProjectId(chat, s.projects));
   const blocks = groupParts(msg.parts || []);
@@ -411,7 +428,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         {showHead && (
           <div className="msg-head">
             <span className="msg-name" style={{ '--bot-color': bot?.color } as CSSProperties}>
-              {bot?.name || 'Deleted bot'}
+              {bot?.name || label || 'Deleted bot'}
             </span>
             {by && <span className="msg-meta">replying to @{by}</span>}
             {msg.router && (
@@ -542,6 +559,18 @@ export const UserMessage = memo(function UserMessage({ msg, chat, names, showTim
 
 export function SystemMessage({ msg }: { msg: ChatMessage }) {
   // A note from the Super-agent's event filter: only the user sees it; the event is in Triggers.
+  if (msg.notice === 'watchdog') {
+    return (
+      <div className="msg-system trigger-notice">
+        <span>
+          <ShieldCheck size={12} /> {msg.text}{' '}
+          <button className="link-btn" onClick={() => setView('watchdog')}>
+            Watchdog
+          </button>
+        </span>
+      </div>
+    );
+  }
   if (msg.notice === 'trigger') {
     return (
       <div className="msg-system trigger-notice">

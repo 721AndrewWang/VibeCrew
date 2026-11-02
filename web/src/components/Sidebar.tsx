@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Search,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   SquarePen,
   Trash2,
@@ -26,13 +27,14 @@ import { openChat, openModal, setView, toast, useStore, type View } from '../sto
 import { cx, fmtShort, statusLabel } from '../utils';
 import { Avatar, confirmDialog, GroupAvatar, Logo, Menu, MenuButton, type MenuItem, useNow } from './ui';
 
-const NAV: { view: View; label: string; icon: typeof MessageCircle; superAgent?: boolean }[] = [
+const NAV: { view: View; label: string; icon: typeof MessageCircle; superAgent?: boolean; watchdog?: boolean }[] = [
   { view: 'chat', label: 'Chats', icon: MessageCircle },
   { view: 'bots', label: 'Bots', icon: BotIcon },
   { view: 'skills', label: 'Skills', icon: Zap },
   { view: 'routines', label: 'Routines', icon: Clock },
   { view: 'projects', label: 'Projects', icon: FolderGit2 },
   { view: 'triggers', label: 'Triggers', icon: Radio, superAgent: true },
+  { view: 'watchdog', label: 'Watchdog', icon: ShieldCheck, superAgent: true, watchdog: true },
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -162,6 +164,7 @@ export function Sidebar() {
 
   const unreadTotal = Object.values(chats).reduce((n, c) => n + (c.id === activeChatId ? 0 : c.unread || 0), 0);
   const superAgent = useStore((s) => s.settings.superAgent.enabled);
+  const watchdog = useStore((s) => s.settings.superAgent.watchdog.enabled);
 
   return (
     <aside className="sidebar">
@@ -193,7 +196,7 @@ export function Sidebar() {
         {!list.length && <div className="empty">No matching chats</div>}
       </div>
       <nav className="sb-nav">
-        {NAV.filter((n) => !n.superAgent || superAgent).map((n) => (
+        {NAV.filter((n) => (!n.superAgent || superAgent) && (!n.watchdog || watchdog)).map((n) => (
           <button key={n.view} className={cx('sb-nav-item', view === n.view && 'on')} onClick={() => setView(n.view)} title={n.label}>
             <n.icon size={18} />
             <span>{n.label}</span>

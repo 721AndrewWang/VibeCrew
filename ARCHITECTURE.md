@@ -22,6 +22,8 @@ This document covers the parts Crew is made of, how a message becomes an agent's
 │                slow path (cheap model); off unless superAgent.enabled  │
 │  layers/       Two-layer mode: a resident Router per group chat and    │
 │                isolated Workers; off unless superAgent.router.enabled  │
+│  watchdog/     Timer-driven control loop over Workers and errors;      │
+│                off unless superAgent.watchdog.enabled                  │
 │  preview       Preview server (static / reverse proxy + injected       │
 │                script)                                                 │
 │  store         JSON storage under ~/.crew                              │
@@ -98,6 +100,17 @@ The second step (design: [ADR 002](docs/adr/002-two-layer.md)): global continuit
 - **Restarts.** A Worker record is written at once when it is created and on every status change. On start, Workers cut off mid-turn are marked stopped (`Crew restarted`), their worktrees are committed (`reconcileWorkspaces` keeps Worker workspaces whose Worker still exists), and their Routers are told. User messages past `Chat.router.cursor` (written at once when a turn takes them) are handed to the Router again.
 - **Seeing it**: in a router-mode chat, a Workers bar above the composer shows the Router's state and queue, and each Worker's title, member, status and last report or landing. Each row opens that Worker's transcript (the chat's own message rendering, approval cards included); the bar also offers Stop, Dismiss and the Router log. The chat header and the composer's Stop button count the Router and Workers. API: `GET /api/workers?chatId=`, `GET /api/workers/:id/messages`, `POST /api/workers/:id/stop`, `POST /api/workers/:id/dismiss`, `GET /api/chats/:id/router/messages`; `ServerEvent` `worker`, `worker_deleted`, `router`.
 
+## Watchdog (Super-agent, external control loop)
+
+The sixth step (design: [ADR 006](docs/adr/006-watchdog.md)): a control loop outside the chats it watches. Behind `superAgent.watchdog.enabled`, which only counts while `superAgent.enabled` is on; both are off by default, and off means no timer, no `watchdog/` folder and no model call (`syncWatchdog` stops the timer when the settings change).
+
+- **Timer and fast path.** A croner job (`*/N * * * *`, `superAgent.watchdog.everyMinutes`) calls `tick()`. Each tick first settles watches in code (`housekeepWatches`), then gathers a **snapshot** (`gatherSnapshot`): Workers that are active or ended since the last look, with their progress read off their log (`signals.ts`: the last tool call's time, the latest calls with repeats collapsed), approvals waiting for the user (`openApprovals()` in `permissionGate.ts`), turn errors and other friction since the last look (`readFriction`), Routers in error and preview console errors (from the trigger log), and open watches. Rules in code (`snapshot.ts`) flag a Worker as `stuck` (no progress for `stuckMinutes`), `looping` (the same call 4 times among its latest), `failed` or `failed-transient`; an approval waiting 10 minutes; any new turn error, friction, interface error; a due watch. No flag, no model call: the tick is recorded as `quiet` or `healthy`. "Tick now" (`POST /api/watchdog/tick`) always looks, within the limits.
+- **The session.** Like the Router's: one Claude Code session with no built-in tools (`tools: []`), its own system prompt (`prompts.ts`), no settings files, a `canUseTool` that refuses anything but `mcp__crew_watchdog__*`, working in `CREW_HOME/watchdog`, turns logged by `runLogged` under `watchdog` in `messages/`, one at a time through a `BatchQueue` (ticks coalesce). The snapshot follows Inline & Spill: ids everywhere, text cut to its first words, `inspect <id>` for the rest, all of it fenced and defused as data. A session past `rotateAtTokens` starts over with a recap of recent actions.
+- **Tools and gates** (`tools.ts`, `gates.ts`): `nudge_worker` (a note queued with the Worker's follow-ups; `workerPrompt` renders it as the Watchdog's, which can only refocus), `stop_worker` (optionally with a `redirect` note it resumes with at once), `restart_worker` (`restartWorker` in `layers/workers.ts`: a failed or stopped Worker starts a new session from a recap of its task, last report and branch), `notify` (a Router gets an environment event, which cannot start or steer Workers; other chats a UI-only note), `watch`/`resolve_watch`, `propose_change` (maintainer turns only) and the free `inspect`. Every action, done or refused, is a line in `watchdog/actions.jsonl`. Hard limits from Settings: `maxTicksPerHour`, `maxActionsPerTick`, `dailyBudgetUsd` (ticks and questions together); constants cap nudges (2) and restarts (3) per Worker and notices (4) per chat per day.
+- **Transient failures.** `isTransient` reads overloaded, rate limits, 429/5xx, timeouts and connection errors. A Worker failing that way gets a watch opened by code; a due watch flags the tick; checks back off from 5 minutes to at most 2 hours; code resolves the watch as soon as the Worker is running or done again, and gives up after 8 checks with a notice to the chat.
+- **Maintainers.** The Watchdog page has a chat: a message is a turn in the same session with the current snapshot attached. It can propose new trigger policies or a bot's role description (`watchdog/proposals.json`); accepting applies them through the settings store or `updateBot`, unless the value changed since (then the proposal is `stale`).
+- **Seeing it**: the Watchdog page (sidebar, only while it is on) shows its state, next tick, ticks this hour, spend today and actions against the limits, pending proposals (Accept/Reject), open watches, recent actions and ticks, and the chat. API: `GET /api/watchdog`, `GET|POST /api/watchdog/messages`, `POST /api/watchdog/tick`, `POST /api/watchdog/proposals/:id/accept|reject`, `POST /api/watchdog/watches/:id/resolve`; `ServerEvent` `watchdog`.
+
 ## Adversarial review
 
 Builders (Pixel and others), acceptance (Probe) and review (Lens) all look for supporting evidence, and each one sees the previous one's conclusion, so they tend to vouch for each other. Skeptic is the link dedicated to finding counter-evidence. Its design has these points (`server/review.ts`, `blindPrompt`):
@@ -158,6 +171,9 @@ triggers/      Only once the Super-agent is on: triggers.jsonl (append-only, at 
 workers.json   Only once a Router has dispatched a Worker; the Workers' and Routers' turns
                are in messages/ under wk_<id> and rt_<chatId>
 router/        Only once a Router has run: the empty folder its sessions work in
+watchdog/      Only once the Watchdog is on: ticks.jsonl and actions.jsonl (the ledger, at most
+               5,000 lines / 30 days each), watches.json, proposals.json; its session works here
+               and its turns are in messages/watchdog.jsonl
 ```
 
 - All writes in `store.ts` are "write a temp file, then rename", and are batched and deferred; on exit `flushAll()` finishes any pending writes.
