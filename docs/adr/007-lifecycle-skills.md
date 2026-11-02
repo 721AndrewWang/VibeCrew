@@ -44,7 +44,7 @@ readOnly: false
 
 **Workers pick skills by family.** `dispatch_worker` takes an optional `family`. Code checks that the chat's project enabled it, records it on the Worker, and puts that family's worker-mode skills into the Worker's first prompt as a playbook. The Router's system prompt lists the families the project enabled and names the chat's adversarial reviewer for `review`. `skills.forFamily(project, family, mode)` is the single entry point the speculative milestone will call with `triage`, `reproduce` and `draft-fix`.
 
-**Read-only families are a gate in code.** A Worker on `triage` or `repo-health` is refused every Edit/Write/MultiEdit/NotebookEdit by its PreToolUse hook (so even acceptEdits mode cannot write), and any shell command the guard does not classify as a read asks for approval whatever its permission level.
+**Read-only families are a gate in code.** A Worker on `triage` or `repo-health` is refused every Edit/Write/MultiEdit/NotebookEdit by its PreToolUse hook (so even acceptEdits mode cannot write), and any shell command the guard classifies as a change asks for approval whatever its permission level (wherever Claude Code consults Crew's gate; under the AI reviewer level its classifier decides first, and the edit refusal still holds).
 
 ### 2. External content is data
 
@@ -94,7 +94,7 @@ Each refusal names its rule and tells the bot not to work around it. The guard c
 
 ### 6. Audit log
 
-When `safety.audit` is on, `server/audit.ts` appends one JSON line per event to `CREW_HOME/audit.jsonl`: a draft created, approved, discarded, run (exit code, output tail, URL, reverse command) or failed, and every guard refusal with its rule and the command. Each entry names who (bot, chat, Worker) and where (folder, target). `GET /api/audit` returns the latest entries; Settings → Safety shows them live (`ServerEvent` `audit`). The file is append-only and capped (the oldest half is dropped past 5,000 lines).
+When `safety.audit` is on, `server/audit.ts` appends one JSON line per event to `CREW_HOME/audit.jsonl`: a draft created, approved, discarded, run (exit code, output tail, URL, reverse command) or failed, and every guard refusal with its rule and the command. Each entry names who (bot, chat, Worker) and where (folder, target). `GET /api/audit` returns the latest entries; Settings → Safety shows them live (`ServerEvent` `audit`). The file is append-only and bounded (at most 5,000 entries and 180 days, the same `JsonlLog` the Trigger bus uses).
 
 ## Data model
 
@@ -154,7 +154,7 @@ interface ApprovalPart { /* existing fields */ effects?: string[] }
 - `server/layers/`: `dispatch_worker` takes `family` (gate: enabled in the project); the Worker's prompt gets the playbook; a read-only family adds the edit refusal to its deny hook and makes changes ask; the Router's system prompt lists the families.
 - `server/agents/crewTools.ts`: `draft_external_action`; console and page text wrapped.
 - New: `server/guard.ts` (pure), `server/untrusted.ts` (pure), `server/drafts.ts` (build, store, approve/run, reverse), `server/audit.ts`, `shared/families.ts`.
-- API: `GET /api/drafts`, `POST /api/drafts/:id/approve`, `POST /api/drafts/:id/discard`, `GET /api/audit`, `POST /api/guard/check` (dry run of the guard, used by the Safety page's tester); `PATCH /api/settings` accepts `safety`; `PATCH /api/projects/:id` accepts `skillFamilies` and `passEnv`; `POST /api/skills` accepts `family`, `modes`, `readOnly`.
+- API: `GET /api/drafts` (`{ drafts }`), `POST /api/drafts` (a draft made by hand, for a chat or project), `POST /api/drafts/:id/approve` and `/discard` (`{ draft }`), `GET /api/audit`, `POST /api/guard/check` (dry run of the guard, used by the Safety page's tester); `PATCH /api/settings` accepts `safety`; `PATCH /api/projects/:id` accepts `skillFamilies` and `passEnv`; `POST /api/skills` accepts `family`, `modes`, `readOnly`.
 - UI: Settings → Safety (the three switches, a "try a command" box for the guard, pending drafts and the audit log); the Drafts bar above the composer; family checkboxes and pass-through variables on the project page; family and modes in the skill editor and a family badge on skill cards; the approval card's "What it changes" list.
 
 ## Defaults that change, and why
@@ -162,7 +162,7 @@ interface ApprovalPart { /* existing fields */ effects?: string[] }
 | Default | Before | After | Why |
 | --- | --- | --- | --- |
 | Command guard | none | on | Magpie's rule that the agent is confined before it reads anything real. The rules only refuse acts nobody should approve blindly from a chat (reading credentials, pushing or posting in the user's name, reaching hosts outside the list the user already wrote for the sandbox), and each refusal names a way forward (a draft, or a domain in Settings). Pushing still works: as a one-click draft instead of a must-ask card. Off in Settings → Safety for anyone who needs the old behaviour. |
-| Read-only shell commands | asked in "Ask every step" and "Full auto" levels' default mode when Claude Code asked | never asked (with the guard on) | Confirmations stay meaningful only if they are rare; Read/Grep/Glob already never prompt, and `cat` through the shell is the same act. Must-ask rules still apply. |
+| Read-only shell commands | asked in "Ask every step", and in the other levels unless every part was a basic helper (`cat`, `ls`, `grep`…) | never asked, at any level (with the guard on) | Confirmations stay meaningful only if they are rare; Read/Grep/Glob already never prompt, and `git log` through the shell is the same act. Must-ask rules still apply. |
 | Agent environment | the user's whole shell environment | secrets stripped | A token in the environment is a credential the agent can use without the user seeing it; the design notes ask that agents use credentials without seeing them. Projects pass a variable through by name; the switch is in Settings → Safety. |
 | Prompts | console output, picked elements, page text unlabelled | wrapped as untrusted | Pure labelling; costs a few tokens per attachment. |
 | Families | n/a | none enabled | Opt-in: each family costs context. |
@@ -183,4 +183,5 @@ interface ApprovalPart { /* existing fields */ effects?: string[] }
 - **False reads.** A command classified as a read runs without asking. The read list is short and conservative (no redirection, no substitution, no `-exec`, no output file options), and it is unit-tested.
 - **Drafts run with the user's credentials.** That is their purpose; the card shows the exact argv and target, the command is built by Crew from validated fields (a branch or remote name that starts with `-` or contains whitespace is refused), and the run is audited when the log is on.
 - **Prompt cost.** Families are opt-in, a Worker gets only its family's playbook, and the untrusted wrapper adds one line per block.
+- **The demo agent.** `FakeSession` now runs the deny hook before `canUseTool`, as Claude Code does, and drafts a push when asked to push (and picks a family with `family:<name>` in demo Router mode), so demo mode and the integration tests exercise the real gates.
 - **Merging with parallel milestones.** Everything is in new modules or behind `settings.safety` / per-project fields; the hooks into existing code are a handful of calls (`deniedReason`, `decide`, `agentEnv`, `buildSystemAppend`, `dispatch_worker`).

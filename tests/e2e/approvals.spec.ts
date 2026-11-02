@@ -7,6 +7,8 @@ test('the card says why it asked and answers with one click', async ({ page, cre
   const dm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id);
   await crew.api('PATCH', `/bots/${chief.id}`, { allowRules: [] });
   await crew.api('PATCH', `/chats/${dm.id}`, { permission: 'ask' });
+  // The demo's `ls -la` asks only without the command guard (reads never prompt, ADR 007).
+  await crew.api('PATCH', '/settings', { safety: { guard: false } });
   await openChat(page, crew, dm.id);
   await page.locator('.composer textarea').fill('Build me a page');
   await page.keyboard.press('Enter');

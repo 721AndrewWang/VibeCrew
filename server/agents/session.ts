@@ -549,7 +549,14 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
       const parts = /\bsplit\b/i.test(body) ? 2 : 1;
       const started: string[] = [];
       for (let i = 0; i < parts; i++) {
-        const r = await call('dispatch_worker', { title: parts > 1 ? `${short} (part ${i + 1})` : short, task: body, ...(a.to || a.bot ? { bot: a.to || a.bot } : {}) });
+        // "family:triage" in the demo picks a lifecycle skill family (ADR 007).
+        const family = body.match(/\bfamily:([a-z-]+)/)?.[1];
+        const r = await call('dispatch_worker', {
+          title: parts > 1 ? `${short} (part ${i + 1})` : short,
+          task: body,
+          ...(a.to || a.bot ? { bot: a.to || a.bot } : {}),
+          ...(family ? { family } : {}),
+        });
         started.push(r.replace(/ It works in the background.*$/s, ''));
       }
       replies.push(`On it. ${started.join(' ')}`);
