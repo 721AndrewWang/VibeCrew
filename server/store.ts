@@ -2,10 +2,27 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
-import type { AuthMode, Bot, Chat, ChatMessage, Improvement, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine, RoutingRecord, SandboxSettings } from '../shared/types';
+import type {
+  AuthMode,
+  Bot,
+  Chat,
+  ChatMessage,
+  Improvement,
+  PermissionLevel,
+  Project,
+  ProviderSettings,
+  PublicSettings,
+  Routine,
+  RoutingRecord,
+  SandboxSettings,
+  SuperAgentSettings,
+  Thread,
+  Trigger,
+} from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { SCHEMA_VERSION } from './migrations';
 import { DEFAULT_ALLOWED } from './sandbox';
+import { DEFAULT_SUPER_AGENT, normalizeSuperAgent } from './triggers/fastPath';
 
 export function uid(prefix = ''): string {
   return prefix + crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x');
@@ -38,7 +55,11 @@ export class Collection<T extends { id: string }> {
   private timer: NodeJS.Timeout | null = null;
   private readonly flushFn = () => this.flush();
 
-  constructor(private file: string) {
+  /** mkdir: create the file's folder on the first write instead of expecting it. */
+  constructor(
+    private file: string,
+    private opts: { mkdir?: boolean } = {},
+  ) {
     for (const item of readJson<T[]>(file, [])) this.items.set(item.id, item);
   }
 
@@ -77,7 +98,102 @@ export class Collection<T extends { id: string }> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     pendingFlushes.delete(this.flushFn);
+    if (this.opts.mkdir) fs.mkdirSync(path.dirname(this.file), { recursive: true });
     writeJsonAtomic(this.file, this.all());
+  }
+}
+
+/**
+ * An append-only log, one JSON snapshot per line: the last snapshot of an id wins, so an update is
+ * another line. Bounded by count and age; what falls out is dropped from memory at once and from
+ * the file when it is compacted (once stale lines outnumber live ones). Kept in time order.
+ */
+export class JsonlLog<T extends { id: string; at: number }> {
+  private items = new Map<string, T>();
+  private lines = 0;
+
+  constructor(
+    private file: string,
+    private limits: { max: number; maxAgeMs: number },
+    /** Called for each record pruned, e.g. to delete what it points at. */
+    private onDrop?: (item: T) => void,
+  ) {
+    let text = '';
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      return;
+    }
+    const loaded = new Map<string, T>();
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      this.lines++;
+      try {
+        const rec = JSON.parse(line) as T;
+        if (rec?.id) loaded.set(rec.id, rec);
+      } catch {
+        /* a torn last line */
+      }
+    }
+    for (const rec of [...loaded.values()].sort((a, b) => a.at - b.at)) this.items.set(rec.id, rec);
+  }
+
+  get size() {
+    return this.items.size;
+  }
+
+  get(id: string | null | undefined): T | undefined {
+    return id ? this.items.get(id) : undefined;
+  }
+
+  /** Oldest first. */
+  all(): T[] {
+    return [...this.items.values()];
+  }
+
+  /** The newest `limit` records that pass `filter`, newest first. */
+  recent(limit: number, filter?: (item: T) => boolean): T[] {
+    const out: T[] = [];
+    const list = this.all();
+    for (let i = list.length - 1; i >= 0 && out.length < limit; i--) if (!filter || filter(list[i])) out.push(list[i]);
+    return out;
+  }
+
+  /** Adds a record, or a new snapshot of one already there (it keeps its place in time). */
+  append(item: T) {
+    this.items.set(item.id, item);
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    fs.appendFileSync(this.file, JSON.stringify(item) + '\n');
+    this.lines++;
+    if (this.items.size > this.limits.max * 1.1) this.prune();
+  }
+
+  /** Drops records over the count or past the age limit; returns them. */
+  prune(now = Date.now()): T[] {
+    const dropped: T[] = [];
+    const cutoff = now - this.limits.maxAgeMs;
+    const excess = this.items.size - this.limits.max;
+    for (const item of this.items.values()) {
+      if (dropped.length < excess || item.at < cutoff) dropped.push(item);
+      else break;
+    }
+    for (const item of dropped) {
+      this.items.delete(item.id);
+      this.onDrop?.(item);
+    }
+    if (this.lines > this.items.size * 2) this.compact();
+    return dropped;
+  }
+
+  compact() {
+    if (!fs.existsSync(path.dirname(this.file))) return;
+    const body = this.all()
+      .map((x) => JSON.stringify(x) + '\n')
+      .join('');
+    const tmp = `${this.file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, body);
+    fs.renameSync(tmp, this.file);
+    this.lines = this.items.size;
   }
 }
 
@@ -111,6 +227,7 @@ export interface Settings {
   pluginSecrets: Record<string, string>;
   /** Phone push (Bark) when an approval stays open this many minutes; the URL holds the device key. */
   push: { barkUrl: string; afterMinutes: number };
+  superAgent: SuperAgentSettings;
   initialized: boolean;
 }
 
@@ -136,6 +253,7 @@ const DEFAULT_SETTINGS: Settings = {
   token: '',
   pluginSecrets: {},
   push: { barkUrl: '', afterMinutes: 10 },
+  superAgent: DEFAULT_SUPER_AGENT,
   initialized: false,
 };
 
@@ -147,6 +265,7 @@ class SettingsStore {
     if (!isLogoId(this.data.logo)) this.data.logo = DEFAULT_LOGO;
     if (!this.data.routing) this.data.routing = { mode: 'shadow' };
     if (!this.data.sandbox) this.data.sandbox = { ...DEFAULT_SETTINGS.sandbox, allowedDomains: [...DEFAULT_ALLOWED] };
+    this.data.superAgent = normalizeSuperAgent(this.data.superAgent);
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -184,6 +303,7 @@ class SettingsStore {
       rotateAtTokens: s.rotateAtTokens ?? 60_000,
       wrapUpAtTokens: s.wrapUpAtTokens ?? 120_000,
       push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
+      superAgent: s.superAgent,
     };
   }
 
@@ -291,3 +411,11 @@ export const routines = new Collection<Routine>(DATA.routines);
 export const improvements = new Collection<Improvement>(DATA.improvements);
 export const routingLog = new Collection<RoutingRecord>(DATA.routing);
 export const messages = new MessageStore();
+
+/** Payloads of triggers that have no other home, one file each, removed with the trigger. */
+export const triggerPayloadFile = (id: string) => path.join(DATA.triggerPayloads, `${id}.json`);
+export const TRIGGER_LIMITS = { max: 2000, maxAgeMs: 14 * 86_400_000 };
+export const triggerLog = new JsonlLog<Trigger>(DATA.triggers, TRIGGER_LIMITS, (t) => {
+  if (t.ref.kind === 'payload') fs.rmSync(triggerPayloadFile(t.id), { force: true });
+});
+export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });

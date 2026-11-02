@@ -18,6 +18,8 @@ This document covers the parts Crew is made of, how a message becomes an agent's
 │                claude                                                  │
 │  workspaces/   Isolated git worktree workspaces: create, auto-commit,  │
 │                merge                                                   │
+│  triggers/     Trigger bus: events -> threads -> fast path (rules) ->  │
+│                slow path (cheap model); off unless superAgent.enabled  │
 │  preview       Preview server (static / reverse proxy + injected       │
 │                script)                                                 │
 │  store         JSON storage under ~/.crew                              │
@@ -68,6 +70,17 @@ Whatever the level, the following three layers always apply:
 ## Changes made outside the chat
 
 Agents only know what was said in the chat. `server/outsideEdits.ts` watches project files: when a change happens while no agent is working in that project (`projectBusy`), Crew itself is not writing (`quietWrites.ts`: workspace git operations, setup commands and undoing a turn mark the project "quiet", plus 4 more seconds afterwards), and dependencies are not being installed, it waits 3 seconds and merges the batch of changes into one system message (`notice: 'outside-edit'`), sent to every chat on that project. For text files it says which lines changed: compared with the content Crew last saw, or with the last git commit if it never saw the file. Blind-review agents see these messages too.
+
+## Triggers and threads (Super-agent, preview)
+
+The first step towards one always-on agent that watches events and acts on them without being asked (design: [ADR 001](docs/adr/001-triggers.md)). Everything here is behind `superAgent.enabled` in settings, off by default; while it is off, `publishTrigger` returns at its first line, nothing is recorded and no folder is created.
+
+- **One stream of events.** The paths that already handle Crew's inputs each publish a **Trigger** as the event happens: `sendUserMessage` (a user message), `runRoutine` (a routine run), the end of `runTurn` (a turn result), `outsideEdits.flush` (files changed outside the chat), and the preview's console errors, which the browser tab forwards to `POST /api/triggers/preview-console`. A Trigger is small: an id, a source, a one-line summary, the ids of related objects, and a `ref` to its full content (a chat message, a routine, or a payload file). They keep doing what they did before; the Trigger is a record of the event, plus a decision.
+- **Threads.** Each Trigger joins a **Thread** by key: `chat:<id>` (one topic; "Start new topic" closes it), `routine:<id>`, or `workspace:<projectId>` (outside edits and console errors). A turn's result joins the thread of whatever started it and points back at that request.
+- **Fast path** (`triggers/fastPath.ts`, pure): explicit requests (user messages, routine runs, a bot handing off) are acted on by the chat as always; per-source rules drop the rest unless they are worth a look. Each filtered source (turn results, outside edits, console errors) has a mode (`candidate`, `explicit` only, or `ignore`, which records nothing), an allow-list, plus a project allow-list, noise patterns, a per-thread cooldown after a notice, de-duplication by fingerprint, and an hourly budget.
+- **Slow path** (`triggers/slowPath.ts`): the candidates go to Haiku through the same bare `oneShot` call shadow routing uses, with the **policies** the user writes in Settings. One call runs at a time; candidates that arrive meanwhile are decided together in the next call (up to 8). Each event is inlined small (summary, first ~50 words, the thread's previous events by id) and fenced as data; an unusable answer means "stay quiet". Demo mode uses a deterministic stand-in.
+- **Acting**, for now, is a short UI-only note in the related chat (`notice: 'trigger'`, at most 100 words) plus a toast. Bots never see it, and nothing runs on its own; the Router and Workers of later milestones will consume the same decisions.
+- **Seeing it**: the Triggers view (sidebar, only while the feature is on) lists events live (`ServerEvent` `trigger`), with filters by source and verdict; opening one shows its payload and links to related and same-thread triggers (`GET /api/triggers/:id`). `GET /api/triggers` is the debug endpoint.
 
 ## Adversarial review
 
@@ -124,6 +137,8 @@ skills/        Custom skills
 worktrees/     git worktrees of isolated workspaces
 uploads/       Uploaded images and attachments
 logs/          Server log of the desktop app (server.log)
+triggers/      Only once the Super-agent is on: triggers.jsonl (append-only, at most
+               2,000 triggers / 14 days), threads.json, payloads/
 ```
 
 - All writes in `store.ts` are "write a temp file, then rename", and are batched and deferred; on exit `flushAll()` finishes any pending writes.

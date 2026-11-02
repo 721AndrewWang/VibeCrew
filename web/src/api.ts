@@ -5,6 +5,7 @@ import type {
   Bot,
   Chat,
   ChatMessage,
+  ConsoleEntry,
   DevServerState,
   Effort,
   FrictionReport,
@@ -19,6 +20,9 @@ import type {
   RoutingReport,
   Skill,
   SkillCandidate,
+  Trigger,
+  TriggerDetail,
+  TriggerList,
   TurnSummary,
   TurnTrace,
   WorkspaceMergeResult,
@@ -175,6 +179,11 @@ export const api = {
 
   upload: (file: { name: string; mime: string; data: string }) => post<UploadResult>('/api/uploads', file),
   routing: () => get<RoutingReport>('/api/routing'),
+  triggers: (limit = 200) => get<TriggerList>(`/api/triggers?limit=${limit}`),
+  /** A trigger with its payload resolved and its related and neighbouring triggers. */
+  trigger: (id: string) => get<TriggerDetail>(`/api/triggers/${q(id)}`),
+  /** Console errors from the preview, while the Super-agent is on. */
+  previewConsole: (p: { projectId: string; chatId?: string | null; page: string; entries: ConsoleEntry[] }) => post<{ trigger: Trigger | null }>('/api/triggers/preview-console', p),
   skillCandidates: () => get<SkillCandidate[]>('/api/skills/candidates'),
   draftSkill: (chatId: string, messageId: string) => post<{ improvement: Improvement; costUsd: number } | { skipped: string; costUsd: number }>('/api/skills/draft', { chatId, messageId }),
   improvements: () => get<{ items: Improvement[]; effects: Record<string, ImprovementEffect> }>('/api/improvements'),

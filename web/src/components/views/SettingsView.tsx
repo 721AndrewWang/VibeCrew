@@ -8,6 +8,7 @@ import { LanSection } from './settings/LanSection';
 import { NotificationSection } from './settings/NotificationSection';
 import { RoutingSection } from './settings/RoutingSection';
 import { SandboxSection } from './settings/SandboxSection';
+import { SuperAgentSection } from './settings/SuperAgentSection';
 
 export function SettingsView() {
   return (
@@ -18,6 +19,7 @@ export function SettingsView() {
         <DefaultsSection />
         <SandboxSection />
         <RoutingSection />
+        <SuperAgentSection />
         <LanSection />
         <AppearanceSection />
         <NotificationSection />

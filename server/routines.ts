@@ -4,6 +4,7 @@ import { bus, internal } from './bus';
 import { isChatBusy, projectBusy, runInChat } from './orchestrator';
 import { chatProjectId } from './projects';
 import { bots, chats, routines, uid } from './store';
+import { publishTrigger, routineThread } from './triggers';
 import { ensureWatch } from './watcher';
 
 function cronFor(t: RoutineTrigger): string | null {
@@ -61,6 +62,8 @@ function emit(r: Routine) {
   bus.emit({ t: 'routine', routine: r });
 }
 
+const WHY = { schedule: 'on schedule', manual: 'by hand', event: 'after a file change', commit: 'after a commit' };
+
 export function runRoutine(r: Routine, reason: 'schedule' | 'manual' | 'event' = 'manual') {
   const chat = routineChat(r);
   const bot = bots.get(r.botId);
@@ -79,7 +82,17 @@ export function runRoutine(r: Routine, reason: 'schedule' | 'manual' | 'event' =
     emit(r);
     return;
   }
-  runInChat(chat.id, bot.id, r.prompt, { type: 'routine', routineId: r.id }, r.name);
+  const msg = runInChat(chat.id, bot.id, r.prompt, { type: 'routine', routineId: r.id }, r.name);
+  publishTrigger({
+    source: 'routine',
+    summary: `Routine "${r.name}" ran ${WHY[reason === 'event' && r.trigger.type === 'git_commit' ? 'commit' : reason]}: ${r.prompt}`,
+    thread: routineThread(r, chat),
+    ref: { kind: 'routine', routineId: r.id, chatId: chat.id, messageId: msg.id },
+    chatId: chat.id,
+    projectId: chatProjectId(chat),
+    explicit: true,
+    action: `Posted in "${chat.title}" for ${bot.name}`,
+  });
   r.lastRunAt = Date.now();
   r.runCount = (r.runCount || 0) + 1;
   r.lastStatus = 'running';

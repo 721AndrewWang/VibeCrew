@@ -243,7 +243,9 @@
 
 .sb-nav {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* One column per item: Triggers only shows while the Super-agent is on. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
   padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);

@@ -22,7 +22,8 @@ import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { continueNote, leadContinues, stalledLead, stallNote } from '../stall';
-import { bots, chats, messages, projects, settings, uid } from '../store';
+import { bots, chats, messages, projects, routines, settings, uid } from '../store';
+import { chatThread, closeThread, publishTrigger, routineThread } from '../triggers';
 import { monthSpend, shareOfTurn, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
 import { setStatus } from './botStatus';
@@ -552,6 +553,7 @@ async function runTurn(job: Job) {
       }
     }
   }
+  publishTurnResult(fresh, bot, job, msg, project, msg.status === 'done' && job.hopsLeft > 0 ? mentioned : []);
 
   // The chain of turns is over: a change that matches the project's rules gets an adversarial review.
   if (msg.status === 'done' && project && !bot.blindReview && !queues.get(fresh.id)?.length) await maybeAutoChallenge(fresh, project);
@@ -578,6 +580,25 @@ async function runTurn(job: Job) {
       enqueue({ chatId: fresh.id, botId: bot.id, trigger: { type: 'system' }, hopsLeft: fresh.maxHops });
     }
   }
+}
+
+/** The turn's result, as a Trigger on the thread of whatever started it (the chat's topic, or its routine). */
+function publishTurnResult(chat: Chat, bot: Bot, job: Job, msg: ChatMessage, project: Project | null, handedTo: Bot[]) {
+  const routine = job.trigger.type === 'routine' ? routines.get(job.trigger.routineId) : undefined;
+  const firstLine = (msg.error || 'Unknown error').split('\n')[0];
+  publishTrigger({
+    source: 'turn',
+    summary: msg.status === 'error' ? `${bot.name}'s turn failed: ${firstLine}` : msg.status === 'stopped' ? `${bot.name}'s turn was stopped` : `${bot.name}: ${preview(msg.text) || '(no text)'}`,
+    thread: routine ? routineThread(routine, chat) : chatThread(chat),
+    ref: { kind: 'message', chatId: chat.id, messageId: msg.id },
+    chatId: chat.id,
+    projectId: project?.id ?? null,
+    // A handoff is a bot's explicit request to a teammate; the chat has already queued it.
+    explicit: handedTo.length > 0,
+    subjects: msg.status === 'error' ? [firstLine] : [],
+    facts: { status: msg.status },
+    action: handedTo.length ? `Handed to ${handedTo.map((b) => b.name).join(', ')}` : undefined,
+  });
 }
 
 async function maybeAutoChallenge(chat: Chat, project: Project) {
@@ -681,6 +702,16 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
     }
   }
   emitChat(chat);
+  publishTrigger({
+    source: 'user',
+    summary: preview(msg.text) || '[attachment]',
+    thread: chatThread(chat),
+    ref: { kind: 'message', chatId, messageId: msg.id },
+    chatId,
+    projectId: chatProjectId(chat),
+    explicit: true,
+    action: targets.length ? `Sent to ${targets.map((b) => b.name).join(', ')}` : 'No bot in the chat to send it to',
+  });
   for (const b of targets) enqueue({ chatId, botId: b.id, trigger: { type: 'user' }, hopsLeft: chat.maxHops });
   return msg;
 }
@@ -742,6 +773,7 @@ export function resetChat(chatId: string) {
   }
   chat.sessions = {};
   chat.context = {};
+  closeThread(`chat:${chatId}`);
   const msg = systemMessage(chat, '—— New topic ——', { uiOnly: true });
   for (const b of chat.botIds) chat.cursors[b] = msg.seq;
   for (const b of chat.botIds) void resetActSession(`${chatId}:${b}`);
@@ -750,6 +782,7 @@ export function resetChat(chatId: string) {
 
 export function forgetChat(chatId: string) {
   queues.delete(chatId);
+  closeThread(`chat:${chatId}`);
   for (const key of [...sessions.keys()]) {
     if (key.startsWith(`${chatId}:`)) {
       sessions.get(key)?.close();

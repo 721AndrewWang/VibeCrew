@@ -12,6 +12,7 @@ import { NewProjectDialog, ProjectsView } from './components/views/ProjectsView'
 import { RoutinesView } from './components/views/RoutinesView';
 import { SettingsView } from './components/views/SettingsView';
 import { SkillsView } from './components/views/SkillsView';
+import { TriggersView } from './components/views/TriggersView';
 import { closeModal, useStore } from './store';
 import { cx } from './utils';
 
@@ -89,6 +90,7 @@ export function App() {
         {view === 'skills' && <SkillsView />}
         {view === 'routines' && <RoutinesView />}
         {view === 'projects' && <ProjectsView />}
+        {view === 'triggers' && <TriggersView />}
         {view === 'settings' && <SettingsView />}
       </main>
       <Modals />

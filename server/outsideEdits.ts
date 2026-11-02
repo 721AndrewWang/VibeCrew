@@ -13,6 +13,7 @@ import { projectBusy, systemMessage } from './orchestrator';
 import { chatProjectId } from './projects';
 import { isQuiet } from './quietWrites';
 import { chats, projects } from './store';
+import { publishTrigger, workspaceThread } from './triggers';
 import { ensureWatch } from './watcher';
 
 /** Changes settle for this long before the note goes out, so a burst of saves is one note. */
@@ -124,7 +125,19 @@ function flush(projectId: string) {
     ? "The user edited files in Crew's editor"
     : 'Files were changed outside the chat (not by a bot in this chat; maybe the user edited them by hand, or another program or a git operation did)';
   const text = `${who}:\n${lines.join('\n')}\nTreat the files as they are now as the source of truth. If they disagree with earlier requests in the chat, go with the current files, and if you're unsure, ask the user first.`;
-  for (const chat of chats.all()) if (chatProjectId(chat) === projectId) systemMessage(chat, text, { notice: 'outside-edit' });
+  const notes: string[] = [];
+  for (const chat of chats.all()) if (chatProjectId(chat) === projectId) notes.push(systemMessage(chat, text, { notice: 'outside-edit' }).id);
+  const paths = entries.map(([rel]) => rel);
+  publishTrigger({
+    source: 'outside-edit',
+    summary: `${paths.length} file${paths.length === 1 ? '' : 's'} changed outside the chat${byEditor ? " (in Crew's editor)" : ''} in ${project.name}: ${paths.slice(0, 5).join(', ')}${paths.length > 5 ? ', …' : ''}`,
+    thread: workspaceThread(project),
+    ref: { kind: 'payload' },
+    payload: { text, paths: paths.slice(0, 200), byEditor },
+    projectId,
+    subjects: paths,
+    related: notes,
+  });
   // One event per path, so a path that keeps showing up (a placeholder Crew should skip) stands out.
   if (!byEditor) for (const [rel] of entries.slice(0, MAX_FILES)) recordFriction({ kind: 'outside-edit', key: rel, detail: `${project.name}: ${rel}` });
 }

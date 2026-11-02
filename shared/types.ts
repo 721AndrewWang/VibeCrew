@@ -211,9 +211,10 @@ export interface ChatMessage {
   status?: 'queued' | 'streaming' | 'done' | 'error' | 'stopped';
   /**
    * outside-edit: files changed outside the chat, a note about the work itself that blind reviewers
-   * see too. stall: the chain stopped without a handoff and the lead was woken.
+   * see too. stall: the chain stopped without a handoff and the lead was woken. trigger: the
+   * Super-agent's event filter thought an event worth the user's attention (always uiOnly).
    */
-  notice?: 'outside-edit' | 'stall';
+  notice?: 'outside-edit' | 'stall' | 'trigger';
   /** The turn was cut short by a restart of Crew; what it had written is kept. */
   interrupted?: boolean;
   error?: string;
@@ -479,6 +480,120 @@ export interface PublicSettings {
   wrapUpAtTokens: number;
   /** Phone push through Bark for approvals left open; the URL itself stays on the server. */
   push: { configured: boolean; afterMinutes: number };
+  /** The event-driven core (Trigger bus, threads, two-stage filter); off = Crew as before. */
+  superAgent: SuperAgentSettings;
+}
+
+/**
+ * Where an event came from. user and routine are always explicit requests; the others are
+ * environment events the filter decides on.
+ */
+export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console';
+
+/** Sources whose fast-path rule the user can change. */
+export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine'>;
+
+/**
+ * Per source, deterministic: act on explicit requests only (the rest is recorded as dropped), let
+ * the rest through to the cheap model as candidates, or ignore the source (nothing is recorded).
+ */
+export type SourceMode = 'explicit' | 'candidate' | 'ignore';
+
+export interface SourceRule {
+  mode: SourceMode;
+  /** Only events matching one of these become candidates: globs for file paths, substrings for error text. Empty = all. */
+  allow: string[];
+}
+
+export interface SuperAgentSettings {
+  enabled: boolean;
+  sources: Record<FilteredSource, SourceRule>;
+  /** Only events from these projects (a workspace counts as its parent) become candidates; empty = all. */
+  projects: ID[];
+  /** The slow path's policies, in the user's words: what is worth acting on. */
+  policies: string;
+  /** Candidates the cheap model sees per hour at most; the rest are dropped. */
+  maxCandidatesPerHour: number;
+}
+
+/** Where a Trigger's full content is. */
+export type TriggerRef =
+  | { kind: 'message'; chatId: ID; messageId: ID }
+  | { kind: 'routine'; routineId: ID; chatId: ID; messageId: ID }
+  /** Stored beside the log (triggers/payloads/<id>.json): the event has no other home. */
+  | { kind: 'payload' };
+
+export interface TriggerFilter {
+  /** candidate: waiting for the slow path. */
+  verdict: 'act' | 'candidate' | 'drop';
+  /** Who decided: rules in code, or the cheap model. */
+  stage: 'fast' | 'slow';
+  /** The rule that settled it, e.g. explicit-request, duplicate, not-allow-listed, policy. */
+  rule: string;
+  reason: string;
+  slow?: { backend: string; costUsd: number; batch: number; decidedAt: number; invalid?: string };
+  /** The notice an act decision posted. */
+  delivered?: { chatId: ID; messageId: ID };
+}
+
+/** A semi-structured environment event: small by itself, with ids pointing at everything else. */
+export interface Trigger {
+  id: ID;
+  at: number;
+  source: TriggerSource;
+  threadId: ID;
+  projectId: ID | null;
+  chatId: ID | null;
+  /** One line, at most 200 characters. */
+  summary: string;
+  ref: TriggerRef;
+  /** Ids of tightly related objects: the request a turn answered, the notes an edit produced. */
+  related: ID[];
+  /** The user, or the user's routine or a bot's handoff, asked for this. */
+  explicit: boolean;
+  /** Stable hash of the content, for de-duplication. */
+  fingerprint: string;
+  filter: TriggerFilter;
+  /** What acting meant, e.g. "Sent to Chief". */
+  action?: string;
+}
+
+/** A stream of related Triggers: one chat topic, one routine, or one workspace. */
+export interface Thread {
+  id: ID;
+  /** chat:<chatId> | routine:<routineId> | workspace:<projectId> */
+  key: string;
+  kind: 'chat' | 'routine' | 'workspace';
+  title: string;
+  projectId: ID | null;
+  chatId: ID | null;
+  createdAt: number;
+  lastAt: number;
+  count: number;
+  lastTriggerId?: ID;
+  /** When an act decision last told the user about this thread (for the cooldown). */
+  lastNoticeAt?: number;
+  /** A chat thread closes when the chat starts a new topic; the next Trigger opens a new thread. */
+  closedAt?: number;
+}
+
+export interface TriggerList {
+  enabled: boolean;
+  triggers: Trigger[];
+  threads: Record<ID, Thread>;
+  /** Over everything still in the log. */
+  stats: { total: number; act: number; drop: number; candidate: number; slowCalls: number; slowCostUsd: number };
+}
+
+/** A Trigger with its payload resolved ("read more") and its neighbours, for walking the graph. */
+export interface TriggerDetail {
+  trigger: Trigger;
+  thread: Thread | null;
+  /** The full content, as text (cut at 20,000 characters). */
+  detail: string;
+  related: Trigger[];
+  /** The thread's latest Triggers, newest first. */
+  recent: Trigger[];
 }
 
 /** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */
@@ -786,6 +901,7 @@ export type ServerEvent =
   | { t: 'turn'; turn: TurnSummary }
   | { t: 'settings'; settings: PublicSettings }
   | { t: 'auth'; auth: AuthStatus }
+  | { t: 'trigger'; trigger: Trigger; thread: Thread }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */

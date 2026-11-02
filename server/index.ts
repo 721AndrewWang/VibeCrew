@@ -21,6 +21,7 @@ import { startRoutines } from './routines';
 import { guard, wsAllowed } from './security';
 import { flushAll, settings } from './store';
 import { closeAllTerminals, closeTerminal, detachTerminals, openTerminal, terminalInput, terminalResize } from './terminal';
+import { startTriggers } from './triggers';
 import { stopAllWatches } from './watcher';
 import { reconcileWorkspaces } from './workspaces';
 
@@ -123,6 +124,7 @@ wss.on('connection', (ws: WebSocket) => {
 async function main() {
   await initIfNeeded();
   await reconcileWorkspaces().catch((e) => log.warn('reconcile workspaces:', e));
+  startTriggers();
   startRoutines();
   startOutsideEditNotes();
   void checkAuth(true).then((a) => {
