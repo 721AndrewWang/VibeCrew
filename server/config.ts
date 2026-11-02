@@ -50,6 +50,9 @@ export const DATA = {
   watchdogActions: path.join(HOME_DIR, 'watchdog', 'actions.jsonl'),
   watchdogWatches: path.join(HOME_DIR, 'watchdog', 'watches.json'),
   watchdogProposals: path.join(HOME_DIR, 'watchdog', 'proposals.json'),
+  /** Full duplex's background jobs (server/jobs): created on the first job. */
+  jobs: path.join(HOME_DIR, 'jobs', 'jobs.json'),
+  jobLogs: path.join(HOME_DIR, 'jobs'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

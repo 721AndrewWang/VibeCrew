@@ -72,6 +72,11 @@ export interface SessionConfig {
   wrapUpAt?(): number;
   /** A Worker's events delivered while a turn runs (ADR 003): taken at each tool call of the main loop and added to its context. */
   deliveries?(): string | null;
+  /**
+   * Full duplex (ADR 004): input that arrived while the turn runs (user messages, job results), handed
+   * to the model after each tool call of the main loop. Draining: returns each item once.
+   */
+  midTurnNote?(): string | null;
   /** Hide Claude Code's attribution (Co-Authored-By trailers, PR footers) in commits and PRs. */
   attributionOff?: boolean;
   /** Claude Code's command sandbox (see server/sandbox.ts); undefined runs commands unconfined. */
@@ -202,16 +207,17 @@ export class BotSession implements AgentSession {
         ],
         PostToolUse: [
           {
-            // A turn grown past the limit is asked to finish the step in hand and hand back; a Worker
-            // gets the events that arrived on its threads meanwhile.
+            // A turn grown past the limit is asked to finish the step in hand and hand back; a
+            // full-duplex turn is also given what arrived while it worked (ADR 004), and a Worker
+            // the events that arrived on its threads meanwhile (ADR 003).
             hooks: [
               async (input) => {
                 if ((input as PostToolUseHookInput).agent_id || !this.active) return {};
-                const note = wrapUpNote(this.contextSize(), cfg.wrapUpAt?.() ?? 0, this.remindedAt);
-                if (note) this.remindedAt = this.contextSize();
-                const events = cfg.deliveries?.();
-                const context = [note, events].filter(Boolean).join('\n\n');
-                return context ? { hookSpecificOutput: { hookEventName: 'PostToolUse' as const, additionalContext: context } } : {};
+                const wrap = wrapUpNote(this.contextSize(), cfg.wrapUpAt?.() ?? 0, this.remindedAt);
+                if (wrap) this.remindedAt = this.contextSize();
+                const note = [cfg.midTurnNote?.(), cfg.deliveries?.(), wrap].filter(Boolean).join('\n\n');
+                if (!note) return {};
+                return { hookSpecificOutput: { hookEventName: 'PostToolUse' as const, additionalContext: note } };
               },
             ],
           },
@@ -417,10 +423,14 @@ export class FakeSession implements AgentSession {
         }
       }
       emit({ type: 'user', ...this.base(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: result, is_error: isError }] } });
+      // Like the PostToolUse hook: what arrived meanwhile is read after this step.
       take(this.cfg.deliveries?.());
+      const note = this.cfg.midTurnNote?.();
+      if (note) heard.push(note);
       await sleep(200);
       return result;
     };
+    const heard: string[] = [];
 
     try {
       if (this.cfg.role === 'router') {
@@ -445,6 +455,19 @@ export class FakeSession implements AgentSession {
         // A demo Worker on a "flaky" task fails once with an error that reads as transient.
         flaked.add(this.cfg.cwd);
         throw new Error('API Error: 529 Overloaded (demo mode)');
+      } else if (this.cfg.fakeTools?.start && (/Background job job_\w+/.test(ask) || /\b(background|slow|sub-?task)\b/i.test(ask))) {
+        await fakeFullDuplex(
+          ask,
+          streamText,
+          heard,
+          () => this.stopped,
+          (name, args) =>
+            runTool(`mcp__crew__${name}`, args, async () => {
+              const r = await (this.cfg.fakeTools?.[name]?.(args) ?? Promise.resolve({ text: `No such tool: ${name}`, isError: true }));
+              if (r.isError) throw new Error(r.text);
+              return r.text;
+            }),
+        );
       } else if (prompt.includes('## Changes to review')) {
         // A blind review: a table and the verdict line. REFUTE_ME in the change makes it refute one claim.
         const refute = prompt.includes('REFUTE_ME');
@@ -550,6 +573,41 @@ export class FakeSession implements AgentSession {
     this.closed = true;
     this.stopped = true;
   }
+}
+
+/**
+ * The demo full-duplex bot (ADR 004). "background" starts a command (the one in backticks, else a
+ * short demo build) and ends the turn, "sub-task" starts a background session of itself; a job's result gets a one-line answer; "slow" keeps working
+ * step by step and answers what the user wrote meanwhile.
+ */
+async function fakeFullDuplex(ask: string, say: (text: string) => Promise<void>, heard: string[], stopped: () => boolean, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
+  const result = ask.match(/Background job (job_\w+)[^\n]*/);
+  if (result) {
+    await say(`The background job is over: ${result[0].replace(/^Background job /, '').slice(0, 160)}`);
+    return;
+  }
+  if (/\bsub-?task\b/i.test(ask)) {
+    const started = await call('start', { task: 'Look around the project and report what is there.', title: 'Demo check' });
+    await say(started.startsWith('Started ') ? `${started.split(':')[0]}; I'll pass on its report.` : `Couldn't start it: ${started.replace(/^Error: /, '')}`);
+    return;
+  }
+  if (/\bbackground\b/i.test(ask)) {
+    const command = ask.match(/`([^`]+)`/)?.[1] || 'sleep 1; echo demo build ok';
+    // A refused call comes back as the tool's error text, as Claude Code would show it.
+    const started = await call('start', { command, title: 'Demo build' });
+    if (!started.startsWith('Started ')) {
+      await say(`Couldn't start it: ${started.replace(/^Error: /, '')}`);
+      return;
+    }
+    await say(`${started.split(' in the background')[0]} in the background; I'll report when it's done.`);
+    return;
+  }
+  for (let i = 0; i < 40 && !heard.length && !stopped(); i++) await call('status', {}).catch(() => '');
+  const said = heard
+    .join('\n')
+    .match(/\[User[^\]]*\] ([^\n]+)/)?.[1]
+    ?.trim();
+  await say(said ? `Heard you while working: "${said}". Done with the slow check too.` : 'Done with the slow check.');
 }
 
 /**

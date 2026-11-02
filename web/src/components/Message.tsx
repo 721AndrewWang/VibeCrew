@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Network, Radio, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Network, Radio, Route, ShieldCheck, Timer, Undo2, X, Zap } from 'lucide-react';
 import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
@@ -583,9 +583,31 @@ export function SystemMessage({ msg }: { msg: ChatMessage }) {
       </div>
     );
   }
+  if (msg.notice === 'job') return <JobResult msg={msg} />;
   return (
     <div className="msg-system">
       <span>{msg.text}</span>
+    </div>
+  );
+}
+
+/** A background job's result as the bot got it (ADR 004): one line, the output on demand, the full log a click away. */
+function JobResult({ msg }: { msg: ChatMessage }) {
+  const [first, ...rest] = msg.text.split('\n');
+  const failed = / · (failed|stopped)/.test(first);
+  return (
+    <div className={cx('msg-system job-result', failed && 'failed')} data-job={msg.jobId}>
+      <details>
+        <summary>
+          <Timer size={12} /> {first.replace(/^Background job /, '')}
+        </summary>
+        <pre>{rest.join('\n')}</pre>
+      </details>
+      {msg.jobId && (
+        <button className="link-btn" onClick={() => openModal({ kind: 'jobLog', jobId: msg.jobId! })}>
+          Full log
+        </button>
+      )}
     </div>
   );
 }

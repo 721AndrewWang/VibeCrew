@@ -99,6 +99,7 @@ export function createBot(input: BotInput & { template?: string }): Bot {
     monthlyBudgetUsd: input.monthlyBudgetUsd || undefined,
     freshSession: input.freshSession ?? tpl?.freshSession ?? undefined,
     blindReview: input.blindReview ?? tpl?.blindReview ?? undefined,
+    fullDuplex: input.fullDuplex || undefined,
     projectId: input.projectId !== undefined ? input.projectId : (listProjects()[0]?.id ?? null),
     template: tpl?.id,
     createdAt: now,
@@ -135,6 +136,7 @@ export function updateBot(id: string, patch: BotInput): Bot {
     'monthlyBudgetUsd',
     'freshSession',
     'blindReview',
+    'fullDuplex',
   ];
   for (const k of allowed) {
     if (patch[k] !== undefined) (bot as any)[k] = typeof patch[k] === 'string' ? (patch[k] as string).trim() : patch[k];
@@ -146,6 +148,7 @@ export function updateBot(id: string, patch: BotInput): Bot {
   if (!bot.monthlyBudgetUsd) delete bot.monthlyBudgetUsd;
   if (!bot.freshSession) delete bot.freshSession;
   if (!bot.blindReview) delete bot.blindReview;
+  if (!bot.fullDuplex) delete bot.fullDuplex;
   bot.updatedAt = Date.now();
   bots.set(bot);
   bus.emit({ t: 'bot', bot });

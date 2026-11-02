@@ -3,11 +3,13 @@
 // (Trigger -> Thread -> Worker -> another Thread) one call at a time. Resolution happens inside a
 // scope: the caller's chat and its project; a blind reviewer sees only the user's messages.
 
-import type { Chat, ChatMessage, RecallLink, RecallNode, Thread, Trigger, Worker } from '../../shared/types';
+import type { BackgroundJob, Chat, ChatMessage, RecallLink, RecallNode, Thread, Trigger, Worker } from '../../shared/types';
 import { answered, renderUserMessage } from '../agents/prompts';
+import { outputOf } from '../jobs';
+import { fmtDuration, inlineOutput, jobLine } from '../jobs/spill';
 import { contextLines } from '../orchestrator/turnContext';
 import { chatProjectId } from '../projects';
-import { bots, chats, messages, projects, threads, triggerLog, workers } from '../store';
+import { bots, chats, jobs, messages, projects, threads, triggerLog, workers } from '../store';
 import { detailText } from '../triggers';
 import { MAX_LINKS } from './spill';
 
@@ -78,6 +80,10 @@ function threadLink(th: Thread, rel = 'thread'): RecallLink {
   return { id: th.id, rel, summary: `${th.title} (${th.count} trigger${th.count === 1 ? '' : 's'}${th.closedAt ? ', closed' : ''})` };
 }
 
+function jobLink(j: BackgroundJob, rel = 'job'): RecallLink {
+  return { id: j.id, rel, summary: jobLine(j) };
+}
+
 function messageNode(m: ChatMessage, chat: Chat, scope: RecallScope): RecallNode {
   const list = messages.sorted(chat.id).filter((x) => visible(x, scope));
   const i = list.findIndex((x) => x.id === m.id);
@@ -94,6 +100,10 @@ function messageNode(m: ChatMessage, chat: Chat, scope: RecallScope): RecallNode
       if (th && !links.some((l) => l.id === th.id)) links.push(threadLink(th));
     }
     for (const w of workers.all().filter((x) => x.chatId === chat.id && x.related.includes(m.id))) links.push(workerLink(w, 'led to'));
+    // A background job's result (ADR 004), and the jobs a turn started.
+    const job = m.jobId ? jobs.get(m.jobId) : undefined;
+    if (job && job.chatId === chat.id) links.push(jobLink(job, 'result of'));
+    for (const j of jobs.all().filter((x) => x.chatId === chat.id && x.startedBy === m.id)) links.push(jobLink(j, 'started'));
   }
   const attrs: [string, string][] = [['when', ago(m.ts)]];
   if (m.status && m.status !== 'done') attrs.push(['status', m.status]);
@@ -149,6 +159,10 @@ function linkFor(id: string, rel: string, chat: Chat): RecallLink | null {
   if (id.startsWith('wk_')) {
     const w = workers.get(id);
     return w && w.chatId === chat.id ? workerLink(w, rel) : null;
+  }
+  if (id.startsWith('job_')) {
+    const j = jobs.get(id);
+    return j && j.chatId === chat.id ? jobLink(j, rel) : null;
   }
   const m = messages.get(chat.id, id);
   return m && !m.uiOnly ? messageLink(m, rel) : null;
@@ -241,6 +255,51 @@ function workerNode(w: Worker, chat: Chat): RecallNode {
   return { id: w.id, kind: 'worker', title: w.title, attrs, body: `Task: ${w.task}${report}`, around: [], links };
 }
 
+/**
+ * A background job (ADR 004): what it ran and its output, head and tail as its result shows them.
+ * Output comes from a program, so it is data; the full log stays behind the job's own status tool.
+ */
+function jobNode(j: BackgroundJob, chat: Chat): RecallNode {
+  const links: RecallLink[] = [];
+  for (const [id, rel] of [
+    [j.startedBy, 'started by'],
+    [j.resultMessageId, 'result'],
+    [j.triggerId, 'trigger'],
+  ] as const) {
+    const l = id ? linkFor(id, rel, chat) : null;
+    if (l) links.push(l);
+  }
+  const attrs: [string, string][] = [
+    ['kind', j.kind === 'command' ? 'command' : 'sub-task'],
+    ['bot', bots.get(j.botId)?.name || 'deleted bot'],
+    ['status', j.status + (j.detail ? ` (${j.detail})` : '')],
+    ['started', ago(j.startedAt)],
+    ['took', fmtDuration((j.endedAt ?? Date.now()) - j.startedAt)],
+  ];
+  if (j.kind === 'command' && j.exitCode !== undefined && j.exitCode !== null) attrs.push(['exit', String(j.exitCode)]);
+  if (j.kind === 'command') attrs.push(['lines', String(j.lines)]);
+  const what = j.kind === 'command' ? `$ ${j.command || ''}` : `Task: ${j.task || ''}`;
+  const output = outputOf(j);
+  return {
+    id: j.id,
+    kind: 'job',
+    title: j.title,
+    attrs,
+    body: `${what}\n\n${output.length ? inlineOutput(output, j.id) : '(no output yet)'}`,
+    untrusted: true,
+    around: [],
+    links,
+  };
+}
+
+/** Background jobs are a kind milestone 4 adds through the registry; the caller's chat only. */
+registerRecall('job_', (id, scope) => {
+  const j = jobs.get(id);
+  const chat = chats.get(scope.chatId);
+  if (!j || !chat || j.chatId !== chat.id) return { error: `No background job ${id} in this chat.` };
+  return { node: jobNode(j, chat) };
+});
+
 function envNode(chat: Chat): RecallNode {
   const lines = contextLines(projects.get(chatProjectId(chat)) ?? null);
   return { id: 'env', kind: 'env', title: 'The environment, as a new session gets it', attrs: [], body: lines.join('\n'), around: [], links: [] };
@@ -282,5 +341,5 @@ export function resolve(rawId: string, scope: RecallScope): Resolved {
     const got = r(id, scope);
     if (got) return got;
   }
-  return fail(`Unknown id "${id}". Ids look like #12 (a message here), chat, env, tg_… (a trigger), th_… (a thread) or wk_… (a Worker).`);
+  return fail(`Unknown id "${id}". Ids look like #12 (a message here), chat, env, tg_… (a trigger), th_… (a thread), wk_… (a Worker) or job_… (a background job).`);
 }

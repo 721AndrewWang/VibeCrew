@@ -120,6 +120,29 @@ describe('prompts with recall', () => {
     expect(sys(true)).not.toContain('chat_history');
     expect(sys(true)).toContain('  - recall: ');
   });
+  it('sends a background job result in focus whole: it already carries its own head and tail (ADR 004)', () => {
+    const result = {
+      id: 'm_job',
+      chatId: 'c_x',
+      seq: 20,
+      ts: 0,
+      role: 'system',
+      notice: 'job',
+      jobId: 'job_x',
+      text: `Background job job_x · command · finished · exit 1\n$ npm test\n<job_output id="job_x">\n${words(500, 7)}\nFAIL at the very end\n</job_output>`,
+    } as any;
+    const prompt = (unseen: any[], c: any = { kind: 'dm' }) =>
+      buildTurnPrompt({ bot: { name: 'Chief' } as any, chat: c, unseen, names: NAMES, context: [], trigger: { type: 'job', jobId: 'job_x' }, recall: b });
+    const dm = prompt([result]);
+    expect(dm).toContain(result.text);
+    expect(dm).not.toContain('recall id=#20');
+    // The latest message of a group chat is the focus too.
+    const group = prompt([...MESSAGES, result], chat);
+    expect(group).toContain('FAIL at the very end');
+    expect(group).not.toContain('recall id=#20');
+    // Any other system note of that length is still cut at the focus budget.
+    expect(prompt([{ ...result, notice: undefined, jobId: undefined }])).toContain(`recall id=#20 from=${ADJACENT_WORDS}`);
+  });
   it('spills a direct chat user message only past the user budget', () => {
     const long = { ...MESSAGES[0], text: words(900, 3) };
     const p = buildTurnPrompt({ bot: { name: 'Chief' } as any, chat: { kind: 'dm' } as any, unseen: [long], names: NAMES, context: [], trigger: { type: 'user' }, recall: b });

@@ -3,6 +3,7 @@ import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import type {
   Attachment,
   AuthStatus,
+  BackgroundJob,
   Bootstrap,
   Bot,
   BotStatus,
@@ -95,6 +96,8 @@ export interface AppState {
   routers: Record<string, RouterInfo>;
   /** The Watchdog's live state, once the server has sent it (or the Watchdog page loaded it). */
   watchdog: WatchdogInfo | null;
+  /** Full duplex: background jobs of full-duplex bots. */
+  jobs: Record<string, BackgroundJob>;
   devServers: Record<string, DevServerState>;
   previews: Record<string, PreviewInfo>;
   devLogs: Record<string, string>;
@@ -127,7 +130,9 @@ export interface AppState {
     | { kind: 'saveRecording'; projectId: string }
     | { kind: 'trace'; chatId: string; msgId: string }
     /** A Worker's transcript, or (no workerId) the chat's Router log. */
-    | { kind: 'agentLog'; chatId: string; workerId?: string };
+    | { kind: 'agentLog'; chatId: string; workerId?: string }
+    /** A background job's full log (a command) or transcript (a sub-task). */
+    | { kind: 'jobLog'; jobId: string };
 }
 
 const LS_UI = 'vc-ui';
@@ -200,6 +205,7 @@ export const useStore = create<AppState>(() => ({
   routines: {},
   statuses: {},
   workers: {},
+  jobs: {},
   routers: {},
   watchdog: null,
   devServers: {},
@@ -269,6 +275,7 @@ export async function boot() {
       routines: byId(b.routines),
       statuses: b.statuses,
       workers: byId(b.workers || []),
+      jobs: byId(b.jobs || []),
       routers: Object.fromEntries((b.routers || []).map((r) => [r.chatId, r])),
       devServers: Object.fromEntries(b.devServers.map((d) => [d.projectId, d])),
       previews: Object.fromEntries(b.previews.map((p) => [p.projectId, p])),
@@ -466,6 +473,15 @@ export function applyEvent(ev: ServerEvent) {
     case 'watchdog':
       set({ watchdog: ev.watchdog });
       break;
+    case 'job':
+      set({ jobs: { ...s.jobs, [ev.job.id]: ev.job } });
+      break;
+    case 'job_deleted': {
+      const jobs = { ...s.jobs };
+      delete jobs[ev.id];
+      set({ jobs });
+      break;
+    }
     case 'auth':
       set({ auth: ev.auth });
       break;

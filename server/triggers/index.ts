@@ -278,6 +278,7 @@ const NOTICED: Record<TriggerSource, string> = {
   'outside-edit': 'an outside edit',
   'preview-console': 'a preview console error',
   landing: "a Worker's merge",
+  job: 'a background job result',
 };
 
 export function noticeText(t: Trigger): string {
@@ -338,6 +339,7 @@ const DIRECT_NAME: Record<TriggerSource, string> = {
   'outside-edit': 'outside edit',
   'preview-console': 'console error',
   landing: 'Worker merge',
+  job: 'job result',
 };
 
 /** The Workers a Trigger on this thread goes straight to: none while subscriptions are off, and never on a chat's thread (the Router's own). */

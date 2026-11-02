@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ChatView } from './components/ChatView';
 import { SaveRecordingDialog } from './components/computer/SaveRecordingDialog';
+import { JobLogDialog } from './components/JobsBar';
 import { Sidebar } from './components/Sidebar';
 import { TraceDialog } from './components/TraceDialog';
 import { Logo, Toasts } from './components/ui';
@@ -38,6 +39,8 @@ function Modals() {
       return <TraceDialog chatId={modal.chatId} msgId={modal.msgId} onClose={closeModal} />;
     case 'agentLog':
       return <AgentLogDialog chatId={modal.chatId} workerId={modal.workerId} onClose={closeModal} />;
+    case 'jobLog':
+      return <JobLogDialog jobId={modal.jobId} onClose={closeModal} />;
     default:
       return null;
   }

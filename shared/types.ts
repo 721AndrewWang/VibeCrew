@@ -56,6 +56,8 @@ export interface Bot {
   freshSession?: boolean;
   /** Adversarial reviewer: sees the user's request and the change, never teammates' explanations, and tries to refute it. */
   blindReview?: boolean;
+  /** Full duplex: long commands and sub-tasks run in the background (start/stop/status tools), and new input reaches a running turn after its current step. */
+  fullDuplex?: boolean;
   /** Project used by this bot's direct chat. */
   projectId: ID | null;
   template?: string;
@@ -194,9 +196,11 @@ export interface ApprovalPart {
 export type MessagePart = TextPart | ThinkingPart | ToolPart | ApprovalPart;
 
 export interface MessageTrigger {
-  type: 'user' | 'mention' | 'routine' | 'system';
+  type: 'user' | 'mention' | 'routine' | 'system' | 'job';
   by?: ID;
   routineId?: ID;
+  /** type job: the background job whose result started this turn. */
+  jobId?: ID;
 }
 
 export interface ChatMessage {
@@ -219,8 +223,12 @@ export interface ChatMessage {
    * outside-edit: files changed outside the chat, a note about the work itself that blind reviewers
    * see too. stall: the chain stopped without a handoff and the lead was woken. trigger: the
    * Super-agent's event filter thought an event worth the user's attention (always uiOnly).
+   * watchdog: a notice the Watchdog sent to a chat outside two-layer mode (always uiOnly). job: a
+   * background job's result, delivered to the bot that started it (see jobId).
    */
-  notice?: 'outside-edit' | 'stall' | 'trigger' | 'watchdog';
+  notice?: 'outside-edit' | 'stall' | 'trigger' | 'watchdog' | 'job';
+  /** notice job: the job whose result this is. */
+  jobId?: ID;
   /** The turn was cut short by a restart of Crew; what it had written is kept. */
   interrupted?: boolean;
   error?: string;
@@ -611,14 +619,18 @@ export interface GatewayReport {
 }
 
 /**
- * Where an event came from. user and routine are always explicit requests; the others are
- * environment events the filter decides on. landing (Crew merged a Worker's branch into its chat's
- * branch) only ever goes to the Workers subscribed to that workspace (ADR 003).
+ * Where an event came from. user, routine and job (a background job's result, ADR 004) are always
+ * explicit requests; the others are environment events the filter decides on. landing (Crew merged
+ * a Worker's branch into its chat's branch) only ever goes to the Workers subscribed to that
+ * workspace (ADR 003).
  */
-export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing';
+export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job';
 
-/** Sources whose fast-path rule the user can change. */
-export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing'>;
+/**
+ * Sources whose fast-path rule the user can change. landing has no settings (it only ever goes to
+ * subscribers), and a job result is always explicit: the bot asked for it.
+ */
+export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job'>;
 
 /**
  * Per source, deterministic: act on explicit requests only (the rest is recorded as dropped), let
@@ -1211,6 +1223,8 @@ export interface Bootstrap {
   /** Two-layer mode: Workers not yet dismissed, and the Routers that exist. */
   workers: Worker[];
   routers: RouterInfo[];
+  /** Full duplex: background jobs (running ones, and recent finished ones). */
+  jobs: BackgroundJob[];
   devServers: DevServerState[];
   previews: PreviewInfo[];
   models: ModelOption[];
@@ -1267,6 +1281,8 @@ export type ServerEvent =
   | { t: 'worker_deleted'; id: ID }
   | { t: 'router'; router: RouterInfo }
   | { t: 'watchdog'; watchdog: WatchdogInfo }
+  | { t: 'job'; job: BackgroundJob }
+  | { t: 'job_deleted'; id: ID }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */
@@ -1287,3 +1303,54 @@ export type PreviewToHost =
   | { type: 'recorded'; step: RecordedStep };
 
 export type HostToPreview = { type: 'hello' } | { type: 'pick'; on: boolean } | { type: 'record'; on: boolean } | { type: 'highlight'; selector: string } | { type: 'history'; dir: -1 | 1 };
+
+// ---------------------------------------------------------------------------- full duplex (ADR 004)
+
+/** waiting: a sub-task waits for the user to answer an approval. */
+export type JobStatus = 'running' | 'waiting' | 'done' | 'failed' | 'stopped';
+
+/** Work a full-duplex bot started in the background with `start`; its result comes back as an event. */
+export interface BackgroundJob {
+  id: ID;
+  kind: 'command' | 'task';
+  chatId: ID;
+  botId: ID;
+  /** Where it runs: the chat's workspace or project (null: the home folder). */
+  projectId: ID | null;
+  cwd: string;
+  title: string;
+  command?: string;
+  task?: string;
+  status: JobStatus;
+  /** Why it failed or stopped, or what a sub-task is doing. */
+  detail?: string;
+  /** Ran as a Bash call inside Claude Code's sandbox. */
+  sandboxed: boolean;
+  startedAt: number;
+  endedAt?: number;
+  exitCode?: number | null;
+  signal?: string | null;
+  timeoutMin: number;
+  /** Output so far: lines and bytes written to the log. */
+  lines: number;
+  bytes: number;
+  /** The log hit its size cap; later output was dropped. */
+  truncated?: boolean;
+  /** The bot message (turn) that called start. */
+  startedBy?: ID;
+  /** The system message that delivered the result. */
+  resultMessageId?: ID;
+  triggerId?: ID;
+  /** Command jobs: the full log on disk. */
+  logFile?: string;
+  costUsd?: number;
+}
+
+/** A slice of a job's log ("read more"). */
+export interface JobLog {
+  job: BackgroundJob;
+  /** 1-based line the slice starts at. */
+  from: number;
+  lines: string[];
+  total: number;
+}

@@ -151,11 +151,15 @@ const SOURCE_NAME: Record<TriggerSource, string> = {
   'outside-edit': 'Outside edits',
   'preview-console': 'Preview console errors',
   landing: "Workers' merges",
+  job: 'Background job results',
 };
 
 export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   const act = (rule: string, reason: string): TriggerFilter => ({ verdict: 'act', stage: 'fast', rule, reason });
   const drop = (rule: string, reason: string): TriggerFilter => ({ verdict: 'drop', stage: 'fast', rule, reason });
+  // A background job's result goes back to the bot that started it (full duplex), in code. It is
+  // on the chat's thread, which nobody subscribes to, so it never goes to Workers.
+  if (t.source === 'job') return act('job-result', 'A background job ended; its result went to the bot that started it');
   const subscribers = ctx.subscribers ?? [];
   const direct = () => act('subscribed', `Sent straight to ${subscribers.length === 1 ? 'the Worker' : `${subscribers.length} Workers`} subscribed to this thread; no Router decision`);
   // The user's own messages and routines, and a bot handing work to a teammate: the chat acts on them as always.

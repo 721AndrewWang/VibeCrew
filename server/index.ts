@@ -14,6 +14,7 @@ import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanA
 import { stopAllDevServers } from './devserver';
 import { initIfNeeded } from './entities';
 import { stopGateway, syncGateway } from './gateway';
+import { recoverJobs, stopAllJobs } from './jobs';
 import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
 import { closeAllSessions } from './orchestrator';
@@ -132,6 +133,7 @@ async function main() {
   await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
   resumeRouters(layers);
+  recoverJobs();
   startRoutines();
   startOutsideEditNotes();
   startWatchdog();
@@ -189,7 +191,7 @@ async function shutdown() {
   closeAllTerminals();
   closeAllPreviews();
   void stopGateway();
-  await Promise.race([Promise.all([stopAllDevServers(), closeBrowser(), stopAllWatches()]), new Promise((r) => setTimeout(r, 4000))]);
+  await Promise.race([Promise.all([stopAllDevServers(), stopAllJobs(), closeBrowser(), stopAllWatches()]), new Promise((r) => setTimeout(r, 4000))]);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);
