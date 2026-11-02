@@ -7,7 +7,12 @@ const logs: Record<string, ChatMessage[]> = { rt_c1: [], wk_1: [], job_1: [], jo
 vi.mock('../../server/store', () => ({
   chats: { all: () => [{ id: 'c1' }] },
   workers: { all: () => [{ id: 'wk_1' }] },
-  jobs: { all: () => [{ id: 'job_1', kind: 'task' }, { id: 'job_2', kind: 'command' }] },
+  jobs: {
+    all: () => [
+      { id: 'job_1', kind: 'task' },
+      { id: 'job_2', kind: 'command' },
+    ],
+  },
   routerLogId: (id: string) => `rt_${id}`,
   messages: { sorted: (id: string) => (id === 'c1' ? list : logs[id] || []) },
 }));
