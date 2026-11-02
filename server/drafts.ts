@@ -21,6 +21,8 @@ export interface DraftFields {
   remote?: string;
   branch?: string;
   number?: number;
+  /** review-reply: the id of the review comment it answers. */
+  comment?: number;
   title?: string;
   body?: string;
   base?: string;
@@ -95,6 +97,23 @@ export function buildDraft(f: DraftFields, currentBranch?: string): Pick<Externa
       const what = f.kind === 'pr-comment' ? 'pr' : 'issue';
       return { kind: f.kind, target: `Comment on ${what === 'pr' ? 'PR' : 'issue'} #${n}${where}`, command: ['gh', what, 'comment', String(n), '--body', body, ...repoArgs()], body, why };
     }
+    case 'review-reply': {
+      // A reply in a pull request's review thread goes through the REST API: gh has no command for it.
+      const n = Number(f.number);
+      if (!Number.isInteger(n) || n < 1) throw new Error('number (the pull request number) is required');
+      const c = Number(f.comment);
+      if (!Number.isInteger(c) || c < 1) throw new Error('comment (the id of the review comment to reply to) is required');
+      const repo = (f.repo || '').trim();
+      if (!SAFE_REPO.test(repo)) throw new Error('repo (owner/name) is required for a review reply');
+      const body = need(f.body, 'body', 60_000);
+      return {
+        kind: f.kind,
+        target: `Reply to review comment ${c} on PR #${n} in ${repo}`,
+        command: ['gh', 'api', '--method', 'POST', `repos/${repo}/pulls/${n}/comments/${c}/replies`, '-f', `body=${body}`, '--jq', '.html_url'],
+        body,
+        why,
+      };
+    }
     case 'issue-open': {
       const title = need(f.title, 'title', 300);
       const body = (f.body || '').trim();
@@ -125,6 +144,7 @@ export function reverseOf(d: Pick<ExternalDraft, 'kind' | 'command' | 'before'>,
       return out.url ? `gh issue close ${out.url}` : undefined;
     case 'pr-comment':
     case 'issue-comment':
+    case 'review-reply':
       return out.url ? `Delete the comment at ${out.url}` : undefined;
     default:
       return undefined;

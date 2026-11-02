@@ -1,0 +1,27 @@
+{
+  "total_count": 3,
+  "check_runs": [
+    {
+      "id": 3101,
+      "name": "test",
+      "status": "completed",
+      "conclusion": "failure",
+      "head_sha": "1a2b3c4d5e6f70819293a4b5c6d7e8f901234567",
+      "html_url": "https://github.com/acme/shop/runs/3101",
+      "details_url": "https://github.com/acme/shop/actions/runs/1/job/3101",
+      "completed_at": "2026-11-02T10:13:00Z",
+      "output": { "title": "2 tests failed", "summary": "cart.test.ts: expected 200, got 500" }
+    },
+    {
+      "id": 3102,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "1a2b3c4d5e6f70819293a4b5c6d7e8f901234567",
+      "html_url": "https://github.com/acme/shop/runs/3102",
+      "completed_at": "2026-11-02T10:13:30Z",
+      "output": { "title": "", "summary": "" }
+    },
+    { "id": 3103, "name": "build", "status": "in_progress", "conclusion": null, "completed_at": null }
+  ]
+}

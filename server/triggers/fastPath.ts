@@ -16,6 +16,7 @@ export const DEFAULT_POLICIES = [
   "- Preview console errors: act when the error comes from the app's own code (an uncaught exception, a module that fails to load, a failed request to the app's own server). Stay quiet about third-party scripts, browser extensions, ads and analytics.",
   '- Failed bot turns: act when the cause is something the user has to fix (login, budget, a missing tool, a broken setup command). Stay quiet about a one-off network blip that a retry would fix.',
   '- Files changed outside the chat: act only when the change can break what the bots are working on, e.g. dependency manifests, build or framework config, or files a bot changed moments ago. Stay quiet about ordinary edits.',
+  '- GitHub: act on a new issue that reports a bug or asks for a change, a review comment that asks for a change, and a failing check on an open pull request. Stay quiet about thanks, chatter and questions already answered.',
   '- When unsure, stay quiet.',
 ].join('\n');
 
@@ -124,7 +125,7 @@ export interface FastInput {
   subjects: string[];
   fingerprint: string;
   /** Source facts the noise rules read: how a turn ended, how many console entries were errors, whether code already delivered it. */
-  facts: { status?: string; errors?: number; routed?: boolean };
+  facts: { status?: string; errors?: number; routed?: boolean; screen?: { rule: string; reason: string; subscribers?: boolean } };
 }
 
 export interface FastContext {
@@ -152,6 +153,7 @@ const SOURCE_NAME: Record<TriggerSource, string> = {
   'preview-console': 'Preview console errors',
   landing: "Workers' merges",
   job: 'Background job results',
+  github: 'GitHub events',
 };
 
 export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
@@ -171,6 +173,15 @@ export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   // The same job's result again, on the workspace thread of the folder it ran in: it matters only to
   // the Workers working there (the bot that started it has it already).
   if (t.source === 'job') return subscribers.length ? direct() : drop('no-subscribers', 'No Worker is working in the folder the job ran in right now');
+  // GitHub (ADR 102): the project's own rules ran in code first (github/filter.ts); some hold for
+  // subscribed Workers too (an author off the list), some only keep it from everyone else (a passed check).
+  if (t.source === 'github') {
+    const s = t.facts.screen;
+    if (s && !s.subscribers) return drop(s.rule, s.reason);
+    if (subscribers.length) return directOrTwin(t, ctx, direct, drop);
+    if (s) return drop(s.rule, s.reason);
+    return shared(t, ctx, null, drop);
+  }
 
   const source = t.source;
   const rule = ctx.settings.sources[source];
@@ -189,15 +200,26 @@ export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   }
 
   // Subscribed: the thread's Workers take it, so the rules that save model calls (allow-lists, cooldown, budget) do not apply.
-  if (subscribers.length) {
-    const twin = ctx.recent.find((r) => r.fingerprint === t.fingerprint && ctx.now - r.at < DUPLICATE_MS && r.filter.rule === 'subscribed');
-    if (twin) return drop('duplicate', `Same as ${twin.id}, which already went to this thread's Workers`);
-    return direct();
-  }
+  if (subscribers.length) return directOrTwin(t, ctx, direct, drop);
 
+  const allowed = rule.allow.length ? subjects.some((s) => rule.allow.some((p) => allowMatches(p, s, source))) : true;
+  return shared(t, ctx, allowed, drop);
+}
+
+type Drop = (rule: string, reason: string) => TriggerFilter;
+
+/** Straight to the subscribed Workers, unless they already got the same thing lately. */
+function directOrTwin(t: FastInput, ctx: FastContext, direct: () => TriggerFilter, drop: Drop): TriggerFilter {
+  const twin = ctx.recent.find((r) => r.fingerprint === t.fingerprint && ctx.now - r.at < DUPLICATE_MS && r.filter.rule === 'subscribed');
+  if (twin) return drop('duplicate', `Same as ${twin.id}, which already went to this thread's Workers`);
+  return direct();
+}
+
+/** The rules every filtered source shares before the cheap model: the project allow-list, the source's allow-list (null: none), cooldown, duplicates, budget. */
+function shared(t: FastInput, ctx: FastContext, allowed: boolean | null, drop: Drop): TriggerFilter {
   const projects = ctx.settings.projects;
   if (projects.length && !(t.rootProjectId && projects.includes(t.rootProjectId))) return drop('project-not-allowed', 'The project is not on the allow-list');
-  if (rule.allow.length && !subjects.some((s) => rule.allow.some((p) => allowMatches(p, s, source)))) return drop('not-allow-listed', 'Nothing in it matches the allow-list for this source');
+  if (allowed === false) return drop('not-allow-listed', 'Nothing in it matches the allow-list for this source');
 
   if (ctx.thread.lastNoticeAt && ctx.now - ctx.thread.lastNoticeAt < NOTICE_COOLDOWN_MS) {
     return drop('cooldown', `This thread got a notice ${Math.max(1, Math.round((ctx.now - ctx.thread.lastNoticeAt) / 60_000))} min ago; staying quiet`);

@@ -648,19 +648,35 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
     const a = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((x) => [x[1], x[2]]));
     const body = m[2].trim();
     const short = (body.split('\n').find((l) => l.trim()) || '').slice(0, 60);
+    // "draft a comment on owner/repo#12" (or "a reply to owner/repo#7 comment 555"): a GitHub draft (ADR 102).
+    const draft = a.kind === 'environment' ? null : body.match(/\bdraft (?:a )?(comment|reply) (?:on|to) ([\w.-]+\/[\w.-]+)#(\d+)(?: comment (\d+))?/i);
     if (a.kind === 'worker') replies.push(`${a.bot} ${a.status === 'done' ? 'finished' : `ended (${a.status})`}: "${a.title}".`);
     else if (a.kind === 'environment') replies.push(`Crew noticed: ${short}`);
-    else if (/\b(add|create|make|build|fix|change|write|slow|split)\b/i.test(body)) {
+    else if (draft) {
+      const r = await call('draft_github', {
+        kind: draft[1].toLowerCase() === 'reply' ? 'review-reply' : 'issue-comment',
+        repo: draft[2],
+        number: Number(draft[3]),
+        ...(draft[4] ? { comment: Number(draft[4]) } : {}),
+        background: `Asked for in the chat: ${short}`,
+        change: 'Demo mode: no change was made.',
+        verification: 'Demo mode: nothing was run.',
+      });
+      replies.push(r.startsWith('Draft ') ? `${r.split(':')[0]}; it waits for your approval.` : `Couldn't draft it: ${r}`);
+    } else if (/\b(add|create|make|build|fix|change|write|slow|split)\b/i.test(body)) {
       const parts = /\bsplit\b/i.test(body) ? 2 : 1;
       const started: string[] = [];
       for (let i = 0; i < parts; i++) {
         // "family:triage" in the demo picks a lifecycle skill family (ADR 007).
         const family = body.match(/\bfamily:([a-z-]+)/)?.[1];
+        // "issue owner/repo#12" (or "PR #7"): the Worker subscribes to that issue's thread (ADR 102).
+        const github = body.match(/\b(?:issue|PR|pull request) ((?:[\w.-]+\/[\w.-]+)?#\d+)/i)?.[1];
         const r = await call('dispatch_worker', {
           title: parts > 1 ? `${short} (part ${i + 1})` : short,
           task: body,
           ...(a.to || a.bot ? { bot: a.to || a.bot } : {}),
           ...(family ? { family } : {}),
+          ...(github ? { github } : {}),
         });
         started.push(r.replace(/ It works in the background.*$/s, ''));
       }

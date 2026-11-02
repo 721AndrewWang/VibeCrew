@@ -294,6 +294,8 @@ export interface Project {
   skillFamilies?: SkillFamily[];
   /** Environment variables passed through to agent sessions although they look like credentials. */
   passEnv?: string[];
+  /** GitHub as an asynchronous channel (ADR 102): poll these repositories for Triggers; needs superAgent.enabled. */
+  github?: GithubChannel;
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -654,7 +656,7 @@ export type GuardRule = 'credentials' | 'external' | 'network';
 export type GuardVerdict = { kind: 'deny'; rule: GuardRule; reason: string } | { kind: 'read' } | { kind: 'change'; effects: string[] };
 
 /** Something that leaves the machine in the user's name: drafted by an agent, run only by the user's click. */
-export type DraftKind = 'git-push' | 'pr-open' | 'pr-comment' | 'issue-open' | 'issue-comment' | 'message';
+export type DraftKind = 'git-push' | 'pr-open' | 'pr-comment' | 'issue-open' | 'issue-comment' | 'review-reply' | 'message';
 
 export interface ExternalDraft {
   id: ID;
@@ -704,16 +706,17 @@ export interface AuditEntry {
  * branch) only ever goes to the Workers subscribed to that workspace (ADR 003). job (a background
  * job's result, ADR 004) is an explicit request on the chat's thread, for the bot that started it,
  * and, when Workers subscribe to the folder it ran in, an environment event on that workspace
- * thread that only goes to them, like landing (ADR 010).
+ * thread that only goes to them, like landing (ADR 010). github (ADR 102) is an issue, a comment, a
+ * review comment or a check result a project's poller found; never explicit.
  */
-export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job';
+export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job' | 'github';
 
 /**
  * Sources whose fast-path rule the user can change. landing has no settings (it only ever goes to
  * subscribers), and neither has a job result: the bot asked for it, and the copy on a workspace
- * thread only ever goes to subscribers.
+ * thread only ever goes to subscribers. github's rules are per project (Project.github).
  */
-export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job'>;
+export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job' | 'github'>;
 
 /**
  * Per source, deterministic: act on explicit requests only (the rest is recorded as dropped), let
@@ -1012,12 +1015,12 @@ export interface Trigger {
   action?: string;
 }
 
-/** A stream of related Triggers: one chat topic, one routine, or one workspace. */
+/** A stream of related Triggers: one chat topic, one routine, one workspace, or one GitHub issue or pull request. */
 export interface Thread {
   id: ID;
-  /** chat:<chatId> | routine:<routineId> | workspace:<projectId> */
+  /** chat:<chatId> | routine:<routineId> | workspace:<projectId> | github:<projectId>:<owner/repo>#<n> */
   key: string;
-  kind: 'chat' | 'routine' | 'workspace';
+  kind: 'chat' | 'routine' | 'workspace' | 'github';
   title: string;
   projectId: ID | null;
   chatId: ID | null;
@@ -1049,6 +1052,46 @@ export interface TriggerDetail {
   related: Trigger[];
   /** The thread's latest Triggers, newest first. */
   recent: Trigger[];
+}
+
+/** The GitHub event kinds a project can watch (ADR 102). */
+export interface GithubEvents {
+  /** New issues. */
+  issues: boolean;
+  /** Comments in an issue's or a pull request's conversation. */
+  comments: boolean;
+  /** Review comments on a pull request's diff. */
+  reviewComments: boolean;
+  /** Completed check runs on open pull requests' heads. */
+  checks: boolean;
+}
+
+/** GitHub as an asynchronous channel for one project (ADR 102): what to poll and which events count. */
+export interface GithubChannel {
+  enabled: boolean;
+  /** owner/name of each repository to watch. */
+  repos: string[];
+  /** How often each repository is polled. */
+  everyMinutes: number;
+  /** Logins whose issues and comments count; empty = anyone except bots. */
+  authors: string[];
+  events: GithubEvents;
+  /** Events no Worker subscribes to may go to the cheap model; off = only subscribed Workers see GitHub events. */
+  candidates: boolean;
+}
+
+/** A project's GitHub polling, as it is right now (not stored). */
+export interface GithubStatus {
+  projectId: ID;
+  /** Polling: the channel is on, it has repositories, and so is the Super-agent. */
+  active: boolean;
+  repos: string[];
+  lastPollAt?: number;
+  nextPollAt?: number;
+  lastError?: string;
+  /** Triggers published by the last poll, and in all since Crew started. */
+  lastPublished?: number;
+  published: number;
 }
 
 /** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */

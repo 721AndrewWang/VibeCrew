@@ -2,13 +2,14 @@ import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2,
 import { useEffect, useMemo, useState } from 'react';
 import { defaultAutoChallenge } from '../../../../shared/challenge';
 import { SKILL_FAMILIES } from '../../../../shared/families';
-import type { DevServerState, Project, SkillFamily } from '../../../../shared/types';
+import type { DevServerState, GithubChannel, Project, SkillFamily } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
 import { copyText, cx, shortPath } from '../../utils';
 import { showWorkspaceChanges } from '../../workspace';
 import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
+import { DEFAULT_GITHUB_CHANNEL, GithubChannelSection } from './GithubChannelSection';
 
 // ---------------------------------------------------------------- shared bits
 
@@ -60,6 +61,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [autoPaths, setAutoPaths] = useState(auto.paths.join('\n'));
   const [families, setFamilies] = useState<SkillFamily[]>(project.skillFamilies || []);
   const [passEnv, setPassEnv] = useState((project.passEnv || []).join('\n'));
+  const [github, setGithub] = useState<GithubChannel>(project.github || DEFAULT_GITHUB_CHANNEL);
   const [saving, setSaving] = useState(false);
   const toggleFamily = (id: SkillFamily) => setFamilies(families.includes(id) ? families.filter((f) => f !== id) : [...families, id]);
 
@@ -85,6 +87,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         allowedDomains: domains,
         requireChallenge,
         skillFamilies: families,
+        ...(project.github || github.enabled ? { github } : {}),
         passEnv: passEnv
           .split(/[\s,]+/)
           .map((x) => x.trim())
@@ -167,6 +170,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <textarea className="input mono" rows={1} value={passEnv} placeholder="Variable names, e.g. NPM_TOKEN" onChange={(e) => setPassEnv(e.target.value)} />
           <div className="hint">Crew keeps tokens and keys from its environment out of bot sessions (Settings → Safety). Name one here only if this project's commands really need it.</div>
         </div>
+        <GithubChannelSection projectId={project.id} value={github} onChange={setGithub} />
         <div className="field span-all">
           <div className="setting-row">
             <div>

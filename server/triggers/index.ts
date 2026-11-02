@@ -29,6 +29,7 @@ import type {
 } from '../../shared/types';
 import { bus, notify } from '../bus';
 import { DATA, FAKE_AGENT } from '../config';
+import { issueRefOfKey } from '../github/events';
 import { countRouterEvents, deliverToWorker, noteDirect, type RouterEvent, routerEvent, routerMode } from '../layers';
 import type { HandedBack } from '../layers/prompts';
 import { receivers, subscriptionsOn } from '../layers/subscriptions';
@@ -280,6 +281,7 @@ const NOTICED: Record<TriggerSource, string> = {
   'preview-console': 'a preview console error',
   landing: "a Worker's merge",
   job: 'a background job result',
+  github: 'a GitHub event',
 };
 
 export function noticeText(t: Trigger): string {
@@ -310,7 +312,7 @@ function deliver(t: Trigger) {
     return;
   }
   if (routerMode(chat)) {
-    routerEvent(chat.id, { kind: 'environment', id: t.id, at: t.at, source: t.source, summary: t.summary, reason: t.filter.reason });
+    routerEvent(chat.id, { kind: 'environment', id: t.id, at: t.at, source: t.source, summary: t.summary, reason: t.filter.reason, ...githubRef(t) });
     t.action = `Handed to the Router of "${chat.title}"`;
     const thread = threads.get(t.threadId);
     if (thread) {
@@ -330,6 +332,13 @@ function deliver(t: Trigger) {
   notify('Crew noticed something', t.summary.slice(0, 140), { chatId: chat.id, level: 'info' });
 }
 
+/** A GitHub event names its thread and its issue (ADR 102): what the Router passes to put a Worker on it. */
+function githubRef(t: Trigger): { thread?: string; github?: string } {
+  if (t.source !== 'github') return {};
+  const th = threads.get(t.threadId);
+  return { thread: t.threadId, github: th ? issueRefOfKey(th.key) : undefined };
+}
+
 // ---------------------------------------------------------------- direct routing to subscribed Workers (ADR 003)
 
 /** What the Router's <direct> lines call each source. */
@@ -341,6 +350,7 @@ const DIRECT_NAME: Record<TriggerSource, string> = {
   'preview-console': 'console error',
   landing: 'Worker merge',
   job: 'job result',
+  github: 'GitHub event',
 };
 
 /** The Workers a Trigger on this thread goes straight to: none while subscriptions are off, and never on a chat's thread (the Router's own). */
@@ -445,7 +455,7 @@ function routerEventOf(t: Trigger, handedBack: HandedBack): RouterEvent | null {
     };
   }
   if (t.explicit) return null;
-  return { kind: 'environment', id: t.id, at: t.at, source: t.source, summary: t.summary, reason: t.filter.reason, handedBack };
+  return { kind: 'environment', id: t.id, at: t.at, source: t.source, summary: t.summary, reason: t.filter.reason, handedBack, ...githubRef(t) };
 }
 
 /**

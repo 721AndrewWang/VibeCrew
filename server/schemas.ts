@@ -4,6 +4,7 @@
 // exist?) stay where they were.
 
 import { z } from 'zod';
+import { LOGIN_RE, MAX_AUTHORS, MAX_REPOS, REPO_RE } from './github/config';
 import { HttpError } from './projects';
 
 const PERMISSION = z.enum(['auto', 'edits', 'ask', 'review', 'plan']);
@@ -102,8 +103,19 @@ export const ProjectPatch = z
           .max(200),
       )
       .max(50),
+    github: z.object({
+      enabled: z.boolean(),
+      repos: z.array(z.string().regex(REPO_RE, 'should be owner/name')).max(MAX_REPOS),
+      everyMinutes: z.number().int().min(1).max(1440),
+      authors: z.array(z.string().regex(LOGIN_RE, 'should be GitHub logins')).max(MAX_AUTHORS),
+      events: z.object({ issues: z.boolean(), comments: z.boolean(), reviewComments: z.boolean(), checks: z.boolean() }),
+      candidates: z.boolean(),
+    }),
   })
   .partial();
+
+/** Poll a project's GitHub repositories now (ADR 102). */
+export const GithubPoll = z.object({ projectId: id });
 
 export const ProjectOpen = z.object({
   mode: z.enum(['open', 'create']).default('create'),
@@ -236,10 +248,11 @@ export const WorkerUnsubscribe = z.object({ threadId: id });
 
 /** A draft of an external action: its kind and fields; Crew builds the exact command from them. */
 export const DraftInput = z.object({
-  kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'message']),
+  kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'review-reply', 'message']),
   remote: text(200).optional(),
   branch: text(200).optional(),
   number: z.number().int().min(1).max(10_000_000).optional(),
+  comment: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
   title: text(300).optional(),
   body: text(60_000).optional(),
   base: text(200).optional(),

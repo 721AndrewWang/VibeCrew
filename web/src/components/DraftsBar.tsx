@@ -15,6 +15,7 @@ export const DRAFT_KIND: Record<DraftKind, string> = {
   'pr-comment': 'Comment on pull request',
   'issue-open': 'Open issue',
   'issue-comment': 'Comment on issue',
+  'review-reply': 'Reply to review comment',
   message: 'Message',
 };
 

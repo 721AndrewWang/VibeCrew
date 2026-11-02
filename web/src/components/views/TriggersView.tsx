@@ -1,4 +1,4 @@
-import { Bot as BotIcon, Clock, FilePen, GitMerge, MessageCircle, Radio, RefreshCw, TerminalSquare, Timer } from 'lucide-react';
+import { Bot as BotIcon, Clock, FilePen, GitMerge, GitPullRequest, MessageCircle, Radio, RefreshCw, TerminalSquare, Timer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Thread, Trigger, TriggerDetail, TriggerList, TriggerSource } from '../../../../shared/types';
 import { api } from '../../api';
@@ -15,6 +15,7 @@ export const SOURCE_LABEL: Record<TriggerSource, string> = {
   'preview-console': 'Console error',
   landing: 'Worker merge',
   job: 'Job result',
+  github: 'GitHub',
 };
 
 const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
@@ -25,6 +26,7 @@ const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
   'preview-console': TerminalSquare,
   landing: GitMerge,
   job: Timer,
+  github: GitPullRequest,
 };
 
 const VERDICT: Record<Trigger['filter']['verdict'], { label: string; cls: string }> = {

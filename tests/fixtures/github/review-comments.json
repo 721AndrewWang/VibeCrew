@@ -1,0 +1,12 @@
+[
+  {
+    "id": 5551,
+    "body": "This handler never awaits the request.",
+    "path": "src/cart.ts",
+    "line": 40,
+    "user": { "login": "dave", "type": "User" },
+    "html_url": "https://github.com/acme/shop/pull/13#discussion_r5551",
+    "pull_request_url": "https://api.github.com/repos/acme/shop/pulls/13",
+    "created_at": "2026-11-02T10:12:00Z"
+  }
+]
