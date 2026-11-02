@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import type { Chat, ConsoleEntry, FilteredSource, Project, Routine, SuperAgentSettings, Thread, Trigger, TriggerDetail, TriggerList, TriggerRef, TriggerSource } from '../../shared/types';
 import { bus, notify } from '../bus';
 import { DATA, FAKE_AGENT } from '../config';
+import { routerEvent, routerMode } from '../layers';
 import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
 import { chatProjectId } from '../projects';
@@ -254,11 +255,24 @@ function targetChat(t: Trigger): Chat | undefined {
     .sort((a, b) => b.updatedAt - a.updatedAt)[0];
 }
 
-/** Acting, in this milestone: a short note only the user sees, and a toast. Bots never read it. */
+/**
+ * Acting: a short note only the user sees, and a toast; bots never read it. A chat in two-layer
+ * mode gets it in its Router's inbox instead, as an environment event that cannot start work.
+ */
 function deliver(t: Trigger) {
   const chat = targetChat(t);
   if (!chat) {
     t.action = 'Nobody to tell: no chat works in this project';
+    return;
+  }
+  if (routerMode(chat)) {
+    routerEvent(chat.id, { kind: 'environment', id: t.id, at: t.at, source: t.source, summary: t.summary, reason: t.filter.reason });
+    t.action = `Handed to the Router of "${chat.title}"`;
+    const thread = threads.get(t.threadId);
+    if (thread) {
+      thread.lastNoticeAt = Date.now();
+      threads.set(thread);
+    }
     return;
   }
   const msg = systemMessage(chat, noticeText(t), { uiOnly: true, notice: 'trigger' });

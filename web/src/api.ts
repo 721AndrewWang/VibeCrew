@@ -25,6 +25,7 @@ import type {
   TriggerList,
   TurnSummary,
   TurnTrace,
+  Worker,
   WorkspaceMergeResult,
   WorkspaceStatus,
 } from '../../shared/types';
@@ -192,6 +193,12 @@ export const api = {
   editImprovement: (id: string, d: Record<string, unknown>) => patch<{ improvement: Improvement }>(`/api/improvements/${id}`, d),
   rejectImprovement: (id: string, note?: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/reject`, { note }),
   revertImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/revert`),
+
+  // Two-layer mode: a chat's Router and its Workers.
+  workerLog: (id: string) => get<{ worker: Worker; messages: ChatMessage[] }>(`/api/workers/${q(id)}/messages`),
+  stopWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/stop`),
+  dismissWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/dismiss`),
+  routerLog: (chatId: string) => get<{ messages: ChatMessage[] }>(`/api/chats/${q(chatId)}/router/messages`),
 };
 
 export function fileToBase64(file: Blob): Promise<string> {

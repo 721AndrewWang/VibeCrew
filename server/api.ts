@@ -17,6 +17,7 @@ import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { frictionReport } from './friction';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
+import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, routerInfos, stopWorker } from './layers';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
@@ -63,7 +64,7 @@ import {
   Upload,
 } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
-import { bots, chats, improvements, messages, projects, routines, type Settings, settings } from './store';
+import { bots, chats, improvements, messages, projects, routerLogId, routines, type Settings, settings, workers } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
 import { listTriggers, publishConsole, triggerDetail } from './triggers';
@@ -101,6 +102,8 @@ function bootstrap(): Bootstrap {
     templates: BOT_TEMPLATES,
     plugins: PLUGINS,
     statuses: botStatuses(),
+    workers: listWorkers(),
+    routers: routerInfos(),
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
@@ -189,7 +192,7 @@ export function apiRouter() {
       // Partial per source: a patch to one source's mode keeps its allow-list, and the other sources.
       const sources = { ...cur.superAgent.sources };
       for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
-      patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources });
+      patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources, router: { ...cur.superAgent.router, ...b.superAgent.router } });
     }
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
@@ -207,6 +210,8 @@ export function apiRouter() {
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
     if (patch.denyRules || patch.sandbox) invalidateAllSessions();
+    // The Router's model and limits are in its session.
+    if (b.superAgent?.router || b.superAgent?.enabled === false) invalidateRouters();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -249,6 +254,29 @@ export function apiRouter() {
   r.post('/triggers/preview-console', (req, res) => {
     const b = body(PreviewConsole, req.body);
     res.json({ trigger: publishConsole({ project: getProject(b.projectId), chatId: b.chatId, page: b.page, entries: b.entries }) });
+  });
+
+  // ------------------------------------------------------------ two-layer mode (Router and Workers)
+  r.get('/workers', (req, res) => res.json(listWorkers(str(req.query.chatId) || undefined)));
+  const worker = (id: string) => {
+    const w = workers.get(id);
+    if (!w) throw new HttpError(404, 'Worker not found');
+    return w;
+  };
+  r.get('/workers/:id/messages', (req, res) => res.json({ worker: worker(req.params.id), messages: messages.list(req.params.id, { limit: 200 }) }));
+  r.post('/workers/:id/stop', async (req, res) => {
+    await stopWorker(worker(req.params.id).id, { why: 'The user stopped the task' });
+    res.json(worker(req.params.id));
+  });
+  r.post('/workers/:id/dismiss', async (req, res) => {
+    const w = worker(req.params.id);
+    if (['starting', 'running', 'waiting'].includes(w.status)) throw new HttpError(409, 'Stop the Worker first');
+    await dismissWorker(w);
+    res.json(w);
+  });
+  r.get('/chats/:id/router/messages', (req, res) => {
+    if (!chats.get(req.params.id)) throw new HttpError(404, 'Chat not found');
+    res.json({ messages: messages.list(routerLogId(req.params.id), { limit: 200 }) });
   });
 
   // ------------------------------------------------------------ improvements
@@ -382,6 +410,8 @@ export function apiRouter() {
   r.get('/chats/:id/workspace', async (req, res) => res.json(await workspaceStatus(req.params.id)));
   r.post('/chats/:id/workspace', async (req, res) => res.json(decorate(await createWorkspace(req.params.id))));
   r.delete('/chats/:id/workspace', async (req, res) => {
+    // Workers' changes are merged into this workspace's branch.
+    if (activeWorkers(req.params.id).length) throw new HttpError(409, "Workers are running in this chat and merge their changes into this workspace's branch; stop them first");
     await removeWorkspace(req.params.id, req.query.deleteBranch === '1');
     res.json({ ok: true });
   });

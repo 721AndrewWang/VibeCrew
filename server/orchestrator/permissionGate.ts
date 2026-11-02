@@ -1,7 +1,7 @@
 // Which tool calls a bot may make: the deny list, the bot's and project's rules, and the user's
 // answers to approval requests shown in the chat.
 
-import type { ApprovalPart, Bot, Chat, Project } from '../../shared/types';
+import type { ApprovalPart, Bot, BotStatus, Chat, Project } from '../../shared/types';
 import { decide, describeAction, harmless, matchingRule, splitCommand, suggestRules } from '../agents/permissions';
 import type { TurnStream } from '../agents/stream';
 import { bus, notify } from '../bus';
@@ -32,9 +32,14 @@ export function deniedReason(toolName: string, input: unknown, cwd: string): str
   return `This action is blocked (Settings → Defaults → Blocked actions: ${rule}). Don't try to get around it with a different command; if it's needed, ask the user to do it themselves.`;
 }
 
-/** The canUseTool hook for one turn of a bot in a chat. */
-export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | null; cwd: string; stream: TurnStream }) {
+/**
+ * The canUseTool hook for one turn of a bot in a chat. A Worker's turn passes `status` (its own
+ * state, not the bot's) and `who` (how the approval request names it).
+ */
+export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | null; cwd: string; stream: TurnStream; status?: (s: Omit<BotStatus, 'since'>) => void; who?: string }) {
   const { chat, bot, project, cwd, stream } = turn;
+  const status = turn.status ?? ((s: Omit<BotStatus, 'since'>) => setStatus(bot.id, s));
+  const who = turn.who ?? bot.name;
   return async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; matchedAskRule?: unknown; decisionReason?: string; title?: string }) => {
     const current = bots.get(bot.id) || bot;
     const desc = describeAction(toolName, input, cwd);
@@ -66,10 +71,10 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     };
     part.rule = part.rules?.[0];
     stream.addPart(part);
-    setStatus(bot.id, { state: 'waiting', detail: desc.title, chatId: chat.id });
-    notify(`${bot.name} needs your approval`, desc.title, { chatId: chat.id, level: 'warn' });
+    status({ state: 'waiting', detail: desc.title, chatId: chat.id });
+    notify(`${who} needs your approval`, desc.title, { chatId: chat.id, level: 'warn' });
     // Still open after a few minutes: a push to the phone (Bark), if one is set up.
-    const cancelPush = remindLater(bot.name, chat.title || bot.name, desc.title);
+    const cancelPush = remindLater(who, chat.title || bot.name, desc.title);
     const askedAt = Date.now();
     const decision = await new Promise<{ allow: boolean; always?: boolean; message?: string; expired?: boolean }>((resolve) => {
       approvals.set(part.id, { chatId: chat.id, botId: bot.id, part, stream, resolve });
@@ -80,7 +85,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     part.status = decision.allow ? 'allowed' : decision.expired ? 'expired' : 'denied';
     stream.updatePart(part);
     noteApprovalFriction({ bot, chat, toolName, input, title: desc.title, because: d.because, decision, waitedMs: Date.now() - askedAt });
-    setStatus(bot.id, { state: 'tool', detail: toolName, chatId: chat.id });
+    status({ state: 'tool', detail: toolName, chatId: chat.id });
     const newRules = (part.rules || []).filter(Boolean);
     if (decision.allow && decision.always && newRules.length) {
       const b = bots.get(bot.id);
@@ -117,6 +122,16 @@ export function expireApprovals(stream: TurnStream) {
   for (const [id, a] of approvals) {
     if (a.stream === stream) {
       a.resolve({ allow: false, expired: true });
+      approvals.delete(id);
+    }
+  }
+}
+
+/** A Worker was stopped: the requests its turn left open are denied with this message. */
+export function denyStreamApprovals(stream: TurnStream, message: string) {
+  for (const [id, a] of approvals) {
+    if (a.stream === stream) {
+      a.resolve({ allow: false, message });
       approvals.delete(id);
     }
   }

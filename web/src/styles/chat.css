@@ -1656,3 +1656,124 @@ body.resizing iframe {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---------------------------------------------------------------- two-layer mode: Router and Workers */
+.workers-bar {
+  margin: 0 16px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  font-size: 12.5px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.wb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+}
+
+.wb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.wb-toggle:disabled {
+  cursor: default;
+}
+
+.wb-toggle .busy {
+  color: var(--accent-text);
+}
+
+.worker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.worker-row.waiting {
+  background: var(--orange-soft);
+}
+
+.wr-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wr-title,
+.wr-note {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wr-note {
+  font-size: 11.5px;
+}
+
+.agent-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.agent-task {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-sunken, var(--bg));
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-log {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.agent-batch {
+  margin: 10px 0 2px 41px;
+  font-size: 11.5px;
+}
+
+.router-settings {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.router-settings .sr-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

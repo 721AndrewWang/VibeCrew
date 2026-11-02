@@ -77,6 +77,14 @@ export interface SessionConfig {
   mcpServers: Record<string, McpServerConfig>;
   settingSources: NonNullable<Options['settingSources']>;
   env: Record<string, string>;
+  /** Built-in tools on offer; [] = none (MCP tools only). Unset: all of Claude Code's. */
+  tools?: string[];
+  /** Replaces Claude Code's own system prompt (systemAppend is then unused): for sessions with no built-in tools. */
+  systemPrompt?: string;
+  /** Two-layer mode, for the demo agent: a Router calls its tools, a Worker reports instead of handing off. */
+  role?: 'router' | 'worker';
+  /** The demo agent's way to call MCP tools by name, without an MCP client. */
+  fakeTools?: Record<string, (args: Record<string, unknown>) => Promise<{ text: string; isError?: boolean }>>;
 }
 
 export interface AgentSession {
@@ -153,7 +161,8 @@ export class BotSession implements AgentSession {
       cwd: cfg.cwd,
       model: cfg.model || undefined,
       effort: cfg.effort || undefined,
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: cfg.systemAppend },
+      systemPrompt: cfg.systemPrompt ?? { type: 'preset', preset: 'claude_code', append: cfg.systemAppend },
+      tools: cfg.tools,
       resume: cfg.resume,
       includePartialMessages: true,
       permissionMode: cfg.permissionMode,
@@ -366,7 +375,7 @@ export class FakeSession implements AgentSession {
       emit({ type: 'stream_event', ...this.base(), event: { type: 'content_block_stop', index: 0 } });
       emit({ type: 'assistant', ...this.base(), message: { id: msgId, role: 'assistant', content: [{ type: 'text', text }] } });
     };
-    const runTool = async (name: string, input: Record<string, unknown>, run: () => string | Promise<string>) => {
+    const runTool = async (name: string, input: Record<string, unknown>, run: () => string | Promise<string>): Promise<string> => {
       const msgId = `msg_fake_${++fakeCounter}`;
       const id = `toolu_fake_${fakeCounter}`;
       emit({ type: 'stream_event', ...this.base(), event: { type: 'message_start', message: { id: msgId, content: [] } } });
@@ -391,10 +400,20 @@ export class FakeSession implements AgentSession {
       }
       emit({ type: 'user', ...this.base(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: result, is_error: isError }] } });
       await sleep(200);
+      return result;
     };
 
     try {
-      if (prompt.includes('## Changes to review')) {
+      if (this.cfg.role === 'router') {
+        const tools = this.cfg.fakeTools || {};
+        await fakeRouter(prompt, streamText, (name, args) =>
+          runTool(`mcp__crew_router__${name}`, args, async () => {
+            const r = await (tools[name]?.(args) ?? Promise.resolve({ text: `No such tool: ${name}`, isError: true }));
+            if (r.isError) throw new Error(r.text);
+            return r.text;
+          }),
+        );
+      } else if (prompt.includes('## Changes to review')) {
         // A blind review: a table and the verdict line. REFUTE_ME in the change makes it refute one claim.
         const refute = prompt.includes('REFUTE_ME');
         await streamText(
@@ -420,8 +439,12 @@ export class FakeSession implements AgentSession {
           // A complex request: a few more looks around, enough to count as real work.
           for (const pattern of ['*.html', '*.css', '*.js', '*.md']) await runTool('Glob', { pattern }, () => '(demo)');
         }
+        // A demo Worker on a "slow" task keeps working until it is stopped (or 30 s pass).
+        if (this.cfg.role === 'worker' && /\bslow\b/i.test(ask)) for (let i = 0; i < 300 && !this.stopped; i++) await sleep(100);
         if (/add|create|make|build/i.test(ask) && !this.stopped) {
-          const file = path.join(this.cfg.cwd, 'crew-demo.md');
+          // Parallel demo Workers write files of their own, unless the task asks for a conflict.
+          const name = this.cfg.role === 'worker' && !/conflict/i.test(ask) ? `crew-demo-${(++fakeCounter).toString(36)}.md` : 'crew-demo.md';
+          const file = path.join(this.cfg.cwd, name);
           await runTool('Bash', { command: 'ls -la', description: 'List project files' }, () => 'total 8\n(demo output)');
           await runTool('Write', { file_path: file, content: `# Demo\n\nWritten by ${this.botName} at ${new Date().toLocaleString('en-US')}.\n\nRequest: ${prompt.slice(0, 200)}\n` }, () => {
             hooks.beforeEdit(file);
@@ -438,7 +461,9 @@ export class FakeSession implements AgentSession {
             ? `Let me split this up: @${others[0]} please build the page structure first and tell me when it's done.`
             : twoSteps
               ? "Step one is done; I'll take the next step myself.\n[continue]"
-              : 'Done. In **demo mode** I only created `crew-demo.md`, to show change tracking and undo.',
+              : this.cfg.role === 'worker'
+                ? `${this.stopped ? 'Stopped' : 'Done'}. In demo mode I only looked around${/add|create|make|build/i.test(ask) ? ' and wrote a demo file' : ''}; no model was called.`
+                : 'Done. In **demo mode** I only created `crew-demo.md`, to show change tracking and undo.',
         );
       }
       const result = {
@@ -481,4 +506,31 @@ export class FakeSession implements AgentSession {
     this.closed = true;
     this.stopped = true;
   }
+}
+
+/**
+ * The demo Router: reads the batch's events (layers/prompts.ts renders them), dispatches a Worker
+ * for anything that asks for work, and answers with a short reply. "split" asks for two Workers.
+ */
+async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
+  const replies: string[] = [];
+  for (const m of prompt.matchAll(/<event ([^>]*)>\n([\s\S]*?)\n<\/event>/g)) {
+    const a = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((x) => [x[1], x[2]]));
+    const body = m[2].trim();
+    const short = (body.split('\n').find((l) => l.trim()) || '').slice(0, 60);
+    if (a.kind === 'worker') replies.push(`${a.bot} ${a.status === 'done' ? 'finished' : `ended (${a.status})`}: "${a.title}".`);
+    else if (a.kind === 'environment') replies.push(`Crew noticed: ${short}`);
+    else if (/\b(add|create|make|build|fix|change|write|slow|split)\b/i.test(body)) {
+      const parts = /\bsplit\b/i.test(body) ? 2 : 1;
+      const started: string[] = [];
+      for (let i = 0; i < parts; i++) {
+        const r = await call('dispatch_worker', { title: parts > 1 ? `${short} (part ${i + 1})` : short, task: body, ...(a.to || a.bot ? { bot: a.to || a.bot } : {}) });
+        started.push(r.replace(/ It works in the background.*$/s, ''));
+      }
+      replies.push(`On it. ${started.join(' ')}`);
+    } else replies.push(`(Demo Router) Noted: "${short}". Nothing to dispatch for that.`);
+  }
+  const text = replies.join(' ').split(/\s+/).slice(0, 90).join(' ');
+  if (text) await call('reply', { text });
+  await say('Handled this batch (demo mode, no model called).');
 }

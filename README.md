@@ -32,6 +32,7 @@ The difference: in Crew, an agent's "computer" is your project folder. The right
 - **Dev server management**: detects `npm run dev` and similar commands, installs missing dependencies automatically, and wires hot reload into the preview; static sites refresh on save.
 - **Screenshots / pasted images / voice input**: paste a design and have an agent rebuild it (`/clone-ui`), or just talk.
 - **Super-agent (preview, off by default)**: turn it on in Settings → Super-agent, and Crew records every event it reacts to (your messages, routine runs, turn results, files changed outside the chat, preview console errors) as a trigger in a thread. Rules settle most of them; the rest go to a cheap model that decides from policies you write whether the event is worth your attention, and if so you get a short note in the chat. Nothing runs on its own. The Triggers page shows every event and what was decided. Design: [ADR 001](docs/adr/001-triggers.md).
+  - **Router and Workers (off by default)**: switch on "Router and Workers" in the same section, and each group chat gets a Router that reads every message and event, answers you in a few words, and dispatches Workers. Each Worker does one task in its own session and its own git worktree, as one of the chat's members (with its permissions and editable paths), on the strongest model, and reports back to the Router; its changes are merged into the chat's branch for you. Several Workers run at once and the chat stays free while they work. A bar above the composer shows the Router and each Worker's status and last report; open a Worker to read its transcript, approve its actions or stop it. Design: [ADR 002](docs/adr/002-two-layer.md).
 
 ## Requirements
 
@@ -172,6 +173,7 @@ server/            Node server (Express + WebSocket)
   routines.ts      Routines and event triggers
   workspaces/      Isolated workspaces: git worktree, auto-commit, merge, sync
   triggers/        Super-agent trigger bus: threads, fast path (rules), slow path (cheap model)
+  layers/          Super-agent two-layer mode: a resident Router per group chat, isolated Workers
   browser.ts       Headless Chrome (screenshots, console, page actions)
   log.ts           Server logging
 web/               React UI (Vite)

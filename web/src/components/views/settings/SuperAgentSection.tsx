@@ -1,6 +1,6 @@
-import { Radio, Save } from 'lucide-react';
+import { Network, Radio, Save } from 'lucide-react';
 import { useState } from 'react';
-import type { FilteredSource, SourceMode, SuperAgentSettings } from '../../../../../shared/types';
+import type { FilteredSource, RouterSettings, SourceMode, SuperAgentSettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
 import { cx } from '../../../utils';
@@ -50,7 +50,7 @@ function toForm(s: SuperAgentSettings): Form {
   return { sources, projects: s.projects, policies: s.policies, maxCandidatesPerHour: s.maxCandidatesPerHour };
 }
 
-function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled'> {
+function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router'> {
   const sources = {} as SuperAgentSettings['sources'];
   for (const { id } of SOURCES) {
     sources[id] = {
@@ -107,7 +107,8 @@ export function SuperAgentSection() {
           <div className="sr-title">Watch events and filter them</div>
           <div className="hint">
             Every message, routine run, turn result, outside edit and preview console error becomes a trigger in a thread. Rules in code settle most of them; what is left goes to Haiku (about $0.002
-            per batch), which decides from your policies below. In this version acting means a short note for you in the chat; nothing runs on its own. Off: Crew works exactly as before.
+            per batch), which decides from your policies below. Acting means a short note for you in the chat (with the Router on, an event for the chat's Router, which can tell you but cannot start
+            work for it); nothing runs on its own. Off: Crew works exactly as before.
           </div>
         </div>
         <Toggle on={enabled} onChange={(v) => void save({ enabled: v }, v ? 'Super-agent on' : 'Super-agent off')} />
@@ -178,8 +179,78 @@ export function SuperAgentSection() {
               {saving ? <span className="spinner" /> : <Save size={14} />} Save
             </button>
           </div>
+          <RouterSettingsBlock saved={saved.router} save={save} saving={saving} />
         </>
       )}
     </Section>
+  );
+}
+
+/** Two-layer mode: a Router per group chat that talks to the user and dispatches Workers. */
+function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
+  const models = useStore((s) => s.models);
+  const [form, setForm] = useState({ model: saved.model, workerModel: saved.workerModel, maxWorkers: saved.maxWorkers });
+  const dirty = form.model !== saved.model || form.workerModel !== saved.workerModel || form.maxWorkers !== saved.maxWorkers;
+  const options = (current: string, empty: string) => {
+    const list = models.map((m) => ({ id: m.id, label: m.id ? m.label : empty }));
+    // A model typed elsewhere (or a provider's) stays selectable.
+    if (!list.some((m) => m.id === current)) list.push({ id: current, label: current });
+    return list.map((m) => (
+      <option key={m.id} value={m.id}>
+        {m.label}
+      </option>
+    ));
+  };
+  return (
+    <div className="router-settings" data-testid="router-settings">
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">
+            <Network size={14} /> Router and Workers (two layers)
+          </div>
+          <div className="hint">
+            Each group chat gets a Router that reads every message and event, answers you in a few words, and dispatches Workers. Each Worker does one task in its own session and its own git worktree,
+            as one of the chat's members (with its permissions and editable paths), and reports back to the Router; its changes are merged into the chat's branch. The chat stays free while they work.
+            Direct chats are not affected. Off: the lead does everything, as before.
+          </div>
+        </div>
+        <Toggle on={saved.enabled} onChange={(v) => void save({ router: { ...saved, enabled: v } }, v ? 'Router and Workers on' : 'Router and Workers off')} />
+      </div>
+      {saved.enabled && (
+        <>
+          <div className="field">
+            <label>Router model</label>
+            <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
+              {options(form.model, 'Claude Code default')}
+            </select>
+            <div className="hint">It routes and writes short replies; a lighter model is usually enough.</div>
+          </div>
+          <div className="field">
+            <label>Worker model</label>
+            <select className="input" value={form.workerModel} onChange={(e) => setForm({ ...form, workerModel: e.target.value })}>
+              {options(form.workerModel, 'The default model (strongest)')}
+            </select>
+            <div className="hint">Workers do the actual work. A chat's own model switch, when set, takes precedence.</div>
+          </div>
+          <div className="field">
+            <label>Workers at once, per chat</label>
+            <input
+              className="input num-input"
+              type="number"
+              min={1}
+              max={8}
+              value={form.maxWorkers}
+              onChange={(e) => setForm({ ...form, maxWorkers: Math.max(1, Math.min(8, Number(e.target.value) || 1)) })}
+            />
+          </div>
+          <div className="row">
+            <span className="spacer" />
+            <button className="btn primary" disabled={saving || !dirty} onClick={() => void save({ router: { ...saved, ...form } }, 'Router settings saved')}>
+              {saving ? <span className="spinner" /> : <Save size={14} />} Save
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

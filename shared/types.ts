@@ -93,6 +93,8 @@ export interface Chat {
   effort?: Effort;
   /** botId -> how full its context window was after its last turn (the composer's ring). */
   context?: Record<ID, ContextUsage>;
+  /** Two-layer mode (ADR 002): the Router's Claude Code session, and the seq of the last chat message it was given. */
+  router?: { sessionId?: string; cursor?: number };
 }
 
 /** A bot's context window use, as Claude Code's /context reports it. */
@@ -242,6 +244,10 @@ export interface ChatMessage {
   changes?: { files: string[]; reverted?: boolean };
   /** A note for the human only; never included in bot prompts. */
   uiOnly?: boolean;
+  /** Posted by the chat's Router (two-layer mode), speaking as the lead. */
+  router?: boolean;
+  /** On a Router turn in its log: the ids of the events (messages, Workers, Triggers) the turn handled. */
+  batch?: ID[];
 }
 
 export interface Project {
@@ -295,6 +301,8 @@ export interface WorkspaceInfo {
   mergedAt?: number;
   /** The last adversarial review of this branch. */
   challenge?: ChallengeVerdict;
+  /** Set when this is a Worker's workspace: branched from the chat's branch (baseBranch), merged back into it after each turn. */
+  workerId?: ID;
 }
 
 export interface AutoChallenge {
@@ -514,6 +522,68 @@ export interface SuperAgentSettings {
   policies: string;
   /** Candidates the cheap model sees per hour at most; the rest are dropped. */
   maxCandidatesPerHour: number;
+  /** Two-layer mode: a resident Router per group chat that dispatches Workers (ADR 002). */
+  router: RouterSettings;
+}
+
+export interface RouterSettings {
+  /** Group chats get a Router that talks to the user and dispatches Workers; needs superAgent.enabled. */
+  enabled: boolean;
+  /** The Router's model: routing and short replies need no more than a lighter one. */
+  model: string;
+  /** The Workers' model; empty = the chat's model switch, else the default model in Settings. */
+  workerModel: string;
+  /** Workers active at once in one chat. */
+  maxWorkers: number;
+}
+
+export type WorkerStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'stopped';
+
+/** One task a Router dispatched: its own session with full tools, in its own workspace, reporting back to the Router. */
+export interface Worker {
+  id: ID;
+  /** The chat whose Router dispatched it. */
+  chatId: ID;
+  /** The member it runs as: role, permission level, editable paths, rules and budget. */
+  botId: ID;
+  title: string;
+  /** The brief the Router wrote. */
+  task: string;
+  status: WorkerStatus;
+  /** What it is waiting for, what it is preparing, or why it failed. */
+  detail?: string;
+  createdAt: number;
+  updatedAt: number;
+  model?: string;
+  sessionId?: string;
+  /** Where it works: its own workspace (a Project with workspace.workerId), or the chat's folder. */
+  projectId: ID | null;
+  /** Why it works in the chat's folder instead of a workspace of its own. */
+  shared?: string;
+  /** The commit its branch started from, and its last commit merged into the chat's branch. */
+  base?: string;
+  landedHead?: string;
+  /** Its last turn's report to the Router. */
+  report?: { at: number; status: 'done' | 'error' | 'stopped'; text: string };
+  /** What Crew did with its changes after its last turn. */
+  landing?: { at: number; files: string[]; commit?: string; conflicts?: string[]; error?: string };
+  turns: number;
+  costUsd: number;
+  /** Ids of the triggers and messages of the batch that dispatched it. */
+  related: ID[];
+  /** Follow-ups from the Router waiting for the current turn to end. */
+  pending?: string[];
+  dismissedAt?: number;
+}
+
+/** A chat's Router as it is right now (not stored). */
+export interface RouterInfo {
+  chatId: ID;
+  state: 'idle' | 'thinking' | 'error';
+  /** Events waiting for its next turn. */
+  queued: number;
+  detail?: string;
+  since: number;
 }
 
 /** Where a Trigger's full content is. */
@@ -850,6 +920,9 @@ export interface Bootstrap {
   templates: BotTemplate[];
   plugins: PluginDef[];
   statuses: Record<ID, BotStatus>;
+  /** Two-layer mode: Workers not yet dismissed, and the Routers that exist. */
+  workers: Worker[];
+  routers: RouterInfo[];
   devServers: DevServerState[];
   previews: PreviewInfo[];
   models: ModelOption[];
@@ -902,6 +975,9 @@ export type ServerEvent =
   | { t: 'settings'; settings: PublicSettings }
   | { t: 'auth'; auth: AuthStatus }
   | { t: 'trigger'; trigger: Trigger; thread: Thread }
+  | { t: 'worker'; worker: Worker }
+  | { t: 'worker_deleted'; id: ID }
+  | { t: 'router'; router: RouterInfo }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */

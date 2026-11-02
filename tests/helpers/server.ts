@@ -102,7 +102,8 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     else env[k] = v;
   }
 
-  const proc: ChildProcess = spawn(path.join(ROOT, 'node_modules/.bin/tsx'), ['server/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  // tsx as a loader rather than its CLI: the CLI opens a Unix socket for IPC, which sandboxes refuse.
+  const proc: ChildProcess = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let out = '';
   proc.stdout?.on('data', (d) => (out += d));
   proc.stderr?.on('data', (d) => (out += d));

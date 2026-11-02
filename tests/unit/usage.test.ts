@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../shared/types';
 
 const list: ChatMessage[] = [];
+/** Two-layer mode's logs: the chat's Router turns and a Worker's. */
+const logs: Record<string, ChatMessage[]> = { rt_c1: [], wk_1: [] };
 vi.mock('../../server/store', () => ({
   chats: { all: () => [{ id: 'c1' }] },
-  messages: { sorted: () => list },
+  workers: { all: () => [{ id: 'wk_1' }] },
+  routerLogId: (id: string) => `rt_${id}`,
+  messages: { sorted: (id: string) => (id === 'c1' ? list : logs[id] || []) },
 }));
 
 const { shareOfTurn, usageOf } = await import('../../server/usage');
@@ -51,5 +55,16 @@ describe('usage', () => {
     shareOfTurn(d);
     expect(d.meta!.costUsd).toBeCloseTo(0.02, 5);
     expect(d.meta!.tokens).toEqual(tokens(1_000));
+  });
+
+  it("counts a Router's and a Worker's turns toward the bot they ran as", () => {
+    const before = usageOf(now).b1.month;
+    const log = (logId: string, costUsd: number) =>
+      logs[logId].push({ id: `${logId}-${++seq}`, chatId: logId, seq, ts: now.getTime() - 500, role: 'bot', botId: 'b1', text: '', meta: { costUsd, sessionCostUsd: costUsd, sessionId: logId } });
+    log('rt_c1', 0.01);
+    log('wk_1', 0.2);
+    const after = usageOf(now).b1.month;
+    expect(after.turns).toBe(before.turns + 2);
+    expect(after.costUsd).toBeCloseTo(before.costUsd + 0.21, 5);
   });
 });

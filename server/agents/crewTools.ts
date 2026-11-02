@@ -16,6 +16,10 @@ export interface CrewContext {
   currentPage: () => string | undefined;
   /** A blind reviewer: chat_history shows it the user's messages only. */
   blind?: boolean;
+  /** Keys its browser_act page; default chat:bot. A Worker has its own. */
+  actKey?: string;
+  /** A Worker (two-layer mode) never talks to the user, so it gets no notify_user. */
+  worker?: boolean;
 }
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
@@ -146,7 +150,7 @@ export function crewServer(ctx: CrewContext) {
         async (args) => {
           try {
             const r = await act({
-              key: `${ctx.chatId}:${ctx.botId}`,
+              key: ctx.actKey ?? `${ctx.chatId}:${ctx.botId}`,
               projectId: projectId(),
               path: args.path,
               steps: args.steps,
@@ -177,7 +181,7 @@ export function crewServer(ctx: CrewContext) {
         },
         async (args) => {
           try {
-            const r = await debugTarget({ key: `${ctx.chatId}:${ctx.botId}`, projectId: projectId(), path: args.path, device: args.device, colorScheme: args.colorScheme });
+            const r = await debugTarget({ key: ctx.actKey ?? `${ctx.chatId}:${ctx.botId}`, projectId: projectId(), path: args.path, device: args.device, colorScheme: args.colorScheme });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             return text(
               `cdp_endpoint: ${r.endpoint}\ntarget_id: ${r.targetId}\nPage: ${where} (${r.title || 'untitled'})\nScripts and requests under /__crew/ (such as /__crew/inject.js) are Crew's preview helper, not the project's code: leave them out of your analysis.\nThe endpoint changes if the browser restarts (it closes after 10 idle minutes); call this again if attaching fails.`,
@@ -230,15 +234,19 @@ export function crewServer(ctx: CrewContext) {
           return text('Saved.');
         },
       ),
-      tool(
-        'notify_user',
-        'Send the user a desktop or phone notification. Use it when a scheduled or long-running task finds something the user should look at.',
-        { title: z.string(), body: z.string() },
-        async ({ title, body }) => {
-          notify(`${ctx.botName}: ${title}`, body, { chatId: ctx.chatId, level: 'info' });
-          return text('Notification sent.');
-        },
-      ),
+      ...(ctx.worker
+        ? []
+        : [
+            tool(
+              'notify_user',
+              'Send the user a desktop or phone notification. Use it when a scheduled or long-running task finds something the user should look at.',
+              { title: z.string(), body: z.string() },
+              async ({ title, body }) => {
+                notify(`${ctx.botName}: ${title}`, body, { chatId: ctx.chatId, level: 'info' });
+                return text('Notification sent.');
+              },
+            ),
+          ]),
     ],
   });
 }

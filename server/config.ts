@@ -40,6 +40,8 @@ export const DATA = {
   triggers: path.join(HOME_DIR, 'triggers', 'triggers.jsonl'),
   threads: path.join(HOME_DIR, 'triggers', 'threads.json'),
   triggerPayloads: path.join(HOME_DIR, 'triggers', 'payloads'),
+  /** Two-layer mode's Workers (server/layers): written on the first dispatch. */
+  workers: path.join(HOME_DIR, 'workers.json'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {
