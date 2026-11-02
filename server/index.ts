@@ -16,6 +16,7 @@ import { stopAllDevServers } from './devserver';
 import { recoverDrafts } from './drafts';
 import { initIfNeeded } from './entities';
 import { stopGateway, syncGateway } from './gateway';
+import { stopBroker, syncBroker } from './hardening/broker';
 import { agentPeer, fence, refuse } from './hardening/fence';
 import { recoverJobs, stopAllJobs } from './jobs';
 import { recoverLayers, resumeRouters } from './layers';
@@ -141,6 +142,7 @@ async function main() {
   await initIfNeeded();
   // Before anything can start a session: sessions get the gateway's address when they start.
   await syncGateway();
+  await syncBroker();
   const layers = recoverLayers();
   await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
@@ -208,6 +210,7 @@ async function shutdown() {
   closeAllTerminals();
   closeAllPreviews();
   void stopGateway();
+  void stopBroker();
   await Promise.race([Promise.all([stopAllDevServers(), stopAllJobs(), closeBrowser(), stopAllWatches()]), new Promise((r) => setTimeout(r, 4000))]);
   process.exit(0);
 }

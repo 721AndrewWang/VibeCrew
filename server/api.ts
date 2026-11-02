@@ -21,6 +21,7 @@ import { frictionReport } from './friction';
 import { addImportedProvider, gatewayOn, gatewayReport, syncGateway, testGateway } from './gateway';
 import { normalizeGateway } from './gateway/config';
 import { guardTool } from './guard';
+import { brokerConnection, syncBroker } from './hardening/broker';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { getJob, jobLog, listJobs, stopJob } from './jobs';
 import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, refreshWorkerSessions, routerInfos, stopWorker, unsubscribeWorker } from './layers';
@@ -249,7 +250,11 @@ export function apiRouter() {
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
     const routesChanged = !!patch.gateway && sessionView(patch.gateway) !== sessionView(cur.gateway);
     const recallBefore = recallOn();
+    const brokerBefore = !!brokerConnection(cur);
     settings.update(patch);
+    // The key broker (ADR 104) stands in for a settings-held key while credentials are stripped.
+    await syncBroker();
+    const brokerChanged = brokerBefore !== !!brokerConnection(settings.get());
     // Sessions get the gateway's address, credential and target when they start.
     if (routesChanged) {
       await syncGateway();
@@ -264,10 +269,10 @@ export function apiRouter() {
     const recallChanged = recallOn() !== recallBefore || (recallBefore && !!b.superAgent?.recall);
     // ...and its environment: stripping credentials (ADR 007) changes what every agent session starts with.
     const stripChanged = !!patch.safety && patch.safety.stripCredentials !== cur.safety.stripCredentials;
-    if (patch.denyRules || patch.sandbox || recallChanged || stripChanged) invalidateAllSessions();
-    if (stripChanged) invalidateWatchdog();
+    if (patch.denyRules || patch.sandbox || recallChanged || stripChanged || brokerChanged) invalidateAllSessions();
+    if (stripChanged || brokerChanged) invalidateWatchdog();
     // The Router's model and limits are in its session.
-    if (b.superAgent?.router || b.superAgent?.enabled === false || recallChanged || stripChanged) invalidateRouters();
+    if (b.superAgent?.router || b.superAgent?.enabled === false || recallChanged || stripChanged || brokerChanged) invalidateRouters();
     // A Worker's thread tools, prompt and event hook are fixed when its session starts.
     if (patch.superAgent && subscriptionsOn(patch.superAgent) !== subscriptionsOn(cur.superAgent)) refreshWorkerSessions(() => true);
     // The Watchdog's timer and limits follow the switches.
