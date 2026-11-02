@@ -9,6 +9,8 @@ import type { DraftKind, ExternalDraft } from '../shared/types';
 import { audit } from './audit';
 import { bus, notify } from './bus';
 import { cleanEnv } from './config';
+import { draftRefusal, hookFreeEnv, riskyConfigKeys } from './hardening/draftChecks';
+import { redact } from './hardening/redactor';
 import { logger } from './log';
 import { systemMessage } from './orchestrator/chatLog';
 import { HttpError } from './projects';
@@ -137,10 +139,11 @@ export function showCommand(argv: string[] | null): string {
   return argv.map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`)).join(' ');
 }
 
+/** Runs a program of a draft: the user's environment, git hooks off (ADR 104), the output without secrets. */
 function run(cmd: string, args: string[], cwd: string, timeout = 120_000): Promise<{ code: number; out: string }> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { cwd, env: cleanEnv(), timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const out = `${stdout || ''}${stderr ? `${stdout ? '\n' : ''}${stderr}` : ''}`.trim();
+    execFile(cmd, args, { cwd, env: hookFreeEnv(cleanEnv()), timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const out = redact(`${stdout || ''}${stderr ? `${stdout ? '\n' : ''}${stderr}` : ''}`.trim());
       const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? ((err as { code: number }).code as number) : 1) : 0;
       resolve({ code, out: err && !out ? (err as Error).message : out });
     });
@@ -163,11 +166,28 @@ export async function createDraft(f: DraftFields, origin: DraftOrigin): Promise<
   }
   const built = buildDraft(f, current);
   const d: ExternalDraft = { id: uid('dr_'), at: Date.now(), ...built, chatId: origin.chatId, botId: origin.botId, workerId: origin.workerId, cwd: origin.cwd, status: 'pending' };
+  // Where the push goes, as the card shows it; checked again before it runs (ADR 104).
+  if (d.kind === 'git-push' && d.command) d.remoteUrl = await pushUrl(d.command[2], d.cwd);
   save(d);
   audit({ event: 'drafted', actor: actorOf(d), kind: d.kind, target: d.target, command: showCommand(d.command) || undefined, cwd: d.cwd, detail: d.why, draftId: d.id });
   const who = bots.get(d.botId)?.name || 'A bot';
   notify(`${who} drafted an action for you`, d.target, { chatId: d.chatId || undefined, level: 'warn' });
   return d;
+}
+
+async function pushUrl(remote: string, cwd: string): Promise<string> {
+  const r = await run('git', ['remote', 'get-url', '--push', remote], cwd, 10_000);
+  return r.code === 0 ? r.out.trim() : '';
+}
+
+/** What is there now that the draft's run depends on: the push URL and the repository's own risky settings. */
+async function currentState(d: ExternalDraft): Promise<{ pushUrl?: string | null; riskyKeys: string[] }> {
+  if (!d.command || (d.command[0] !== 'git' && d.command[0] !== 'gh')) return { riskyKeys: [] };
+  const listing = (await Promise.all([['--local'], ['--worktree']].map((scope) => run('git', ['config', ...scope, '--list'], d.cwd, 10_000))))
+    .filter((r) => r.code === 0)
+    .map((r) => r.out)
+    .join('\n');
+  return { pushUrl: d.kind === 'git-push' ? await pushUrl(d.command[2], d.cwd) : undefined, riskyKeys: riskyConfigKeys(listing) };
 }
 
 function pendingDraft(id: string): ExternalDraft {
@@ -201,6 +221,15 @@ export async function approveDraft(id: string): Promise<ExternalDraft> {
     d.result = { exitCode: 1, output: `The folder ${d.cwd} no longer exists.` };
     save(d);
     audit({ event: 'failed', actor: { user: true, chatId: d.chatId || undefined }, kind: d.kind, target: d.target, cwd: d.cwd, detail: d.result.output, draftId: d.id });
+    return d;
+  }
+  const refused = draftRefusal(d, await currentState(d));
+  if (refused) {
+    d.status = 'failed';
+    d.result = { exitCode: 1, output: refused };
+    save(d);
+    audit({ event: 'failed', actor: { user: true, chatId: d.chatId || undefined }, kind: d.kind, target: d.target, cwd: d.cwd, detail: refused, draftId: d.id });
+    tellChat(d, `The drafted action was not run (${d.target}): ${refused}`);
     return d;
   }
   let head: string | undefined;

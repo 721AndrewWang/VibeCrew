@@ -1929,6 +1929,13 @@ body.resizing iframe {
   word-break: break-word;
 }
 
+.draft-push-url {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  word-break: break-word;
+}
+
 .draft-reverse {
   display: flex;
   align-items: center;

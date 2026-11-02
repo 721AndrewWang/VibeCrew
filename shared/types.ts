@@ -683,6 +683,8 @@ export interface ExternalDraft {
   reverse?: string;
   /** git-push: the remote branch's head before the push ('' = it did not exist). */
   before?: string;
+  /** git-push: where the remote pushed to when it was drafted; it must still when it runs (ADR 104). */
+  remoteUrl?: string;
 }
 
 export interface AuditEntry {
