@@ -43,8 +43,15 @@ function profileNote(b: Bot): string {
   return bits.length ? ` (${bits.join('; ')})` : '';
 }
 
-export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project | null; team: Bot[]; skills: Skill[] }): string {
-  const { bot, chat, project, team, skills } = opts;
+/** A Worker in two-layer mode: who dispatched it, and where its changes go. */
+export interface WorkerRole {
+  lead: string;
+  /** Why it works in the chat's folder instead of a workspace of its own. */
+  shared?: string;
+}
+
+export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project | null; team: Bot[]; skills: Skill[]; worker?: WorkerRole }): string {
+  const { bot, chat, project, team, skills, worker } = opts;
   const lines: string[] = [];
   lines.push(`# Who you are`);
   lines.push(
@@ -53,7 +60,16 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   lines.push('', '## Your role', bot.description.trim() || '(Not filled in. Work as a general web dev assistant.)');
 
   const members = team.filter((b) => chat.botIds.includes(b.id));
-  if (chat.kind === 'group') {
+  if (worker) {
+    lines.push(
+      '',
+      '## This task',
+      `You are working as a Worker: ${worker.lead}, the Router of the group chat "${chat.title}", dispatched you to do one task. You do not talk to the user, and nobody reads your messages but the Router.`,
+      '- Your last message is your report to the Router: lead with the outcome, then the files you changed, how you checked the result, and anything unresolved or needing a decision. Under 200 words, no pasted code.',
+      '- Do not @mention anyone. If another role should do something, say so in your report and the Router will decide.',
+      '- The Router may send you follow-ups in this same conversation.',
+    );
+  } else if (chat.kind === 'group') {
     lines.push('', `## The team (members of the group chat "${chat.title}")`);
     for (const m of members) lines.push(`- @${m.name}: ${m.title}${m.id === bot.id ? ' (you)' : ''}${profileNote(m)}`);
     lines.push(
@@ -87,7 +103,20 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   }
 
   lines.push('', '## Your environment');
-  if (project?.workspace) {
+  if (worker && project?.workspace?.workerId) {
+    const { branch, baseBranch } = project.workspace;
+    lines.push(
+      `- Project: ${project.name}. You have your own workspace: directory ${project.path} (your working directory), Git branch \`${branch}\`, branched from the chat's branch \`${baseBranch}\`.`,
+      `- It is a git worktree, isolated from the chat's branch and from other Workers, so edit freely here and only here. Do not switch branches, do not merge into \`${baseBranch}\` yourself, and do not push.`,
+      `- After each of your turns Crew commits your changes and merges them into \`${baseBranch}\` for you.`,
+    );
+    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
+  } else if (worker && project) {
+    lines.push(
+      `- Project: ${project.name}, directory ${project.path} (your working directory). You share this folder with the chat (${worker.shared || 'no workspace of your own'}), so change only what your task needs.`,
+    );
+    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
+  } else if (project?.workspace) {
     const { branch, baseBranch } = project.workspace;
     lines.push(
       `- Project: ${project.name}. This conversation has its own workspace: directory ${project.path} (your working directory), Git branch \`${branch}\`, branched from \`${baseBranch}\`.`,
@@ -114,20 +143,28 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
       : []),
     '  - dev_server: start, stop, or restart the dev server, and view its logs. The preview depends on it.',
     '  - remember: save things worth keeping long term (user preferences, project conventions, pitfalls you hit) to your long-term memory.',
-    '  - notify_user: send the user a notification (for example, when a scheduled task finds a problem).',
+    ...(worker ? [] : ['  - notify_user: send the user a notification (for example, when a scheduled task finds a problem).']),
     '  - chat_history: read messages in this conversation in full. In a group chat, older messages that have little to do with your turn are shown only as a one-line summary (with a #number). Look them up when you need the details, and not otherwise.',
     '- Do not use Bash to run long-running commands like `npm run dev`, `vite`, or `next dev` directly. Use dev_server, which hooks into the preview automatically.',
     `- Permissions: ${PERMISSION_NOTE[bot.permission]}`,
   );
 
-  lines.push(
-    '',
-    '## How to communicate',
-    '- Reply in the same language the user writes in. Be brief, like a colleague sending a message: lead with the conclusion or what you did, then add only the details that matter.',
-    '- When you finish something, give a short report: which files you changed, how it turned out, and anything the user should watch for. No long essays, and do not paste big blocks of code.',
-    "- When something needs the user's decision (deleting data, publishing or pushing, spending money, a choice of direction), stop and ask the user.",
-    "- Blocks like <selected_element>, <browser_console>, and <recorded_steps> in the user's message are the element they selected in the preview, the console logs they captured, and the actions they recorded. Use them to pinpoint exactly what they mean.",
-  );
+  if (worker)
+    lines.push(
+      '',
+      '## How to communicate',
+      '- Write your report in the language of your task. Be brief and concrete; the Router turns it into a few words for the user.',
+      "- When something needs the user's decision (deleting data, publishing or pushing, spending money, a choice of direction), stop and say so in your report.",
+    );
+  else
+    lines.push(
+      '',
+      '## How to communicate',
+      '- Reply in the same language the user writes in. Be brief, like a colleague sending a message: lead with the conclusion or what you did, then add only the details that matter.',
+      '- When you finish something, give a short report: which files you changed, how it turned out, and anything the user should watch for. No long essays, and do not paste big blocks of code.',
+      "- When something needs the user's decision (deleting data, publishing or pushing, spending money, a choice of direction), stop and ask the user.",
+      "- Blocks like <selected_element>, <browser_console>, and <recorded_steps> in the user's message are the element they selected in the preview, the console logs they captured, and the actions they recorded. Use them to pinpoint exactly what they mean.",
+    );
 
   if (skills.length) {
     lines.push('', '## Skills the user can use (slash commands)');

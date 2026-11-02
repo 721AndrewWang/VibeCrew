@@ -13,6 +13,7 @@ import { RoutinesView } from './components/views/RoutinesView';
 import { SettingsView } from './components/views/SettingsView';
 import { SkillsView } from './components/views/SkillsView';
 import { TriggersView } from './components/views/TriggersView';
+import { AgentLogDialog } from './components/WorkersBar';
 import { closeModal, useStore } from './store';
 import { cx } from './utils';
 
@@ -34,6 +35,8 @@ function Modals() {
       return <SaveRecordingDialog projectId={modal.projectId} onClose={closeModal} />;
     case 'trace':
       return <TraceDialog chatId={modal.chatId} msgId={modal.msgId} onClose={closeModal} />;
+    case 'agentLog':
+      return <AgentLogDialog chatId={modal.chatId} workerId={modal.workerId} onClose={closeModal} />;
     default:
       return null;
   }

@@ -3,7 +3,7 @@ import { type ClipboardEvent, type DragEvent, type KeyboardEvent, useEffect, use
 import type { Bot, Chat, Skill } from '../../../shared/types';
 import { api, fileToBase64 } from '../api';
 import { desktop } from '../desktop';
-import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useChatProject, useStore } from '../store';
+import { addAttachment, attachmentId, previewOf, removeAttachment, sendMessage, setComputer, setDraft, toast, updatePreview, useChatProject, useLayersBusy, useStore } from '../store';
 import { cx } from '../utils';
 import { ContextRing, EffortSwitch, ModelSwitch, ModeSwitch } from './ChatSwitches';
 import { AttachmentChips } from './Message';
@@ -81,7 +81,9 @@ export function Composer({ chat }: { chat: Chat }) {
   const speechBase = useRef('');
 
   const members = chat.botIds.map((id) => bots[id]).filter(Boolean);
-  const busy = members.some((b) => statuses[b.id]?.chatId === chat.id && ['thinking', 'tool', 'waiting', 'queued'].includes(statuses[b.id]?.state || ''));
+  // In two-layer mode Stop also stops the Router's turn and every Worker.
+  const layersBusy = useLayersBusy(chat.id);
+  const busy = layersBusy || members.some((b) => statuses[b.id]?.chatId === chat.id && ['thinking', 'tool', 'waiting', 'queued'].includes(statuses[b.id]?.state || ''));
 
   const speech = useSpeech((text, final) => {
     const next = speechBase.current + text;

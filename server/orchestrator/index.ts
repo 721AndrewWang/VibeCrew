@@ -14,6 +14,7 @@ import { botModel } from '../claudeAuth';
 import { FAKE_AGENT } from '../config';
 import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
+import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
 import { quietly } from '../quietWrites';
@@ -249,14 +250,17 @@ export function applyChatSettings(chatId: string) {
 /** Bot settings changed: its processes restart with the new configuration on the next turn. */
 export function invalidateBot(botId: string) {
   for (const key of [...sessions.keys()]) if (key.endsWith(`:${botId}`)) closeSession(key);
+  refreshWorkerSessions((w) => w.botId === botId);
 }
 
 export function invalidateChat(chatId: string) {
   for (const key of [...sessions.keys()]) if (key.startsWith(`${chatId}:`)) closeSession(key);
+  refreshWorkerSessions((w) => w.chatId === chatId);
 }
 
 export function invalidateAllSessions() {
   for (const key of [...sessions.keys()]) closeSession(key);
+  refreshWorkerSessions(() => true);
 }
 
 /** A project's settings changed: bots working there (or in its workspaces) restart with them. */
@@ -306,7 +310,7 @@ async function pump(chatId: string) {
 }
 
 export function isChatBusy(chatId: string) {
-  return running.has(chatId) || !!queues.get(chatId)?.length || locked.has(chatId) || preparing.has(chatId);
+  return running.has(chatId) || !!queues.get(chatId)?.length || locked.has(chatId) || preparing.has(chatId) || layersBusy(chatId);
 }
 
 /** Holds a chat's bot turns until `work` settles, e.g. a new workspace's setup command; messages sent meanwhile wait. */
@@ -329,6 +333,8 @@ export async function withChatLocked<T>(chatId: string, what: string, fn: () => 
   if (preparing.has(chatId)) throw new HttpError(409, `The workspace is still being prepared; wait until it's ready before ${what}`);
   if (running.has(chatId) || queues.get(chatId)?.length) throw new HttpError(409, `A bot is working; wait for this turn to end before ${what}`);
   if (locked.has(chatId)) throw new HttpError(409, "The previous operation hasn't finished yet, please wait");
+  const shared = sharedWorkerActive(chatId);
+  if (shared) throw new HttpError(409, `A Worker ("${shared.title}") is working in this chat's folder; wait for it to finish before ${what}`);
   locked.add(chatId);
   try {
     // Git operations on the workspace (and a merge into its parent's checkout) are Crew's writes.
@@ -340,10 +346,29 @@ export async function withChatLocked<T>(chatId: string, what: string, fn: () => 
   }
 }
 
-/** A bot turn is running in the project (or workspace) right now. */
+/**
+ * Like withChatLocked, but waits its turn instead of refusing: for Crew's own git work in a chat
+ * that is in two-layer mode (a Worker's workspace being made, a Worker's branch being merged).
+ */
+export async function whenChatFree<T>(chatId: string, fn: () => Promise<T>): Promise<T> {
+  while (locked.has(chatId) || preparing.has(chatId) || running.has(chatId) || queues.get(chatId)?.length) await new Promise((r) => setTimeout(r, 300));
+  locked.add(chatId);
+  const chat = chats.get(chatId);
+  try {
+    return await quietly([chatProjectId(chat), chat?.projectId], fn);
+  } finally {
+    locked.delete(chatId);
+    // Crew's own changes (a Worker's branch merged in): file events still arriving are not outside edits.
+    const pid = chatProjectId(chats.get(chatId) || chat);
+    if (pid) lastTurnEnd.set(pid, Date.now());
+    void pump(chatId);
+  }
+}
+
+/** A bot turn (or a two-layer Worker) is running in the project (or workspace) right now. */
 export function projectRunning(projectId: string): boolean {
   for (const r of running.values()) if (chatProjectId(chats.get(r.job.chatId)) === projectId) return true;
-  return false;
+  return workerWorkingIn(projectId);
 }
 
 /** A bot is working in the project, or just finished (its file events are still arriving). */
@@ -674,6 +699,10 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
 
   let targets: Bot[] = [];
   const allBots = bots.all();
+  // Two-layer mode: the chat's Router decides who does what; no bot turn is queued here.
+  if (routerMode(chat)) return routeToRouter(chat, msg);
+  // Handled by the lead: a chat that had a Router does not hand it over again after a restart.
+  if (chat.router) chat.router.cursor = msg.seq;
   if (chat.kind === 'dm') {
     const b = bots.get(chat.botIds[0]);
     if (b) targets = [b];
@@ -716,6 +745,44 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
   return msg;
 }
 
+/** A user message in a chat in two-layer mode: into the Router's inbox, with whom it addressed. */
+function routeToRouter(chat: Chat, msg: ChatMessage): ChatMessage {
+  const routing = msg.prompt ? `${msg.text}\n${msg.prompt}` : msg.text;
+  // Mentioning someone outside the group invites them in, as in a normal group chat.
+  const outsiders = parseMentions(
+    routing,
+    bots.all().filter((b) => !chat.botIds.includes(b.id)),
+  );
+  if (outsiders.length) {
+    chat.botIds.push(...outsiders.map((b) => b.id));
+    systemMessage(chat, `${outsiders.map((b) => b.name).join(', ')} joined the group`);
+  }
+  const members = bots.all().filter((b) => chat.botIds.includes(b.id));
+  const to = ALL_RE.test(msg.text) ? [] : parseMentions(routing, members);
+  emitChat(chat);
+  const t = publishTrigger({
+    source: 'user',
+    summary: preview(msg.text) || '[attachment]',
+    thread: chatThread(chat),
+    ref: { kind: 'message', chatId: chat.id, messageId: msg.id },
+    chatId: chat.id,
+    projectId: chatProjectId(chat),
+    explicit: true,
+    action: 'Sent to the Router',
+  });
+  routerEvent(chat.id, {
+    kind: 'user',
+    id: msg.id,
+    at: msg.ts,
+    seq: msg.seq,
+    text: msg.prompt || msg.text,
+    to: to.map((b) => b.name).join(', ') || undefined,
+    attachments: msg.attachments?.length,
+    triggerId: t?.id,
+  });
+  return msg;
+}
+
 /** Runs a routine: posts its prompt into the chat and queues the bot. */
 export function runInChat(chatId: string, botId: string, prompt: string, trigger: MessageTrigger, routineName?: string): ChatMessage {
   const chat = chats.get(chatId);
@@ -738,11 +805,17 @@ export function runInChat(chatId: string, botId: string, prompt: string, trigger
   bus.emit({ t: 'msg', msg });
   setLastMessage(chat, msg);
   emitChat(chat);
-  enqueue({ chatId, botId, trigger, hopsLeft: chat.maxHops, routineName });
+  // Two-layer mode: the Router decides, told which member the routine names.
+  if (routerMode(chat)) routerEvent(chatId, { kind: 'routine', id: msg.id, at: msg.ts, seq: msg.seq, text: msg.prompt || msg.text, routine: routineName || 'routine', bot: bots.get(botId)?.name });
+  else {
+    if (chat.router) chat.router.cursor = msg.seq;
+    enqueue({ chatId, botId, trigger, hopsLeft: chat.maxHops, routineName });
+  }
   return msg;
 }
 
 export async function stopChat(chatId: string) {
+  await stopLayers(chatId);
   const q = queues.get(chatId) || [];
   queues.delete(chatId);
   for (const j of q) settleStatus(j.botId);
@@ -773,6 +846,7 @@ export function resetChat(chatId: string) {
   }
   chat.sessions = {};
   chat.context = {};
+  resetLayers(chatId);
   closeThread(`chat:${chatId}`);
   const msg = systemMessage(chat, '—— New topic ——', { uiOnly: true });
   for (const b of chat.botIds) chat.cursors[b] = msg.seq;
@@ -782,6 +856,7 @@ export function resetChat(chatId: string) {
 
 export function forgetChat(chatId: string) {
   queues.delete(chatId);
+  forgetLayers(chatId);
   closeThread(`chat:${chatId}`);
   for (const key of [...sessions.keys()]) {
     if (key.startsWith(`${chatId}:`)) {
@@ -794,4 +869,5 @@ export function forgetChat(chatId: string) {
 export function closeAllSessions() {
   for (const s of sessions.values()) s.close();
   sessions.clear();
+  closeLayerSessions();
 }

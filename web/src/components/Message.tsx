@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Radio, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Network, Radio, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
 import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
@@ -414,6 +414,11 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
               {bot?.name || 'Deleted bot'}
             </span>
             {by && <span className="msg-meta">replying to @{by}</span>}
+            {msg.router && (
+              <span className="msg-meta" title="Posted by the chat's Router, which dispatches Workers and reports what they did">
+                <Network size={11} /> Router
+              </span>
+            )}
             {msg.trigger?.type === 'routine' && (
               <span className="msg-meta">
                 <Clock size={11} /> Routine

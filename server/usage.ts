@@ -7,7 +7,7 @@
 // the running total as their cost; they are told apart by the missing `sessionCostUsd`.
 
 import type { BotUsage, ChatMessage, TurnTokens, UsageSummary } from '../shared/types';
-import { chats, messages } from './store';
+import { chats, messages, routerLogId, workers } from './store';
 
 const noTokens = (): TurnTokens => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
 const empty = (): BotUsage => ({ costUsd: 0, turns: 0, durationMs: 0, tokens: noTokens(), tokenTurns: 0 });
@@ -57,10 +57,12 @@ export function usageOf(now = new Date()): Record<string, UsageSummary> {
   const day = startOfToday(now);
   const month = startOfMonth(now);
   const out: Record<string, UsageSummary> = {};
-  for (const chat of chats.all()) {
+  // Chats, and the logs of two-layer mode: each chat's Router turns, and each Worker's.
+  const logs = [...chats.all().flatMap((c) => [c.id, routerLogId(c.id)]), ...workers.all().map((w) => w.id)];
+  for (const logId of logs) {
     // Running totals seen so far per session, for turns saved with the total as their cost.
     const legacyTotal = new Map<string, number>();
-    for (const m of messages.sorted(chat.id)) {
+    for (const m of messages.sorted(logId)) {
       if (m.role !== 'bot' || !m.botId || !m.meta) continue;
       const sid = m.meta.sessionId ?? m.meta.trace?.sessionId;
       let cost = m.meta.costUsd || 0;
@@ -82,7 +84,7 @@ export function usageOf(now = new Date()): Record<string, UsageSummary> {
         bucket.tokens.cacheRead += t.cacheRead;
         bucket.tokens.cacheWrite += t.cacheWrite;
         bucket.tokens.output += t.output;
-        if (!bucket.peak || t.cacheRead > bucket.peak.cacheRead) bucket.peak = { chatId: chat.id, messageId: m.id, cacheRead: t.cacheRead };
+        if (!bucket.peak || t.cacheRead > bucket.peak.cacheRead) bucket.peak = { chatId: logId, messageId: m.id, cacheRead: t.cacheRead };
       }
     }
   }

@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import type { FilteredSource, SourceRule, SuperAgentSettings, Thread, Trigger, TriggerFilter, TriggerSource } from '../../shared/types';
 import { glob } from '../agents/permissions';
+import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];
 
@@ -26,6 +27,7 @@ export const DEFAULT_SUPER_AGENT: SuperAgentSettings = {
   projects: [],
   policies: DEFAULT_POLICIES,
   maxCandidatesPerHour: 30,
+  router: DEFAULT_ROUTER,
 };
 
 const MODES = new Set(['explicit', 'candidate', 'ignore']);
@@ -59,6 +61,7 @@ export function normalizeSuperAgent(raw: unknown): SuperAgentSettings {
     // An emptied policy box stays empty: the user may want the model to see no policy at all.
     policies: typeof r.policies === 'string' ? r.policies.slice(0, 10_000) : DEFAULT_POLICIES,
     maxCandidatesPerHour: Number.isFinite(max) ? Math.max(0, Math.min(1000, Math.round(max))) : DEFAULT_SUPER_AGENT.maxCandidatesPerHour,
+    router: normalizeRouter(r.router),
   };
 }
 
@@ -114,8 +117,8 @@ export interface FastInput {
   /** What allow-lists match against: changed file paths, or console error lines. */
   subjects: string[];
   fingerprint: string;
-  /** Source facts the noise rules read: how a turn ended, how many console entries were errors. */
-  facts: { status?: string; errors?: number };
+  /** Source facts the noise rules read: how a turn ended, how many console entries were errors, whether code already delivered it. */
+  facts: { status?: string; errors?: number; routed?: boolean };
 }
 
 export interface FastContext {
@@ -146,6 +149,8 @@ export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   const drop = (rule: string, reason: string): TriggerFilter => ({ verdict: 'drop', stage: 'fast', rule, reason });
   // The user's own messages and routines, and a bot handing work to a teammate: the chat acts on them as always.
   if (t.explicit || t.source === 'user' || t.source === 'routine') return act('explicit-request', 'An explicit request; handled by the chat without a model');
+  // A Worker's turn result already went straight to the Router that dispatched it.
+  if (t.facts.routed) return act('routed', 'A Worker reported back; delivered to its Router directly');
 
   const source = t.source;
   const rule = ctx.settings.sources[source];

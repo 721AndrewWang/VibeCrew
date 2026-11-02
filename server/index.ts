@@ -13,6 +13,7 @@ import { checkAuth } from './claudeAuth';
 import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
 import { stopAllDevServers } from './devserver';
 import { initIfNeeded } from './entities';
+import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
 import { closeAllSessions } from './orchestrator';
 import { startOutsideEditNotes } from './outsideEdits';
@@ -123,8 +124,10 @@ wss.on('connection', (ws: WebSocket) => {
 
 async function main() {
   await initIfNeeded();
-  await reconcileWorkspaces().catch((e) => log.warn('reconcile workspaces:', e));
+  const layers = recoverLayers();
+  await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
+  resumeRouters(layers.interrupted);
   startRoutines();
   startOutsideEditNotes();
   void checkAuth(true).then((a) => {

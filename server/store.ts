@@ -18,6 +18,7 @@ import type {
   SuperAgentSettings,
   Thread,
   Trigger,
+  Worker,
 } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { SCHEMA_VERSION } from './migrations';
@@ -419,3 +420,7 @@ export const triggerLog = new JsonlLog<Trigger>(DATA.triggers, TRIGGER_LIMITS, (
   if (t.ref.kind === 'payload') fs.rmSync(triggerPayloadFile(t.id), { force: true });
 });
 export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });
+/** Two-layer mode's Workers; their turns are kept by `messages` under the Worker's id. */
+export const workers = new Collection<Worker>(DATA.workers);
+/** Where `messages` keeps a chat's Router turns. */
+export const routerLogId = (chatId: string) => `rt_${chatId}`;

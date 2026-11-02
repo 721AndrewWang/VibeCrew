@@ -17,6 +17,7 @@ import type {
   ProviderPreset,
   PublicSettings,
   RecordedStep,
+  RouterInfo,
   Routine,
   SandboxStatus,
   ServerEvent,
@@ -25,6 +26,7 @@ import type {
   Trigger,
   TurnSummary,
   UsageSummary,
+  Worker,
 } from '../../shared/types';
 import { api } from './api';
 import { desktop } from './desktop';
@@ -87,6 +89,9 @@ export interface AppState {
   skills: Skill[];
   routines: Record<string, Routine>;
   statuses: Record<string, BotStatus>;
+  /** Two-layer mode: Workers not yet dismissed, and each chat's Router. */
+  workers: Record<string, Worker>;
+  routers: Record<string, RouterInfo>;
   devServers: Record<string, DevServerState>;
   previews: Record<string, PreviewInfo>;
   devLogs: Record<string, string>;
@@ -117,7 +122,9 @@ export interface AppState {
     | { kind: 'newProject' }
     | { kind: 'chatSettings'; chatId: string }
     | { kind: 'saveRecording'; projectId: string }
-    | { kind: 'trace'; chatId: string; msgId: string };
+    | { kind: 'trace'; chatId: string; msgId: string }
+    /** A Worker's transcript, or (no workerId) the chat's Router log. */
+    | { kind: 'agentLog'; chatId: string; workerId?: string };
 }
 
 const LS_UI = 'vc-ui';
@@ -170,6 +177,7 @@ export const useStore = create<AppState>(() => ({
       projects: [],
       policies: '',
       maxCandidatesPerHour: 30,
+      router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3 },
     },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
@@ -185,6 +193,8 @@ export const useStore = create<AppState>(() => ({
   skills: [],
   routines: {},
   statuses: {},
+  workers: {},
+  routers: {},
   devServers: {},
   previews: {},
   devLogs: {},
@@ -251,6 +261,8 @@ export async function boot() {
       skills: b.skills,
       routines: byId(b.routines),
       statuses: b.statuses,
+      workers: byId(b.workers || []),
+      routers: Object.fromEntries((b.routers || []).map((r) => [r.chatId, r])),
       devServers: Object.fromEntries(b.devServers.map((d) => [d.projectId, d])),
       previews: Object.fromEntries(b.previews.map((p) => [p.projectId, p])),
       activeChatId: active,
@@ -428,6 +440,22 @@ export function applyEvent(ev: ServerEvent) {
       set({ triggers: { list, threads: { ...cur.threads, [ev.thread.id]: ev.thread }, loaded: true } });
       break;
     }
+    case 'worker': {
+      const workers = { ...s.workers };
+      if (ev.worker.dismissedAt) delete workers[ev.worker.id];
+      else workers[ev.worker.id] = ev.worker;
+      set({ workers });
+      break;
+    }
+    case 'worker_deleted': {
+      const workers = { ...s.workers };
+      delete workers[ev.id];
+      set({ workers });
+      break;
+    }
+    case 'router':
+      set({ routers: { ...s.routers, [ev.router.chatId]: ev.router } });
+      break;
     case 'auth':
       set({ auth: ev.auth });
       break;
@@ -512,6 +540,31 @@ export async function loadTriggers() {
     toast("Couldn't load triggers", (e as Error).message, 'error');
     return null;
   }
+}
+
+/** Loads a Router's or a Worker's log into `msgs` under its id; live events keep it current after that. */
+export async function loadLog(logId: string, request: Promise<{ messages: ChatMessage[] }>) {
+  try {
+    const r = await request;
+    set({ msgs: { ...get().msgs, [logId]: { list: r.messages, loaded: true, hasMore: false, loading: false } } });
+  } catch (e) {
+    toast("Couldn't load the transcript", (e as Error).message, 'error');
+  }
+}
+
+export const WORKER_ACTIVE: ReadonlySet<string> = new Set(['starting', 'running', 'waiting']);
+
+/** The chat runs in two layers: its Router talks to the user and dispatches Workers. */
+export function routerModeOf(chat: Chat | null | undefined, settings: PublicSettings = get().settings): boolean {
+  return !!chat && chat.kind === 'group' && settings.superAgent.enabled && settings.superAgent.router.enabled;
+}
+
+/** The chat's Router is thinking or has events waiting, or one of its Workers is active. */
+export function useLayersBusy(chatId: string): boolean {
+  return useStore((s) => {
+    const r = s.routers[chatId];
+    return (!!r && (r.state === 'thinking' || r.queued > 0)) || Object.values(s.workers).some((w) => w.chatId === chatId && WORKER_ACTIVE.has(w.status));
+  });
 }
 
 export async function loadTurns(chatId: string) {
