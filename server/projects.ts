@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { Chat, Project } from '../shared/types';
+import type { Chat, Project, ProjectSpeculative } from '../shared/types';
 import { bus } from './bus';
 import { PROJECT_TEMPLATES, slugify } from './data/projectTemplates';
 import { cleanDomains } from './sandbox';
+import { normalizeProjectSpeculative } from './speculative/config';
 import { projects, settings, uid } from './store';
 
 const run = promisify(execFile);
@@ -217,7 +218,7 @@ type ProjectPatch = Partial<
     Project,
     'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains' | 'requireChallenge' | 'autoChallenge' | 'skillFamilies' | 'passEnv'
   >
->;
+> & { speculative?: Partial<Omit<ProjectSpeculative, 'signals'>> & { signals?: Partial<ProjectSpeculative['signals']> } };
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) || undefined : undefined);
 
@@ -242,6 +243,12 @@ export function updateProject(id: string, patch: ProjectPatch): Project {
   if (patch.allowedDomains !== undefined) {
     const domains = cleanDomains(patch.allowedDomains);
     p.allowedDomains = domains.length ? domains : undefined;
+  }
+  // Speculative runs (ADR 008): a partial patch keeps the rest; all off and default reads as never set.
+  if (patch.speculative !== undefined) {
+    const cur = normalizeProjectSpeculative(p.speculative);
+    const next = normalizeProjectSpeculative({ ...cur, ...patch.speculative, signals: { ...cur.signals, ...patch.speculative.signals } });
+    p.speculative = next.enabled || next.checkCommand ? next : undefined;
   }
   if (patch.skillFamilies !== undefined) p.skillFamilies = patch.skillFamilies.length ? [...new Set(patch.skillFamilies)] : undefined;
   if (patch.passEnv !== undefined) {

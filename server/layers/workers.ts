@@ -8,6 +8,7 @@ import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { familyInfo } from '../../shared/families';
 import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
+import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
 import { buildSystemAppend, buildTurnPrompt, contextDelta, renderUserMessage } from '../agents/prompts';
@@ -32,7 +33,7 @@ import { bots, chats, messages, projects, settings, uid, workers } from '../stor
 import { chatThread, deliveriesRead, deliveriesUnread, ensureThread, handBackTrigger, publishTrigger, type ThreadSpec, threadsOf, workspaceThread } from '../triggers';
 import { monthSpend } from '../usage';
 import { ensureWatch } from '../watcher';
-import { checkGit, createWorkerWorkspace, retireWorkerWorkspace, runSetup, type Workspace, workspaceOf } from '../workspaces';
+import { checkGit, createSpeculativeWorkspace, createWorkerWorkspace, retireWorkerWorkspace, runSetup, type Workspace, workspaceOf } from '../workspaces';
 import { doCreate } from '../workspaces/create';
 import { deliveredNote, type WorkerLine, workerPrompt } from './prompts';
 import { leadOf, routerEvent } from './router';
@@ -77,10 +78,11 @@ const liveOf = (id: string): Live => {
 
 const isActive = (w: Worker) => ACTIVE.has(w.status) && !w.dismissedAt;
 
-export function chatWorkers(chatId: string, opts: { all?: boolean } = {}): Worker[] {
+/** A chat's Workers; speculative runs (ADR 008) are quiet, so they count only when asked for. */
+export function chatWorkers(chatId: string, opts: { all?: boolean; speculative?: boolean } = {}): Worker[] {
   return workers
     .all()
-    .filter((w) => w.chatId === chatId && (opts.all || !w.dismissedAt))
+    .filter((w) => w.chatId === chatId && (opts.all || !w.dismissedAt) && (opts.speculative || !w.speculation))
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
@@ -96,9 +98,39 @@ export function sharedWorkerActive(chatId: string): Worker | undefined {
 export function listWorkers(chatId?: string): Worker[] {
   return workers
     .all()
-    .filter((w) => !w.dismissedAt && (!chatId || w.chatId === chatId))
+    .filter((w) => !w.dismissedAt && !w.speculation && (!chatId || w.chatId === chatId))
     .sort((a, b) => a.createdAt - b.createdAt);
 }
+
+// ---------------------------------------------------------------- speculative runs (ADR 008)
+
+/**
+ * What the speculative module provides for its runs: a run is a Worker with `speculation` set, and
+ * this is where it differs. Registered by server/speculative (the Worker layer does not import it).
+ */
+export interface SpeculativeHost {
+  /** Where the problem was observed: the chat's workspace or the project folder. */
+  source(w: Worker): Project | undefined;
+  checkCommand(w: Worker): string;
+  model(w: Worker, chat: Chat): string;
+  /** The run's prompt, built in its throwaway workspace. */
+  prompt(w: Worker, project: Project, context: string[]): string;
+  /** speculative_result: what the model is told, or it throws. */
+  claim(w: Worker, args: SpeculativeClaimArgs): string;
+  /** Its throwaway workspace exists (base: the observed state). */
+  launched(w: Worker, ws: Project, base: string): void;
+  /** The turn (or the start) ended; its work is committed. Verification and surfacing are the host's. */
+  ended(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string): void;
+}
+
+let host: SpeculativeHost | null = null;
+
+export function setSpeculativeHost(h: SpeculativeHost) {
+  host = h;
+}
+
+/** The text a speculative run is in, for its gate's refusals. */
+const UNATTENDED = 'a silent speculative run';
 
 /** The Router's <workers> lines. */
 export function workerLines(chatId: string): WorkerLine[] {
@@ -142,6 +174,8 @@ export interface DispatchInput {
   threads?: string[];
   /** The lifecycle family whose skills are its playbook (checked against the project by the caller, ADR 007). */
   family?: SkillFamily;
+  /** A speculative run (ADR 008): its record's id. It never subscribes, reports or lands. */
+  speculation?: string;
 }
 
 /** The Worker's family when that family only reads (ADR 007): it may not edit files, and changes ask. */
@@ -167,9 +201,10 @@ export function startWorker(chat: Chat, bot: Bot, input: DispatchInput): Worker 
     costUsd: 0,
     related: input.related.slice(0, 20),
     family: input.family,
+    speculation: input.speculation,
   };
   // A blind reviewer stays blind: nothing from the environment or other Workers reaches it.
-  if (input.subscribe && !bot.blindReview)
+  if (input.subscribe && !bot.blindReview && !input.speculation)
     w.threads = threadsOf(input.threads)
       .filter((t) => t.kind !== 'chat')
       .map((t) => t.id);
@@ -200,6 +235,7 @@ async function launch(w: Worker) {
   const chat = chats.get(w.chatId);
   if (!chat) throw new Error('The chat no longer exists');
   const l = liveOf(w.id);
+  if (w.speculation) return launchSpeculative(w, l);
   const reason = await noWorkspaceReason(chat);
   if (reason) {
     // Checked and set with no await in between: two Workers dispatched together cannot both share the folder.
@@ -223,14 +259,35 @@ async function launch(w: Worker) {
     projects.flush();
     chats.flush();
     save(w, { projectId: ws.id, base, landedHead: base, detail: undefined });
-    const setup = configOf(ws).setupCommand;
-    if (setup && !l.stop) {
-      save(w, { detail: `Preparing its workspace: ${setup}` });
-      const r = await runSetup(ws.path, setup);
-      if (!r.ok && l.first) l.first.setupNote = `The workspace setup command \`${setup}\` failed (${r.how}), so some dependencies may be missing:\n${r.out.slice(-1500)}`;
-      save(w, { detail: undefined });
-    }
+    await prepare(w, ws, l);
   }
+  if (l.stop) return finish(w, 'stopped', 'Stopped before it began');
+  await runLoop(w);
+}
+
+/** Runs the project's setup command in a Worker's new workspace; a failure is noted for its first prompt. */
+async function prepare(w: Worker, ws: Workspace, l: Live) {
+  const setup = configOf(ws).setupCommand;
+  if (!setup || l.stop) return;
+  save(w, { detail: `Preparing its workspace: ${setup}` });
+  const r = await runSetup(ws.path, setup);
+  if (!r.ok && l.first) l.first.setupNote = `The workspace setup command \`${setup}\` failed (${r.how}), so some dependencies may be missing:\n${r.out.slice(-1500)}`;
+  save(w, { detail: undefined });
+}
+
+/**
+ * A speculative run's start (ADR 008): a throwaway worktree of the state the problem was seen in.
+ * No chat lock, no move into a workspace, no subscriptions: nothing the user would notice.
+ */
+async function launchSpeculative(w: Worker, l: Live) {
+  const source = host?.source(w);
+  if (!host || !source) throw new Error('The folder the problem was seen in is gone');
+  save(w, { detail: 'Creating its throwaway workspace' });
+  const { ws, base } = await createSpeculativeWorkspace(source, w);
+  projects.flush();
+  save(w, { projectId: ws.id, base, landedHead: base, detail: undefined });
+  host.launched(w, ws, base);
+  await prepare(w, ws, l);
   if (l.stop) return finish(w, 'stopped', 'Stopped before it began');
   await runLoop(w);
 }
@@ -367,6 +424,12 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
   // Read when the session starts: switching subscriptions or recall on or off refreshes Worker sessions.
   const subscribed = subscriptionsOn(settings.get().superAgent) && !!w.threads;
   const recall = recallBudget();
+  // A speculative run (ADR 008): its own gateway role and model, its check command pre-allowed, its claim tool.
+  const spec = w.speculation && host ? host : null;
+  const check = spec ? spec.checkCommand(w) : '';
+  const model = spec ? spec.model(w, chat) : workerModel(chat);
+  const role = spec ? ('speculative' as const) : ('worker' as const);
+  const claim = spec ? (args: SpeculativeClaimArgs) => spec.claim(w, args) : undefined;
   const crewCtx: CrewContext = {
     botId: bot.id,
     botName: bot.name,
@@ -379,11 +442,12 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
     workerId: w.id,
     threads: subscribed ? threadHandlers(w.id) : undefined,
     recall: !!recall,
+    speculative: claim ? { result: claim } : undefined,
   };
   const actor = { botId: bot.id, botName: bot.name, chatId: chat.id, workerId: w.id };
   const cfg: SessionConfig = {
     cwd,
-    model: botModel(workerModel(chat), { role: 'worker', botId: bot.id }),
+    model: botModel(model, { role, botId: bot.id }),
     effort: eff.effort || undefined,
     systemAppend: buildSystemAppend({
       bot: eff,
@@ -391,12 +455,12 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
       project,
       team: bots.all(),
       skills: skills.forPrompt(project),
-      worker: { lead: lead?.name || 'the lead', shared: w.shared, subscriptions: subscribed },
+      worker: { lead: lead?.name || 'the lead', shared: w.shared, subscriptions: subscribed, speculative: spec ? { checkCommand: check } : undefined },
       recall: !!recall,
     }),
     resume: w.sessionId,
     permissionMode: permissionModeFor(eff.permission),
-    allowRules: [...bot.allowRules, 'mcp__crew'],
+    allowRules: [...bot.allowRules, 'mcp__crew', ...(check ? [`Bash(${check})`, `Bash(${check}:*)`] : [])],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
     denyRules: settings.get().denyRules || [],
     deniedReason: (toolName, input) => deniedReason(toolName, input, cwd, { project, actor, readOnly: readOnlyFamily(w) }),
@@ -409,12 +473,22 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
-    env: agentEnv({ role: 'worker', botId: bot.id }, workerModel(chat) || settings.get().defaultModel || undefined, project),
-    role: 'worker',
-    fakeTools: {
-      ...(subscribed ? fakeThreadTools(w.id) : undefined),
-      draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields),
-    },
+    env: agentEnv({ role, botId: bot.id }, model || settings.get().defaultModel || undefined, project),
+    role: spec ? 'speculative' : 'worker',
+    fakeTools: claim
+      ? {
+          speculative_result: async (args) => {
+            try {
+              return { text: claim(args as unknown as SpeculativeClaimArgs) };
+            } catch (e) {
+              return { text: (e as Error).message, isError: true };
+            }
+          },
+        }
+      : {
+          ...(subscribed ? fakeThreadTools(w.id) : undefined),
+          draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields),
+        },
   };
   const onSessionId = (sid: string) => {
     if (w.sessionId !== sid) save(w, { sessionId: sid });
@@ -434,6 +508,8 @@ async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | nul
   const context = contextLines(project);
   const sent = l.context;
   l.context = context;
+  // A speculative run's task is the host's; follow-ups never come (nobody talks to it).
+  if (w.speculation && host && project && first) return host.prompt(w, project, contextDelta(sent, context));
   const users = (first?.userMessageIds || []).map((id) => messages.get(chat.id, id)).filter((m): m is ChatMessage => !!m);
   const conflict = w.landing?.conflicts?.length && project?.workspace ? { branch: project.workspace.baseBranch, files: w.landing.conflicts } : undefined;
   // A blind reviewer sees the user's words and the chat branch's change, and the task as a handover.
@@ -531,6 +607,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
         who: `${bot.name} (Worker "${w.title}")`,
         workerId: w.id,
         readOnly: readOnlyFamily(w),
+        unattended: w.speculation ? UNATTENDED : undefined,
       }),
     }),
     onActivity: (state, detail) => status(state, detail),
@@ -554,6 +631,8 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
   }
   if (session?.sessionId && session.sessionId !== w.sessionId) w.sessionId = session.sessionId;
 
+  if (w.speculation) return endSpeculative(w, project, msg, l.stop);
+
   let landing: Worker['landing'];
   if (project?.workspace?.workerId) landing = await commitAndLand(w, bot, project as Workspace, msg);
   const outcome = l.stop || msg.status === 'stopped' ? 'stopped' : msg.status === 'done' ? 'done' : 'error';
@@ -562,6 +641,19 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
   if (landing) publishLanding(w, chat, bot, landing);
   publishResult(w, chat, bot, msg, outcome);
   finish(w, outcome, outcome === 'error' ? (msg.error || '').split('\n')[0].slice(0, 160) : undefined, text);
+}
+
+/**
+ * A speculative run's turn ended: its work is committed to its throwaway branch, never landed, and
+ * nothing is reported to a Router or published as a turn result. The host verifies it (ADR 008).
+ */
+async function endSpeculative(w: Worker, project: Project | null, msg: ChatMessage, stopped: boolean) {
+  const outcome = stopped || msg.status === 'stopped' ? 'stopped' : msg.status === 'done' ? 'done' : 'error';
+  let detail = outcome === 'error' ? (msg.error || 'unknown error').split('\n')[0].slice(0, 160) : undefined;
+  const wt = project?.workspace?.worktree;
+  if (wt) await autoCommit(wt, `Speculative run: ${commitSubject(msg.text, w.title)}`).catch((e) => (detail = `Couldn't commit its changes: ${gitError(e)}`));
+  save(w, { turns: w.turns + 1, costUsd: w.costUsd + (msg.meta?.costUsd || 0) });
+  finish(w, outcome, detail, msg.text.trim().slice(0, REPORT_CHARS));
 }
 
 /** Commits the turn's work to the Worker's branch and, when the turn finished, merges it into the chat's branch. */
@@ -670,6 +762,11 @@ function finish(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: strin
   save(w, { status: outcome, detail, report });
   // It never got to run (a failed start): what was delivered to it goes on.
   if (!l.running) settleInbox(w);
+  // A speculative run tells nobody: its host decides what comes of it.
+  if (w.speculation) {
+    host?.ended(w, outcome, detail);
+    return;
+  }
   if (l.quiet) return;
   const bot = bots.get(w.botId);
   routerEvent(w.chatId, { kind: 'worker', id: w.id, at: Date.now(), bot: bot?.name || 'deleted bot', title: w.title, status: outcome, report: report.text, landing: landingText(w) });
@@ -732,7 +829,11 @@ export async function stopWorker(id: string, opts: { quiet?: boolean; why?: stri
 
 /** Stops every Worker of a chat, without telling its Router (the user stopped the chat). */
 export async function stopChatWorkers(chatId: string) {
-  await Promise.all(activeWorkers(chatId).map((w) => stopWorker(w.id, { quiet: true, why: 'The user stopped the chat' })));
+  await Promise.all(
+    chatWorkers(chatId, { speculative: true })
+      .filter(isActive)
+      .map((w) => stopWorker(w.id, { quiet: true, why: 'The user stopped the chat' })),
+  );
 }
 
 /** Removes a finished Worker's workspace; a branch whose work never reached the chat's branch is kept. */
@@ -759,7 +860,7 @@ export async function dismissFinished(chatId: string) {
 /** The chat is deleted: its Workers stop and go, records and transcripts too. */
 export async function forgetWorkers(chatId: string) {
   await stopChatWorkers(chatId);
-  for (const w of chatWorkers(chatId, { all: true })) {
+  for (const w of chatWorkers(chatId, { all: true, speculative: true })) {
     live.get(w.id)?.session?.close();
     live.delete(w.id);
     deliveriesUnread(
@@ -838,7 +939,8 @@ export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupt
     w.pending = [];
     w.updatedAt = now;
     workers.set(w);
-    interrupted.push(w);
+    // A speculative run is discarded by its host (ADR 008); no Router ever knew of it.
+    if (!w.speculation) interrupted.push(w);
   }
   return {
     live: new Set(
@@ -854,5 +956,5 @@ export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupt
 
 /** Hourly: finished Workers nobody has touched for hours give their worktrees back. */
 export function sweepWorkers(now = Date.now()) {
-  for (const w of workers.all()) if (!w.dismissedAt && !isActive(w) && now - w.updatedAt > IDLE_DISMISS_MS) void dismissWorker(w).catch(() => {});
+  for (const w of workers.all()) if (!w.dismissedAt && !w.speculation && !isActive(w) && now - w.updatedAt > IDLE_DISMISS_MS) void dismissWorker(w).catch(() => {});
 }

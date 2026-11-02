@@ -23,8 +23,19 @@ export function emitChat(chat: Chat) {
   bus.emit({ t: 'chat', chat });
 }
 
-export function systemMessage(chat: Chat, text: string, opts: { uiOnly?: boolean; notice?: ChatMessage['notice']; jobId?: string } = {}): ChatMessage {
-  const msg: ChatMessage = { id: uid('m_'), chatId: chat.id, seq: ++chat.seq, ts: Date.now(), role: 'system', text, uiOnly: opts.uiOnly || undefined, notice: opts.notice, jobId: opts.jobId };
+export function systemMessage(chat: Chat, text: string, opts: { uiOnly?: boolean; notice?: ChatMessage['notice']; jobId?: string; speculationId?: string } = {}): ChatMessage {
+  const msg: ChatMessage = {
+    id: uid('m_'),
+    chatId: chat.id,
+    seq: ++chat.seq,
+    ts: Date.now(),
+    role: 'system',
+    text,
+    uiOnly: opts.uiOnly || undefined,
+    notice: opts.notice,
+    jobId: opts.jobId,
+    speculationId: opts.speculationId,
+  };
   messages.put(msg);
   bus.emit({ t: 'msg', msg });
   setLastMessage(chat, msg);

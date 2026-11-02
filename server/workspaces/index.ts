@@ -11,7 +11,7 @@ import { doSuggest } from './suggest';
 import { doAbort, doCommit, doResolve, doSync } from './sync';
 
 export { requireWorkspace, type Workspace, workspaceOf } from './common';
-export { checkGit, createWorkerWorkspace } from './create';
+export { checkGit, createSpeculativeWorkspace, createWorkerWorkspace } from './create';
 export { detachWorkspace, disposeWorkspace, reconcileWorkspaces, retireWorkerWorkspace } from './remove';
 export { runSetup } from './setup';
 export { workspaceDiff, workspaceStatus } from './status';

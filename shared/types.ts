@@ -226,11 +226,15 @@ export interface ChatMessage {
    * see too. stall: the chain stopped without a handoff and the lead was woken. trigger: the
    * Super-agent's event filter thought an event worth the user's attention (always uiOnly).
    * watchdog: a notice the Watchdog sent to a chat outside two-layer mode (always uiOnly). job: a
-   * background job's result, delivered to the bot that started it (see jobId).
+   * background job's result, delivered to the bot that started it (see jobId). speculative: a
+   * speculative run reproduced a problem and its fix passed the project's checks (always uiOnly; see
+   * speculationId).
    */
-  notice?: 'outside-edit' | 'stall' | 'trigger' | 'watchdog' | 'job';
+  notice?: 'outside-edit' | 'stall' | 'trigger' | 'watchdog' | 'job' | 'speculative';
   /** notice job: the job whose result this is. */
   jobId?: ID;
+  /** notice speculative: the speculative run whose fix is ready (ADR 008). */
+  speculationId?: ID;
   /** The turn was cut short by a restart of Crew; what it had written is kept. */
   interrupted?: boolean;
   error?: string;
@@ -292,6 +296,8 @@ export interface Project {
   autoChallenge?: AutoChallenge;
   /** Lifecycle skill families this project opted in to (each costs context in every prompt). */
   skillFamilies?: SkillFamily[];
+  /** Speculative execution (ADR 008): silent reproduce-and-fix runs on signals from this project. */
+  speculative?: ProjectSpeculative;
   /** Environment variables passed through to agent sessions although they look like credentials. */
   passEnv?: string[];
   framework?: string;
@@ -323,6 +329,8 @@ export interface WorkspaceInfo {
   challenge?: ChallengeVerdict;
   /** Set when this is a Worker's workspace: branched from the chat's branch (baseBranch), merged back into it after each turn. */
   workerId?: ID;
+  /** A speculative run's throwaway workspace (ADR 008): removed with its branch, never kept. */
+  speculative?: boolean;
 }
 
 export interface AutoChallenge {
@@ -706,14 +714,14 @@ export interface AuditEntry {
  * and, when Workers subscribe to the folder it ran in, an environment event on that workspace
  * thread that only goes to them, like landing (ADR 010).
  */
-export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job';
+export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job' | 'speculative';
 
 /**
  * Sources whose fast-path rule the user can change. landing has no settings (it only ever goes to
  * subscribers), and neither has a job result: the bot asked for it, and the copy on a workspace
  * thread only ever goes to subscribers.
  */
-export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job'>;
+export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job' | 'speculative'>;
 
 /**
  * Per source, deterministic: act on explicit requests only (the rest is recorded as dropped), let
@@ -742,6 +750,91 @@ export interface SuperAgentSettings {
   recall: RecallSettings;
   /** The Watchdog: an external control loop on a timer (ADR 006). */
   watchdog: WatchdogSettings;
+  /** Speculative execution (ADR 008): the limits every project's silent reproduce-and-fix runs share. */
+  speculative: SpeculativeSettings;
+}
+
+// ---------------------------------------------------------------------------- speculative execution (ADR 008)
+
+/** The limits shared by all speculative runs: money and machine load are the user's, not a project's. */
+export interface SpeculativeSettings {
+  /** The runs' model; empty = the Workers' model. */
+  model: string;
+  /** What today's runs may cost; past it, signals are skipped. */
+  dailyBudgetUsd: number;
+  /** Runs in flight at once, across projects. */
+  maxConcurrent: number;
+  /** A run still working after this long is stopped and discarded. */
+  maxMinutes: number;
+}
+
+/** A project's switch for speculative runs, and how Crew verifies their fixes. */
+export interface ProjectSpeculative {
+  enabled: boolean;
+  /** The project's checks: must fail with the reproduction before the fix and pass after it. Empty = `npm test` when package.json has a real test script. */
+  checkCommand: string;
+  /** Which signals may start a run. */
+  signals: { failingChecks: boolean; consoleErrors: boolean; bugReports: boolean };
+  /** A fix changing more lines than this (outside the reproduction) is not surfaced. */
+  maxFixLines: number;
+}
+
+export type SpeculativeSignal = 'failing-check' | 'console-error' | 'bug-report';
+
+/** skipped: a signal matched but a gate said no. ready: verified, waiting for the user's click. */
+export type SpeculationStatus = 'skipped' | 'running' | 'verifying' | 'ready' | 'merged' | 'discarded';
+
+/** One run of the project's check command during verification. */
+export interface SpeculativeCheck {
+  ok: boolean;
+  exitCode: number | null;
+  secs: number;
+  /** The last lines of its output. */
+  tail: string;
+}
+
+/** A speculative run (or a signal a gate refused): what it acted on, what it did, and why it stopped. */
+export interface Speculation {
+  id: ID;
+  at: number;
+  updatedAt: number;
+  signal: SpeculativeSignal;
+  /** The Trigger it acted on. */
+  triggerId: ID;
+  /** The Trigger's fingerprint: the same signal is not speculated on twice in a day. */
+  fingerprint: string;
+  /** The signal, one line. */
+  summary: string;
+  /** The rules that matched. */
+  reasons: string[];
+  /** The root project. */
+  projectId: ID | null;
+  /** Where it is surfaced. */
+  chatId: ID | null;
+  status: SpeculationStatus;
+  /** Why it was skipped or discarded. */
+  why?: string;
+  botId?: ID;
+  workerId?: ID;
+  /** Where a merge applies: the chat's workspace or the project folder. */
+  target?: ID;
+  checkCommand?: string;
+  /** The observed state the throwaway workspace started from, and the run's last commit. */
+  base?: string;
+  head?: string;
+  /** What the run said it did (speculative_result). */
+  claim?: { reproduced: boolean; testFiles: string[]; summary: string };
+  /** after: the checks at the fix; before: the fix put back to the observed state, the reproduction kept. */
+  checks?: { after?: SpeculativeCheck; before?: SpeculativeCheck };
+  /** What it changed; test: part of the reproduction. */
+  files?: { path: string; added: number; removed: number; test: boolean }[];
+  costUsd: number;
+  /** The `speculative` Trigger that surfaced it. */
+  triggerOut?: ID;
+  /** The note in the chat. */
+  messageId?: ID;
+  /** When it was merged or discarded. */
+  decidedAt?: number;
 }
 
 export interface RecallSettings {
@@ -954,6 +1047,8 @@ export interface Worker {
   inbox?: WorkerDelivery[];
   /** Triggers it received directly, in all. */
   received?: number;
+  /** A speculative run (ADR 008): quiet, unattended, never landed; its record says what came of it. */
+  speculation?: ID;
 }
 
 /** A chat's Router as it is right now (not stored). */
@@ -1312,6 +1407,8 @@ export interface Bootstrap {
   jobs: BackgroundJob[];
   /** External-action drafts: pending ones and the latest decided. */
   drafts: ExternalDraft[];
+  /** Speculative runs (ADR 008): ready fixes and the latest others. */
+  speculations: Speculation[];
   devServers: DevServerState[];
   previews: PreviewInfo[];
   models: ModelOption[];
@@ -1372,6 +1469,7 @@ export type ServerEvent =
   | { t: 'job_deleted'; id: ID }
   | { t: 'draft'; draft: ExternalDraft }
   | { t: 'audit'; entry: AuditEntry }
+  | { t: 'speculation'; speculation: Speculation }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */

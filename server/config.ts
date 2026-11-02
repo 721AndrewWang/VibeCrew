@@ -50,6 +50,9 @@ export const DATA = {
   watchdogActions: path.join(HOME_DIR, 'watchdog', 'actions.jsonl'),
   watchdogWatches: path.join(HOME_DIR, 'watchdog', 'watches.json'),
   watchdogProposals: path.join(HOME_DIR, 'watchdog', 'proposals.json'),
+  /** Speculative runs (server/speculative, ADR 008): created on the first record, so only once a project opted in. */
+  speculative: path.join(HOME_DIR, 'speculative'),
+  speculations: path.join(HOME_DIR, 'speculative', 'runs.jsonl'),
   /** Full duplex's background jobs (server/jobs): created on the first job. */
   jobs: path.join(HOME_DIR, 'jobs', 'jobs.json'),
   jobLogs: path.join(HOME_DIR, 'jobs'),

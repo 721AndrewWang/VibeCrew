@@ -8,6 +8,7 @@ import type { FilteredSource, SourceRule, SuperAgentSettings, Thread, Trigger, T
 import { glob } from '../agents/permissions';
 import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
 import { DEFAULT_RECALL, normalizeRecall } from '../recall/config';
+import { DEFAULT_SPECULATIVE, normalizeSpeculative } from '../speculative/config';
 import { DEFAULT_WATCHDOG, normalizeWatchdog } from '../watchdog/config';
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];
@@ -32,6 +33,7 @@ export const DEFAULT_SUPER_AGENT: SuperAgentSettings = {
   router: DEFAULT_ROUTER,
   recall: DEFAULT_RECALL,
   watchdog: DEFAULT_WATCHDOG,
+  speculative: DEFAULT_SPECULATIVE,
 };
 
 const MODES = new Set(['explicit', 'candidate', 'ignore']);
@@ -68,6 +70,7 @@ export function normalizeSuperAgent(raw: unknown): SuperAgentSettings {
     router: normalizeRouter(r.router),
     recall: normalizeRecall(r.recall),
     watchdog: normalizeWatchdog(r.watchdog),
+    speculative: normalizeSpeculative(r.speculative),
   };
 }
 
@@ -152,6 +155,7 @@ const SOURCE_NAME: Record<TriggerSource, string> = {
   'preview-console': 'Preview console errors',
   landing: "Workers' merges",
   job: 'Background job results',
+  speculative: 'Speculative fixes',
 };
 
 export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
@@ -171,6 +175,8 @@ export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   // The same job's result again, on the workspace thread of the folder it ran in: it matters only to
   // the Workers working there (the bot that started it has it already).
   if (t.source === 'job') return subscribers.length ? direct() : drop('no-subscribers', 'No Worker is working in the folder the job ran in right now');
+  // A speculative run's verified fix (ADR 008): Crew checked it in code and surfaces it itself.
+  if (t.source === 'speculative') return act('speculative-ready', "A speculative run reproduced the problem and its fix passed the project's checks; shown to the user to merge or discard");
 
   const source = t.source;
   const rule = ctx.settings.sources[source];

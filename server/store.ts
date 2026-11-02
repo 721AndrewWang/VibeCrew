@@ -20,6 +20,7 @@ import type {
   RoutingRecord,
   SafetySettings,
   SandboxSettings,
+  Speculation,
   SuperAgentSettings,
   Thread,
   Trigger,
@@ -458,6 +459,9 @@ export const auditLog = new JsonlLog<AuditEntry>(DATA.audit, AUDIT_LIMITS);
 export const routerLogId = (chatId: string) => `rt_${chatId}`;
 
 /** The Watchdog's ledger: every tick (run or skipped) and maintainer turn, and every action it took or was refused. */
+export const SPECULATION_LIMITS = { max: 500, maxAgeMs: 30 * 86_400_000 };
+/** Speculative runs and the signals a gate refused (ADR 008). */
+export const speculationLog = new JsonlLog<Speculation>(DATA.speculations, SPECULATION_LIMITS);
 export const WATCHDOG_LIMITS = { max: 5000, maxAgeMs: 30 * 86_400_000 };
 export const watchdogTicks = new JsonlLog<WatchdogTick>(DATA.watchdogTicks, WATCHDOG_LIMITS);
 export const watchdogActions = new JsonlLog<WatchdogAction>(DATA.watchdogActions, WATCHDOG_LIMITS);

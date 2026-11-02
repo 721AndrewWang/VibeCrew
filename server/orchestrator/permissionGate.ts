@@ -65,6 +65,11 @@ export function permissionGate(turn: {
   readOnly?: string;
   /** A background sub-task's run (ADR 004): which job, for the audit log. */
   jobId?: string;
+  /**
+   * Nobody is there to answer (a speculative run, ADR 008): what would ask is refused instead, with
+   * no card, toast or push. The text says what kind of run it is.
+   */
+  unattended?: string;
 }) {
   const { chat, bot, project, cwd, stream } = turn;
   const status = turn.status ?? ((s: Omit<BotStatus, 'since'>) => setStatus(bot.id, s));
@@ -94,6 +99,11 @@ export function permissionGate(turn: {
     log[d.behavior === 'allow' ? 'debug' : 'info'](`${bot.name} in ${chat.id}: ${d.behavior} ${desc.title} — ${d.because}`);
     if (d.behavior === 'allow') return { behavior: 'allow' as const, updatedInput: input };
     if (d.behavior === 'deny') return { behavior: 'deny' as const, message: d.message };
+    if (turn.unattended)
+      return {
+        behavior: 'deny' as const,
+        message: `This is ${turn.unattended}: nobody is there to approve anything, so actions that need approval are refused (${d.because}). Do without it, or stop and report what you could not do.`,
+      };
     const part: ApprovalPart = {
       type: 'approval',
       id: uid('a_'),
