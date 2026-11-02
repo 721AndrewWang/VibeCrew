@@ -16,6 +16,7 @@ import { stopAllDevServers } from './devserver';
 import { recoverDrafts } from './drafts';
 import { initIfNeeded } from './entities';
 import { stopGateway, syncGateway } from './gateway';
+import { agentPeer, fence, refuse } from './hardening/fence';
 import { recoverJobs, stopAllJobs } from './jobs';
 import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
@@ -37,6 +38,8 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', false);
 app.use(guard);
+// Processes Crew started (agents, their commands) may not drive Crew itself (ADR 104).
+app.use('/api', fence);
 app.use('/api', apiRouter());
 
 // The favicon follows the logo chosen in Settings → Appearance; it is drawn here, built UI or not.
@@ -74,6 +77,13 @@ server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url || '/', 'http://x');
   if (url.pathname !== '/ws' || !wsAllowed(req)) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  const agent = agentPeer(req.socket);
+  if (agent !== null) {
+    refuse(agent, 'WebSocket /ws');
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
   }
