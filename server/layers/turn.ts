@@ -31,7 +31,8 @@ export interface LoggedTurn {
   session(): AgentSession;
   /** The session's resume id failed: forget it, so session() starts a new conversation. */
   forgetResume(): boolean;
-  content(session: AgentSession): UserContent | Promise<UserContent>;
+  /** The prompt; `msg` is the turn's message, for what the prompt measured (meta.injected). */
+  content(session: AgentSession, msg: ChatMessage): UserContent | Promise<UserContent>;
   hooks(stream: TurnStream): Omit<TurnHooks, 'onMessage'>;
   onActivity(state: 'thinking' | 'tool', detail?: string): void;
   /** The turn is under way: where to stop it. */
@@ -74,14 +75,14 @@ export async function runLogged(t: LoggedTurn): Promise<{ msg: ChatMessage; sess
     t.started?.(stream, session);
     let result: Awaited<ReturnType<AgentSession['run']>>;
     try {
-      result = await session.run(await t.content(session), hooks);
+      result = await session.run(await t.content(session, msg), hooks);
     } catch (e) {
       // A stale resume id fails before anything streams: start a fresh session once.
       const resumeFailed = !stream.parts.length && !stream.stopped && /conversation|session|resume/i.test(String((e as Error)?.message));
       if (!resumeFailed || !t.forgetResume()) throw e;
       session = t.session();
       t.started?.(stream, session);
-      result = await session.run(await t.content(session), hooks);
+      result = await session.run(await t.content(session, msg), hooks);
     }
     stream.finish(result);
     const sid = session.sessionId;

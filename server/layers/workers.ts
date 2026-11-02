@@ -22,6 +22,7 @@ import { preview } from '../orchestrator/chatLog';
 import { deniedReason, denyStreamApprovals, expireApprovals, permissionGate } from '../orchestrator/permissionGate';
 import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previewPageOf } from '../orchestrator/turnContext';
 import { chatProjectId, configOf, gitIn } from '../projects';
+import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { reviewDiff } from '../review';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
@@ -57,6 +58,10 @@ interface Live {
   context?: string[];
   /** Its settings changed while a turn ran: the session closes when the turn ends. */
   stale?: boolean;
+  /** The session was started with the chain of recall on: the budgets its prompts use. */
+  recall?: Budget;
+  /** It resumed a transcript with recall on: its next prompt says recall replaced chat_history. */
+  recallNote?: boolean;
 }
 
 /** Idle Worker sessions close after this long; the next turn resumes them from their transcript. */
@@ -233,11 +238,12 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
   const conf = project ? configOf(project) : null;
   const cwd = project?.path || os.homedir();
   const lead = leadOf(chat);
+  const recall = recallBudget();
   const cfg: SessionConfig = {
     cwd,
     model: botModel(workerModel(chat)),
     effort: eff.effort || undefined,
-    systemAppend: buildSystemAppend({ bot: eff, chat, project, team: bots.all(), skills: skills.list(), worker: { lead: lead?.name || 'the lead', shared: w.shared } }),
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team: bots.all(), skills: skills.list(), worker: { lead: lead?.name || 'the lead', shared: w.shared }, recall: !!recall }),
     resume: w.sessionId,
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
@@ -257,6 +263,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
         currentPage: () => (w.projectId ? previewPageOf(w.projectId) : undefined),
         actKey: w.id,
         worker: true,
+        recall: !!recall,
       }) as McpServerConfig,
       ...pluginServers(bot),
     },
@@ -269,45 +276,58 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
   };
   l.session = FAKE_AGENT ? new FakeSession(cfg, bot.name, [], onSessionId) : new BotSession(cfg, onSessionId);
   l.context = undefined;
+  l.recall = recall;
+  l.recallNote = !!recall && !!cfg.resume;
   if (w.model !== (cfg.model || 'default')) save(w, { model: cfg.model || 'default' });
   return l.session;
 }
 
 /** The turn's prompt: the task (and the user's own words) the first time, follow-ups after. */
-async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | null, first: Live['first'], followUps: string[]) {
+async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | null, first: Live['first'], followUps: string[], msg: ChatMessage) {
   const l = liveOf(w.id);
   const lead = leadOf(chat);
   const context = contextLines(project);
-  const delta = contextDelta(l.context, context);
+  const sent = l.context;
   l.context = context;
-  if (first?.setupNote) delta.push(first.setupNote);
   const users = (first?.userMessageIds || []).map((id) => messages.get(chat.id, id)).filter((m): m is ChatMessage => !!m);
   const conflict = w.landing?.conflicts?.length && project?.workspace ? { branch: project.workspace.baseBranch, files: w.landing.conflicts } : undefined;
-  let text: string;
-  if (bot.blindReview && first) {
-    // A blind reviewer sees the user's words and the chat branch's change, and the task as a handover.
-    const chatWs = workspaceOf(chat);
-    const review = chatWs ? await reviewDiff(chatWs).catch(() => undefined) : project ? await reviewDiff(project).catch(() => undefined) : undefined;
-    const handover: ChatMessage = { id: 'handover', chatId: chat.id, seq: 0, ts: Date.now(), role: 'bot', botId: lead?.id, text: `@${bot.name} ${w.task}` };
-    text = buildTurnPrompt({
-      bot,
-      chat,
-      unseen: [...users, handover],
-      names: new Map(bots.all().map((b) => [b.id, b.name])),
-      context: delta,
-      trigger: { type: 'mention', by: lead?.id },
-      review,
-    });
-  } else {
-    text = workerPrompt({
+  // A blind reviewer sees the user's words and the chat branch's change, and the task as a handover.
+  const chatWs = bot.blindReview && first ? workspaceOf(chat) : undefined;
+  const review = bot.blindReview && first ? (chatWs ? await reviewDiff(chatWs).catch(() => undefined) : project ? await reviewDiff(project).catch(() => undefined) : undefined) : undefined;
+  const build = (recall?: Budget) => {
+    const delta = contextDelta(sent, context, recall ? 'env' : undefined);
+    if (first?.setupNote) delta.push(first.setupNote);
+    if (bot.blindReview && first) {
+      const handover: ChatMessage = { id: 'handover', chatId: chat.id, seq: 0, ts: Date.now(), role: 'bot', botId: lead?.id, text: `@${bot.name} ${w.task}` };
+      return buildTurnPrompt({
+        bot,
+        chat,
+        unseen: [...users, handover],
+        names: new Map(bots.all().map((b) => [b.id, b.name])),
+        context: delta,
+        trigger: { type: 'mention', by: lead?.id },
+        review,
+      });
+    }
+    return workerPrompt({
       context: delta,
       lead: lead?.name || 'the Router',
       title: first ? w.title : undefined,
       task: first ? w.task : undefined,
       followUps,
-      userWords: users.map((m) => ({ seq: m.seq, text: renderUserMessage(m) })),
+      userWords: users.map((m) => ({ seq: m.seq, text: renderUserMessage(m, recall?.user) })),
       conflict,
     });
+  };
+  let text = build();
+  if (l.recall) {
+    const without = text;
+    text = build(l.recall);
+    if (l.recallNote) {
+      l.recallNote = false;
+      text = `${RECALL_RESUME_NOTE}\n\n${text}`;
+    }
+    msg.meta = { ...msg.meta, injected: measureInjected(`Worker ${w.id} (${bot.name})`, text, without) };
   }
   const imgs = first ? imageBlocks(users) : [];
   return imgs.length ? [{ type: 'text' as const, text }, ...imgs] : text;
@@ -342,7 +362,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[]) {
       save(w, { sessionId: undefined });
       return true;
     },
-    content: () => promptFor(w, chat, bot, project, first, followUps),
+    content: (_s, msg) => promptFor(w, chat, bot, project, first, followUps, msg),
     hooks: (stream) => ({
       beforeEdit: () => {},
       canUseTool: permissionGate({ chat, bot, project, cwd, stream, status: (s) => status(s.state, s.detail), who: `${bot.name} (Worker "${w.title}")` }),

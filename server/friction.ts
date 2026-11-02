@@ -54,7 +54,8 @@ export function readFriction(since: number): FrictionEvent[] {
 }
 
 /** Events grouped by kind, then by what lies behind them (the rule, the path, the bot), worst first. */
-export function frictionReport(days: number, now = Date.now()): FrictionReport {
+/** `history`: the tool the brief tells the group to read the original chat with. */
+export function frictionReport(days: number, now = Date.now(), history = 'chat_history'): FrictionReport {
   const since = now - days * 86_400_000;
   const events = readFriction(since);
   const kinds = (Object.keys(FRICTION_LABEL) as FrictionKind[])
@@ -70,7 +71,7 @@ export function frictionReport(days: number, now = Date.now()): FrictionReport {
     })
     .filter((k) => k.count > 0)
     .sort((a, b) => b.count - a.count);
-  return { days, since, total: events.length, kinds, brief: frictionBrief(days, kinds) };
+  return { days, since, total: events.length, kinds, brief: frictionBrief(days, kinds, history) };
 }
 
 /** Files a fix may only touch after asking: the code that decides what bots are allowed to do. */
@@ -80,7 +81,8 @@ export const GUARDED_FILES = ['server/agents/permissions.ts', 'server/orchestrat
  * The message that hands the report to a group working on Crew's own code. `{lead}` is replaced
  * with the group's lead by the app. The user stays the one who merges, packages and restarts.
  */
-export function frictionBrief(days: number, kinds: FrictionReport['kinds']): string {
+/** `history`: the tool that reads an older message (recall, while the chain of recall is on). */
+export function frictionBrief(days: number, kinds: FrictionReport['kinds'], history = 'chat_history'): string {
   if (!kinds.length) return '';
   const lines = kinds.flatMap((k) => [
     `- ${k.label}: ${k.count}x`,
@@ -92,7 +94,7 @@ export function frictionBrief(days: number, kinds: FrictionReport['kinds']): str
     ...lines,
     '',
     'Please pick the problem with the biggest impact that can be fixed within one branch:',
-    "1. First restate the problem and the evidence (use chat_history to read the original chat if needed) and explain the root cause before changing anything. If it can't or shouldn't be fixed (for example, it's the user's own choice), say why and move on to the next one.",
+    `1. First restate the problem and the evidence (use ${history} to read the original chat if needed) and explain the root cause before changing anything. If it can't or shouldn't be fixed (for example, it's the user's own choice), say why and move on to the next one.`,
     "2. Make the change in this chat's own workspace (branch), add a test that reproduces the problem, and get npm run check fully passing.",
     '3. Hand it to Lens for review and Skeptic to refute, and fix everything they refute.',
     `4. Before touching ${GUARDED_FILES.join(', ')}, stop and ask the user: these files decide what bots are allowed to do.`,

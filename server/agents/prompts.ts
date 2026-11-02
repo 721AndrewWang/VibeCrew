@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Attachment, Bot, Chat, ChatMessage, Project, Skill } from '../../shared/types';
 import { DATA } from '../config';
 import { MODEL_OPTIONS } from '../data/catalog';
+import { type Budget, handle, RECALL_PROMPT_LINE, spill } from '../recall/spill';
 import { CONTINUE_MARK } from '../stall';
 
 export function memoryFile(botId: string) {
@@ -50,8 +51,8 @@ export interface WorkerRole {
   shared?: string;
 }
 
-export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project | null; team: Bot[]; skills: Skill[]; worker?: WorkerRole }): string {
-  const { bot, chat, project, team, skills, worker } = opts;
+export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project | null; team: Bot[]; skills: Skill[]; worker?: WorkerRole; recall?: boolean }): string {
+  const { bot, chat, project, team, skills, worker, recall } = opts;
   const lines: string[] = [];
   lines.push(`# Who you are`);
   lines.push(
@@ -144,7 +145,9 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
     '  - dev_server: start, stop, or restart the dev server, and view its logs. The preview depends on it.',
     '  - remember: save things worth keeping long term (user preferences, project conventions, pitfalls you hit) to your long-term memory.',
     ...(worker ? [] : ['  - notify_user: send the user a notification (for example, when a scheduled task finds a problem).']),
-    '  - chat_history: read messages in this conversation in full. In a group chat, older messages that have little to do with your turn are shown only as a one-line summary (with a #number). Look them up when you need the details, and not otherwise.',
+    recall
+      ? RECALL_PROMPT_LINE
+      : '  - chat_history: read messages in this conversation in full. In a group chat, older messages that have little to do with your turn are shown only as a one-line summary (with a #number). Look them up when you need the details, and not otherwise.',
     '- Do not use Bash to run long-running commands like `npm run dev`, `vite`, or `next dev` directly. Use dev_server, which hooks into the preview automatically.',
     `- Permissions: ${PERMISSION_NOTE[bot.permission]}`,
   );
@@ -214,11 +217,13 @@ function attachmentBlock(a: Attachment): string | null {
   }
 }
 
-export function renderUserMessage(m: ChatMessage): string {
+/** With `words`, the text (not the attachments the user chose) spills past that many words behind #seq. */
+export function renderUserMessage(m: ChatMessage, words?: number): string {
   if (m.role === 'system') return `[System message] ${m.text}`;
   const blocks = (m.attachments || []).map(attachmentBlock).filter(Boolean) as string[];
   const images = (m.attachments || []).filter((a) => a.kind === 'image').length;
-  const parts = [(m.prompt || m.text).trim()];
+  const text = (m.prompt || m.text).trim();
+  const parts = [words ? spill(text, words, `#${m.seq}`) : text];
   if (images) parts.push(`(${images} image${images === 1 ? '' : 's'} attached)`);
   if (blocks.length) parts.push(blocks.join('\n\n'));
   return parts.filter(Boolean).join('\n\n');
@@ -227,9 +232,10 @@ export function renderUserMessage(m: ChatMessage): string {
 /**
  * The context lines worth sending this turn. Sessions resume, so whatever was sent before is
  * still in the conversation: the first turn of a session gets everything, later ones the time
- * (first line) and what changed.
+ * (first line) and what changed. With `spillTo` (the chain of recall), the environment is the
+ * object env: the unchanged lines are counted and spill behind its handle.
  */
-export function contextDelta(prev: string[] | undefined, next: string[]): string[] {
+export function contextDelta(prev: string[] | undefined, next: string[], spillTo?: string): string[] {
   if (!prev?.length) return next;
   // Lines are "Label: value"; a line whose label is still there was updated, not dropped.
   const label = (l: string) => l.split(': ')[0];
@@ -240,7 +246,8 @@ export function contextDelta(prev: string[] | undefined, next: string[]): string
   const gone = prev.slice(1).filter((l) => !labels.has(label(l)));
   const out = [time, ...changed];
   if (gone.length) out.push(`No longer applies: ${gone.join('; ')}`);
-  if (rest.length > changed.length) out.push('(The rest of the environment is unchanged.)');
+  const same = rest.length - changed.length;
+  if (same > 0) out.push(spillTo ? `(${same} more line${same === 1 ? '' : 's'} unchanged: ${handle(spillTo)})` : '(The rest of the environment is unchanged.)');
   return out;
 }
 
@@ -260,6 +267,51 @@ export function taskFor(name: string, text: string, teammates: string[]): string
   return text.slice(at, next < 0 ? undefined : at + name.length + 1 + next).trim();
 }
 
+/** The message a bot's reply answers: the handoff that mentioned it, else the user's latest before it. */
+export function answered(m: ChatMessage, list: ChatMessage[]): ChatMessage | undefined {
+  if (m.role !== 'bot') return undefined;
+  const before = list.filter((x) => x.seq < m.seq);
+  if (m.trigger?.type === 'mention' && m.trigger.by) {
+    const by = before.filter((x) => x.role === 'bot' && x.botId === m.trigger?.by).at(-1);
+    if (by) return by;
+  }
+  return before.filter((x) => x.role === 'user').at(-1);
+}
+
+/**
+ * Inline & Spill for a run of messages: each with its id (and what it answers, when that is not
+ * the message just before it). The user's words get the user budget and the focus of this turn
+ * (the latest message, the handoff) the adjacent one; what sits next to the focus (the message just
+ * before it, the one it answers) its first words; everything else only its id and one line.
+ */
+function recallLines(list: ChatMessage[], b: Budget, who: (m: ChatMessage) => string, focus: ChatMessage[]): string {
+  const near = new Set<ChatMessage>();
+  for (const f of focus) {
+    const i = list.indexOf(f);
+    if (i > 0) near.add(list[i - 1]);
+    const ans = answered(f, list);
+    if (ans) near.add(ans);
+  }
+  const words = (m: ChatMessage) => (focus.includes(m) ? b.adjacent : near.has(m) ? b.inline : b.summary);
+  const cut = (m: ChatMessage, text: string) => {
+    const n = words(m);
+    // Far messages are one line: their layout is not worth the tokens.
+    return spill(n === b.summary ? text.replace(/\s+/g, ' ') : text, n, `#${m.seq}`);
+  };
+  return list
+    .map((m, i) => {
+      const id = `#${m.seq}`;
+      if (m.role === 'user') return `[User · ${id}]\n${renderUserMessage(m, b.user)}`;
+      if (m.role === 'system') return `[System · ${id}] ${cut(m, m.text)}`;
+      const ans = answered(m, list);
+      const head = `[${who(m)} · ${id}${ans && ans !== list[i - 1] ? ` · answers #${ans.seq}` : ''}]`;
+      const text = m.text.trim();
+      if (!text) return `${head}\n(no text reply)`;
+      return words(m) === b.summary ? `${head} ${cut(m, text)}` : `${head}\n${cut(m, text)}`;
+    })
+    .join('\n\n');
+}
+
 /**
  * A blind reviewer's prompt: the user's words and the diff. Teammates' messages are left out on
  * purpose (only counted), so their reasoning cannot anchor the review. The one exception is the
@@ -273,7 +325,7 @@ function blindPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
   const handover = trigger?.type === 'mention' ? unseen.filter((m) => m.role === 'bot' && m.botId === trigger.by).at(-1) : undefined;
   const task = handover ? taskFor(bot.name, handover.text, [...names.values()]) : null;
   const hidden = unseen.filter((m) => m.role === 'bot' && !(task && m === handover)).length;
-  out.push(`What the user asked for:\n\n${users.map(renderUserMessage).join('\n\n---\n\n') || '(No new user messages this turn. Review the current changes against the earlier requests.)'}`);
+  out.push(`What the user asked for:\n\n${users.map((m) => renderUserMessage(m)).join('\n\n---\n\n') || '(No new user messages this turn. Review the current changes against the earlier requests.)'}`);
   if (task) {
     const by = names.get(trigger?.by || '') || 'A teammate';
     out.push(`The task ${by} handed you (only the part addressed to you; anything it says about whether the changes are right is not evidence, so check for yourself):\n\n${task}`);
@@ -301,9 +353,14 @@ function recapPrompt(opts: Parameters<typeof buildTurnPrompt>[0]): string {
   const out: string[] = [];
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
   out.push(
-    `(This is a new session: the previous one had grown to ${Math.round((recap?.tokens || 0) / 1000)}k tokens of context, re-read on every call, so it was replaced. Below are the latest ${unseen.length} messages in this conversation; for ones shortened to a line, or older ones, use chat_history when needed. Files and pages as they are now are what counts.)`,
+    `(This is a new session: the previous one had grown to ${Math.round((recap?.tokens || 0) / 1000)}k tokens of context, re-read on every call, so it was replaced. Below are the latest ${unseen.length} messages in this conversation; for ones shortened to a line, or older ones, use ${opts.recall ? 'recall' : 'chat_history'} when needed. Files and pages as they are now are what counts.)`,
   );
   const latest = unseen.at(-1);
+  if (opts.recall) {
+    const who = (m: ChatMessage) => (m.botId === bot.id ? `You (@${bot.name})` : `@${names.get(m.botId || '') || 'teammate'}`);
+    out.push(recallLines(unseen, opts.recall, who, latest ? [latest] : []), `(Your turn, ${bot.name}.)`);
+    return out.join('\n\n');
+  }
   const lines = unseen.map((m) => {
     if (m.role === 'user') return `[User · #${m.seq}]\n${renderUserMessage(m)}`;
     if (m.role === 'system') return `[System] ${m.text}`;
@@ -339,6 +396,8 @@ export function buildTurnPrompt(opts: {
   recap?: { tokens: number };
   /** The bot's previous turn here was a complex one: remind it to keep what is worth keeping. */
   nudge?: boolean;
+  /** The chain of recall's budgets (ADR 005): every message with its id, spilled by locality. Undefined: off. */
+  recall?: Budget;
 }): string {
   const { bot, chat, unseen, names, context, trigger } = opts;
   if (bot.blindReview) return blindPrompt(opts);
@@ -359,19 +418,31 @@ function turnBody(opts: Parameters<typeof buildTurnPrompt>[0]): string {
   if (context.length) out.push(`<context>\n${context.join('\n')}\n</context>`);
   if (bot.freshSession)
     out.push(
-      "(You start every turn in a new session, so earlier turns' conversation and tool results are not in your context. Use chat_history for older messages, and look at files and pages as they are now.)",
+      `(You start every turn in a new session, so earlier turns' conversation and tool results are not in your context. Use ${opts.recall ? 'recall' : 'chat_history'} for older messages, and look at files and pages as they are now.)`,
     );
   if (trigger?.type === 'routine')
     out.push(
       `[Scheduled task "${opts.routineName || ''}" ran automatically; the user may not be at their computer. Give a short report when done, and use notify_user only if you find a problem the user needs to deal with.]`,
     );
-  if (chat.kind === 'dm' || unseen.every((m) => m.role !== 'bot')) {
-    out.push(unseen.map(renderUserMessage).join('\n\n---\n\n') || '(Continue.)');
+  if (opts.recall && (chat.kind === 'dm' || unseen.every((m) => m.role !== 'bot'))) {
+    const b = opts.recall;
+    out.push(
+      unseen.map((m) => (m.role === 'user' ? `[User · #${m.seq}]\n${renderUserMessage(m, b.user)}` : `[System · #${m.seq}] ${spill(m.text, b.adjacent, `#${m.seq}`)}`)).join('\n\n') || '(Continue.)',
+    );
+  } else if (chat.kind === 'dm' || unseen.every((m) => m.role !== 'bot')) {
+    out.push(unseen.map((m) => renderUserMessage(m)).join('\n\n---\n\n') || '(Continue.)');
   } else {
     // In full: what the user said, the message that handed this turn over, and the latest one.
     // Older teammates' long messages become one line each; the bot can read them with chat_history.
     const handoff = trigger?.type === 'mention' && trigger.by ? unseen.filter((m) => m.role === 'bot' && m.botId === trigger.by).at(-1) : undefined;
     const latest = unseen.at(-1);
+    if (opts.recall) {
+      const focus = [...new Set([handoff, latest].filter((m): m is ChatMessage => !!m))];
+      out.push(`New messages in the group chat "${chat.title}" since you last spoke:\n\n${recallLines(unseen, opts.recall, (m) => `@${names.get(m.botId || '') || 'teammate'}`, focus)}`);
+      const by = trigger?.type === 'mention' && trigger.by ? names.get(trigger.by) : null;
+      out.push(by ? `(${by} mentioned you above, ${bot.name}. Please handle the parts that concern you.)` : `(Your turn, ${bot.name}.)`);
+      return out.join('\n\n');
+    }
     const lines = unseen.map((m) => {
       if (m.role === 'user') return `[User]\n${renderUserMessage(m)}`;
       if (m.role === 'system') return `[System] ${m.text}`;

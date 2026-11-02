@@ -20,6 +20,7 @@ import { MODEL_OPTIONS } from '../data/catalog';
 import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
 import { agentEnv } from '../orchestrator/turnContext';
+import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { bots, chats, messages, routerLogId, settings } from '../store';
 import { monthSpend } from '../usage';
 import { BatchQueue } from './batch';
@@ -72,6 +73,9 @@ class ChatRouter {
   /** The session outgrew rotateAtTokens: the next turn starts a new one, with a recap. */
   private rotateAt: number | null = null;
   private readonly tools = routerTools(() => this.current);
+  /** The budgets this Router's session was started with (the chain of recall), or none. */
+  private recall: Budget | undefined;
+  private recallNote = false;
 
   constructor(readonly chatId: string) {
     this.queue = new BatchQueue(
@@ -114,6 +118,10 @@ class ChatRouter {
   private getSession(chat: Chat, lead: Bot): AgentSession {
     if (this.session && !this.session.closed) return this.session;
     const rs = settings.get().superAgent.router;
+    // The tools are fixed for the session's life: so is whether it has recall.
+    this.recall = recallBudget();
+    // A resumed session keeps the system prompt it started with: its first batch says recall is new.
+    this.recallNote = !!this.recall && !!chat.router?.sessionId;
     fs.mkdirSync(ROUTER_CWD, { recursive: true });
     const team: TeamMember[] = bots
       .all()
@@ -123,7 +131,7 @@ class ChatRouter {
       cwd: ROUTER_CWD,
       model: botModel(rs.model),
       systemAppend: '',
-      systemPrompt: routerSystemPrompt({ lead: lead.name, leadTitle: lead.title, chat: chat.title, role: lead.description, team, maxWorkers: rs.maxWorkers }),
+      systemPrompt: routerSystemPrompt({ lead: lead.name, leadTitle: lead.title, chat: chat.title, role: lead.description, team, maxWorkers: rs.maxWorkers, recall: !!this.recall }),
       // No Bash, Read, Edit, Write, WebFetch or Task: the Router coordinates, Workers execute.
       tools: [],
       resume: chat.router?.sessionId,
@@ -131,7 +139,7 @@ class ChatRouter {
       allowRules: ['mcp__crew_router'],
       askRules: [],
       denyRules: settings.get().denyRules || [],
-      mcpServers: { crew_router: routerMcpServer(this.tools) as McpServerConfig },
+      mcpServers: { crew_router: routerMcpServer(this.tools, { recall: !!this.recall }) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],
       env: agentEnv(),
@@ -220,7 +228,20 @@ class ChatRouter {
         recapWhy ??= 'the previous session could not be resumed';
         return true;
       },
-      content: () => renderBatch(batch, workerLines(chat.id), Date.now(), recapWhy ? this.recap(chat, firstSeq, recapWhy) : undefined),
+      content: (_s, msg) => {
+        const now = Date.now();
+        const recap = recapWhy ? this.recap(chat, firstSeq, recapWhy) : undefined;
+        const lines = workerLines(chat.id);
+        const text = renderBatch(batch, lines, now, recap);
+        if (!this.recall) return text;
+        let spilled = renderBatch(batch, lines, now, recap, this.recall);
+        if (this.recallNote) {
+          this.recallNote = false;
+          spilled = `${RECALL_RESUME_NOTE}\n\n${spilled}`;
+        }
+        msg.meta = { ...msg.meta, injected: measureInjected(`Router of ${chat.title}`, spilled, text) };
+        return spilled;
+      },
       hooks: () => ({
         beforeEdit: () => {},
         // The deny-everything-else gate, behind `tools: []`: only the Router's own tools run.

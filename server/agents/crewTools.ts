@@ -4,6 +4,7 @@ import type { ConsoleEntry } from '../../shared/types';
 import { act, consoleCheck, debugTarget, screenshot } from '../browser';
 import { notify } from '../bus';
 import { devServer } from '../devserver';
+import { RECALL_TOOL, recallText } from '../recall';
 import { bots, messages } from '../store';
 import { appendMemory } from './prompts';
 
@@ -20,6 +21,8 @@ export interface CrewContext {
   actKey?: string;
   /** A Worker (two-layer mode) never talks to the user, so it gets no notify_user. */
   worker?: boolean;
+  /** The chain of recall (ADR 005): recall(id) takes the place of chat_history. */
+  recall?: boolean;
 }
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
@@ -60,22 +63,36 @@ export function crewServer(ctx: CrewContext) {
     name: 'crew',
     version: '1.0.0',
     tools: [
-      tool(
-        'chat_history',
-        'Read messages in this conversation in full. In a group chat, older teammate messages that have little to do with this turn are shown only as a one-line summary (with a #number); use this to look up the details. It can also show the latest few messages.',
-        {
-          seqs: z.array(z.number().int()).max(20).optional().describe('Numbers of the messages to read (the number after # in a summary)'),
-          last: z.number().int().min(1).max(20).optional().describe('Read this many of the latest messages'),
-        },
-        async ({ seqs, last }) => {
-          const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user' || m.notice === 'outside-edit'));
-          const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
-          if (!picked.length) return fail('No such messages found.');
-          const who = (m: (typeof all)[number]) => (m.role === 'user' ? 'User' : m.role === 'system' ? 'System' : `@${bots.get(m.botId || '')?.name || 'teammate'}`);
-          return text(picked.map((m) => `[${who(m)} · #${m.seq}]\n${(m.prompt || m.text).trim() || '(no text)'}`).join('\n\n'));
-        },
-        { annotations: { readOnlyHint: true } },
-      ),
+      ctx.recall
+        ? tool(
+            'recall',
+            RECALL_TOOL,
+            {
+              id: z.string().max(200).describe('The id to read: #12, chat, env, tg_…, th_… or wk_…'),
+              from: z.number().int().min(0).optional().describe('Read on from this word, as a cut text says (from=N)'),
+            },
+            async ({ id, from }) => {
+              const r = recallText(id, { chatId: ctx.chatId, blind: ctx.blind }, from);
+              return 'error' in r ? fail(r.error) : text(r.text);
+            },
+            { annotations: { readOnlyHint: true } },
+          )
+        : tool(
+            'chat_history',
+            'Read messages in this conversation in full. In a group chat, older teammate messages that have little to do with this turn are shown only as a one-line summary (with a #number); use this to look up the details. It can also show the latest few messages.',
+            {
+              seqs: z.array(z.number().int()).max(20).optional().describe('Numbers of the messages to read (the number after # in a summary)'),
+              last: z.number().int().min(1).max(20).optional().describe('Read this many of the latest messages'),
+            },
+            async ({ seqs, last }) => {
+              const all = messages.sorted(ctx.chatId).filter((m) => !m.uiOnly && m.status !== 'streaming' && (!ctx.blind || m.role === 'user' || m.notice === 'outside-edit'));
+              const picked = seqs?.length ? all.filter((m) => seqs.includes(m.seq)) : all.slice(-(last || 5));
+              if (!picked.length) return fail('No such messages found.');
+              const who = (m: (typeof all)[number]) => (m.role === 'user' ? 'User' : m.role === 'system' ? 'System' : `@${bots.get(m.botId || '')?.name || 'teammate'}`);
+              return text(picked.map((m) => `[${who(m)} · #${m.seq}]\n${(m.prompt || m.text).trim() || '(no text)'}`).join('\n\n'));
+            },
+            { annotations: { readOnlyHint: true } },
+          ),
       tool(
         'preview_screenshot',
         'Open the project preview in a real browser and take a screenshot. Returns the image and a summary of console errors. Use it after changing the UI to check how it really looks. You can pick the page, the device size, a full-page shot, or just one element.',

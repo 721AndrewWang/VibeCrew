@@ -169,6 +169,7 @@ export const SettingsPatch = z
         policies: text(10_000),
         maxCandidatesPerHour: z.number().int().min(0).max(1000),
         router: z.object({ enabled: z.boolean(), model: text(200), workerModel: text(200), maxWorkers: z.number().int().min(1).max(8) }).partial(),
+        recall: z.object({ enabled: z.boolean(), inlineWords: z.number().int().min(20).max(200) }).partial(),
       })
       .partial(),
   })

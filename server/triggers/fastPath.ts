@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import type { FilteredSource, SourceRule, SuperAgentSettings, Thread, Trigger, TriggerFilter, TriggerSource } from '../../shared/types';
 import { glob } from '../agents/permissions';
 import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
+import { DEFAULT_RECALL, normalizeRecall } from '../recall/config';
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];
 
@@ -28,6 +29,7 @@ export const DEFAULT_SUPER_AGENT: SuperAgentSettings = {
   policies: DEFAULT_POLICIES,
   maxCandidatesPerHour: 30,
   router: DEFAULT_ROUTER,
+  recall: DEFAULT_RECALL,
 };
 
 const MODES = new Set(['explicit', 'candidate', 'ignore']);
@@ -62,6 +64,7 @@ export function normalizeSuperAgent(raw: unknown): SuperAgentSettings {
     policies: typeof r.policies === 'string' ? r.policies.slice(0, 10_000) : DEFAULT_POLICIES,
     maxCandidatesPerHour: Number.isFinite(max) ? Math.max(0, Math.min(1000, Math.round(max))) : DEFAULT_SUPER_AGENT.maxCandidatesPerHour,
     router: normalizeRouter(r.router),
+    recall: normalizeRecall(r.recall),
   };
 }
 

@@ -41,6 +41,7 @@ import {
 } from './projects';
 import { barkUrlOk, sendBark } from './push';
 import { quietly } from './quietWrites';
+import { recallOn, recallText } from './recall';
 import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
 import { cleanDomains, sandboxStatus } from './sandbox';
@@ -192,7 +193,13 @@ export function apiRouter() {
       // Partial per source: a patch to one source's mode keeps its allow-list, and the other sources.
       const sources = { ...cur.superAgent.sources };
       for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
-      patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources, router: { ...cur.superAgent.router, ...b.superAgent.router } });
+      patch.superAgent = normalizeSuperAgent({
+        ...cur.superAgent,
+        ...b.superAgent,
+        sources,
+        router: { ...cur.superAgent.router, ...b.superAgent.router },
+        recall: { ...cur.superAgent.recall, ...b.superAgent.recall },
+      });
     }
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
@@ -206,12 +213,15 @@ export function apiRouter() {
       patch.pluginSecrets = next;
     }
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
+    const recallBefore = recallOn();
     settings.update(patch);
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
-    if (patch.denyRules || patch.sandbox) invalidateAllSessions();
+    // Recall's tool (and the system prompt that names it) is fixed when a session starts.
+    const recallChanged = recallOn() !== recallBefore || (recallBefore && !!b.superAgent?.recall);
+    if (patch.denyRules || patch.sandbox || recallChanged) invalidateAllSessions();
     // The Router's model and limits are in its session.
-    if (b.superAgent?.router || b.superAgent?.enabled === false) invalidateRouters();
+    if (b.superAgent?.router || b.superAgent?.enabled === false || recallChanged) invalidateRouters();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -251,6 +261,15 @@ export function apiRouter() {
     if (!d) throw new HttpError(404, 'Trigger not found (it may have aged out of the log)');
     res.json(d);
   });
+  // Chain of recall (ADR 005): what an agent in this chat would read for an id.
+  r.get('/recall/:id', (req, res) => {
+    if (!recallOn()) throw new HttpError(404, 'The chain of recall is off');
+    const chatId = str(req.query.chatId);
+    if (!chatId || !chats.get(chatId)) throw new HttpError(400, 'chatId must name a chat');
+    const r = recallText(req.params.id, { chatId }, Number(req.query.from) || 0);
+    if ('error' in r) throw new HttpError(404, r.error);
+    res.json(r);
+  });
   r.post('/triggers/preview-console', (req, res) => {
     const b = body(PreviewConsole, req.body);
     res.json({ trigger: publishConsole({ project: getProject(b.projectId), chatId: b.chatId, page: b.page, entries: b.entries }) });
@@ -283,7 +302,8 @@ export function apiRouter() {
   r.get('/improvements', (_req, res) => res.json(listImprovements()));
   r.get('/friction', (req, res) => {
     const days = Math.max(1, Math.min(90, Math.round(Number(req.query.days) || 7)));
-    res.json(frictionReport(days));
+    // While the chain of recall is on, the bots read older messages with recall.
+    res.json(frictionReport(days, Date.now(), recallOn() ? 'recall' : 'chat_history'));
   });
   r.post('/improvements/run', async (_req, res) => res.json(await proposeImprovements()));
   r.post('/improvements/:id/accept', (req, res) => res.json(acceptImprovement(req.params.id)));
