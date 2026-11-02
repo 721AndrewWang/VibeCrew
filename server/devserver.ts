@@ -1,10 +1,9 @@
-import { type ChildProcess, spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import type { DevServerState, Project } from '../shared/types';
 import { bus } from './bus';
-import { cleanEnv } from './config';
+import { ANSI, killGroup, spawnGroup } from './procs';
 import { devCommand, getProject, needsInstall, packageManager } from './projects';
 
-const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
 const URL_RE = /(https?):\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|[\w.-]+):(\d{2,5})(\/[^\s'"]*)?/i;
 const MAX_LOG = 200_000;
 
@@ -36,12 +35,7 @@ class DevServer {
 
   private spawnStep(command: string, project: Project): ChildProcess {
     this.append(`\x1b[36m$ ${command}\x1b[0m\r\n`);
-    const child = spawn('bash', ['-c', command], {
-      cwd: project.path,
-      env: cleanEnv({ FORCE_COLOR: '1', BROWSER: 'none', NO_UPDATE_NOTIFIER: '1' }),
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawnGroup(command, project.path, { FORCE_COLOR: '1', BROWSER: 'none', NO_UPDATE_NOTIFIER: '1' });
     const onData = (buf: Buffer) => {
       const text = buf.toString('utf8');
       this.append(text.replace(/(?<!\r)\n/g, '\r\n'));
@@ -127,26 +121,7 @@ class DevServer {
       this.set({ status: 'stopped', url: undefined });
       return;
     }
-    const pid = child.pid;
-    try {
-      process.kill(-pid, 'SIGTERM');
-    } catch {
-      child.kill('SIGTERM');
-    }
-    await new Promise<void>((resolve) => {
-      const t = setTimeout(() => {
-        try {
-          process.kill(-pid, 'SIGKILL');
-        } catch {
-          /* already gone */
-        }
-        resolve();
-      }, 3000);
-      child.once('exit', () => {
-        clearTimeout(t);
-        resolve();
-      });
-    });
+    await killGroup(child);
     this.proc = null;
     this.set({ status: 'stopped', url: undefined });
   }
