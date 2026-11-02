@@ -206,6 +206,18 @@ shared/            Types and logo definitions shared by server and client
 tests/             Unit, integration, browser and desktop app tests
 ```
 
+## Measuring the Super-agent mode
+
+`npm run bench` runs an offline, deterministic ablation of the Super-agent mode against Crew's own routing rules: a generated chat and CI stream (300 events, 20 of them work requests) through Router + Workers with and without direct routing, and through the classic single lead bot with a neutral and a delegate-first prompt. Work only consumes simulated time and the model is scripted, so it measures scheduling and routing, not coding ability. It writes `bench-results/bench.json` and a self-contained `bench-results/report.html` with completion times (p50/p95), Router decisions, estimated tokens and the Router's batch size against its arrival rate.
+
+```bash
+npm run bench
+npm run bench -- --reduced              # a small run, as CI does
+npm run bench -- --seed 3 --time-scale 0.5 --no-sweep
+```
+
+`npm run bench -- --help` lists the options. Design and assumptions: [ADR 101](docs/adr/101-ablation-bench.md).
+
 ## Contributing
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the architecture, [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, tests and code style, and [CHANGELOG.md](CHANGELOG.md) for version history. Before committing, run:
