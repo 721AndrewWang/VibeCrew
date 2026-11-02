@@ -1,7 +1,8 @@
 import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2, FolderOpen, FolderPlus, GitBranch, House, MoreHorizontal, Play, Settings, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultAutoChallenge } from '../../../../shared/challenge';
-import type { DevServerState, Project } from '../../../../shared/types';
+import { SKILL_FAMILIES } from '../../../../shared/families';
+import type { DevServerState, Project, SkillFamily } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
 import { copyText, cx, shortPath } from '../../utils';
@@ -57,7 +58,10 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [requireChallenge, setRequireChallenge] = useState(!!project.requireChallenge);
   const [auto, setAuto] = useState(project.autoChallenge || { ...defaultAutoChallenge(), enabled: false });
   const [autoPaths, setAutoPaths] = useState(auto.paths.join('\n'));
+  const [families, setFamilies] = useState<SkillFamily[]>(project.skillFamilies || []);
+  const [passEnv, setPassEnv] = useState((project.passEnv || []).join('\n'));
   const [saving, setSaving] = useState(false);
+  const toggleFamily = (id: SkillFamily) => setFamilies(families.includes(id) ? families.filter((f) => f !== id) : [...families, id]);
 
   const save = async () => {
     setSaving(true);
@@ -80,6 +84,11 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         askRules: rules,
         allowedDomains: domains,
         requireChallenge,
+        skillFamilies: families,
+        passEnv: passEnv
+          .split(/[\s,]+/)
+          .map((x) => x.trim())
+          .filter(Boolean),
         autoChallenge: {
           ...auto,
           paths: autoPaths
@@ -138,6 +147,25 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <label>Allowed domains in the sandbox</label>
           <textarea className="input mono" rows={2} value={allowedDomains} placeholder={'One per line, e.g.\napi.example.com\n10.0.0.5:8080'} onChange={(e) => setAllowedDomains(e.target.value)} />
           <div className="hint">On top of the global list in Settings → Sandbox, commands in this project can also reach these hosts.</div>
+        </div>
+        <div className="field span-all" data-testid="skill-families">
+          <label>Lifecycle skill families</label>
+          <div className="family-chips">
+            {SKILL_FAMILIES.map((f) => (
+              <label key={f.id} className="check-row" title={f.description}>
+                <input type="checkbox" checked={families.includes(f.id)} onChange={() => toggleFamily(f.id)} /> {f.title}
+                {f.readOnly ? <span className="muted"> (read-only)</span> : null}
+              </label>
+            ))}
+          </div>
+          <div className="hint">
+            Bots here see these families' skills, and the Router can hand them to Workers. Each one adds to every prompt, so turn on only what this project uses. Their slash commands work anywhere.
+          </div>
+        </div>
+        <div className="field span-all">
+          <label>Pass these credentials through to bots</label>
+          <textarea className="input mono" rows={1} value={passEnv} placeholder="Variable names, e.g. NPM_TOKEN" onChange={(e) => setPassEnv(e.target.value)} />
+          <div className="hint">Crew keeps tokens and keys from its environment out of bot sessions (Settings → Safety). Name one here only if this project's commands really need it.</div>
         </div>
         <div className="field span-all">
           <div className="setting-row">

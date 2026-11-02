@@ -1777,3 +1777,129 @@ body.resizing iframe {
   align-items: center;
   gap: 6px;
 }
+
+/* ---------------------------------------------------------------- drafted external actions (ADR 007) */
+.approval-effects {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+
+.drafts-bar {
+  margin: 0 16px 6px;
+  border: 1.5px solid var(--orange);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  font-size: 12.5px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.drafts-bar .draft-card {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.draft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  font-size: 12.5px;
+}
+
+.draft-card.discarded,
+.draft-card.done {
+  opacity: 0.85;
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.draft-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+}
+
+.draft-by {
+  font-size: 11.5px;
+}
+
+.draft-title {
+  font-weight: 600;
+}
+
+.draft-cmd pre,
+.draft-body {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11.5px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.draft-reverse {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.drafts-list,
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audit-row {
+  display: grid;
+  grid-template-columns: 130px 90px 1fr;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.audit-row pre {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 760px) {
+  .audit-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.guard-verdict {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.family-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

@@ -1,6 +1,7 @@
 import {
   Accessibility,
   AlarmClock,
+  Bandage,
   Bell,
   BookOpen,
   Bot as BotIcon,
@@ -16,10 +17,12 @@ import {
   Coffee,
   Compass,
   Database,
+  Dices,
   Drama,
   Eye,
   Feather,
   FileText,
+  Flag,
   Flame,
   FlaskConical,
   FolderOpen,
@@ -64,6 +67,7 @@ import {
   SquareTerminal,
   Star,
   Stethoscope,
+  Tag,
   Target,
   Terminal,
   TriangleAlert,
@@ -175,6 +179,10 @@ const EMOJI_ICONS: Record<string, LucideIcon> = {
   '🐙': GitBranch,
   '⏰': AlarmClock,
   '⚠': TriangleAlert,
+  '🏷': Tag,
+  '🩹': Bandage,
+  '🏁': Flag,
+  '🎲': Dices,
 };
 
 const lineIcon = (emoji?: string): LucideIcon | undefined => EMOJI_ICONS[(emoji || '').replace(/\uFE0F/g, '')];

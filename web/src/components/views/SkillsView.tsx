@@ -1,6 +1,7 @@
 import { ArrowLeft, Info, Play, Plus, Save, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import type { Skill } from '../../../../shared/types';
+import { familyInfo, SKILL_FAMILIES } from '../../../../shared/families';
+import type { Skill, SkillFamily, SkillMode } from '../../../../shared/types';
 import { api } from '../../api';
 import { openChat, setDraft, toast, useStore } from '../../store';
 import { cx } from '../../utils';
@@ -35,20 +36,41 @@ interface Form {
   argsHint: string;
   description: string;
   body: string;
+  /** '' = a general skill. */
+  family: SkillFamily | '';
+  modes: SkillMode[];
+  readOnly: boolean;
 }
 
-const EMPTY: Form = { name: '', title: '', icon: '⚡', argsHint: '', description: '', body: '' };
+const EMPTY: Form = { name: '', title: '', icon: '⚡', argsHint: '', description: '', body: '', family: '', modes: ['chat', 'worker'], readOnly: false };
+
+const MODES: { id: SkillMode; label: string; title: string }[] = [
+  { id: 'chat', label: 'Chat', title: 'You type it as a slash command' },
+  { id: 'worker', label: 'Worker', title: 'The Router hands it to a Worker as its playbook (family skills only, in projects that enabled the family)' },
+  { id: 'speculative', label: 'Speculative', title: 'Silent background runs on reported problems (a later milestone)' },
+];
+
+function toForm(skill: Skill): Form {
+  return {
+    name: skill.name,
+    title: skill.title,
+    icon: skill.icon,
+    argsHint: skill.argsHint || '',
+    description: skill.description,
+    body: skill.body,
+    family: skill.family || '',
+    modes: skill.modes || ['chat', 'worker'],
+    readOnly: !!skill.readOnly,
+  };
+}
 
 function SkillEditor({ skill, onSaved, onDeleted, onBack }: { skill: Skill | null; onSaved: (name: string) => void; onDeleted: () => void; onBack: () => void }) {
-  const [f, setF] = useState<Form>(() =>
-    skill ? { name: skill.name, title: skill.title, icon: skill.icon, argsHint: skill.argsHint || '', description: skill.description, body: skill.body } : EMPTY,
-  );
+  const [f, setF] = useState<Form>(() => (skill ? toForm(skill) : EMPTY));
   const [saving, setSaving] = useState(false);
   const isNew = !skill;
   const nameOk = SKILL_NAME_RE.test(f.name);
-  const dirty = skill
-    ? f.name !== skill.name || f.title !== skill.title || f.icon !== skill.icon || f.argsHint !== (skill.argsHint || '') || f.description !== skill.description || f.body !== skill.body
-    : true;
+  const dirty = skill ? JSON.stringify(f) !== JSON.stringify(toForm(skill)) : true;
+  const toggleMode = (m: SkillMode) => set({ modes: f.modes.includes(m) ? f.modes.filter((x) => x !== m) : MODES.map((x) => x.id).filter((x) => x === m || f.modes.includes(x)) });
   const set = (p: Partial<Form>) => setF((cur) => ({ ...cur, ...p }));
 
   const save = async () => {
@@ -70,6 +92,9 @@ function SkillEditor({ skill, onSaved, onDeleted, onBack }: { skill: Skill | nul
         description: f.description,
         body: f.body,
         previousName: skill && !skill.builtin ? skill.name : undefined,
+        family: f.family || null,
+        modes: f.modes,
+        readOnly: f.readOnly,
       });
       // Apply locally right away (the server does not announce the old name when a skill is renamed).
       const prev = skill && !skill.builtin ? skill.name : null;
@@ -155,6 +180,31 @@ function SkillEditor({ skill, onSaved, onDeleted, onBack }: { skill: Skill | nul
           <label>Argument hint</label>
           <input className="input" value={f.argsHint} placeholder="e.g. page path (optional)" onChange={(e) => set({ argsHint: e.target.value })} />
         </div>
+        <div className="field">
+          <label>Lifecycle family</label>
+          <select className="select" value={f.family} onChange={(e) => set({ family: e.target.value as SkillFamily | '' })}>
+            <option value="">None (a general skill, always listed)</option>
+            {SKILL_FAMILIES.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.title}: {x.description}
+              </option>
+            ))}
+          </select>
+          <div className="hint">A family skill is listed to bots only in projects that enabled its family (project settings), so it costs no context elsewhere.</div>
+        </div>
+        <div className="field">
+          <label>Runs in</label>
+          <div className="family-chips">
+            {MODES.map((m) => (
+              <label key={m.id} className="check-row" title={m.title}>
+                <input type="checkbox" checked={f.modes.includes(m.id)} onChange={() => toggleMode(m.id)} /> {m.label}
+              </label>
+            ))}
+            <label className="check-row" title="A Worker running it cannot edit files">
+              <input type="checkbox" checked={f.readOnly} onChange={(e) => set({ readOnly: e.target.checked })} /> Read-only
+            </label>
+          </div>
+        </div>
       </div>
       <div className="field">
         <label>Skill content (the prompt sent to the bot)</label>
@@ -228,6 +278,11 @@ export function SkillsView() {
                     <div className="si-cmd mono">/{s.name}</div>
                     <div className="si-title">{s.title}</div>
                   </div>
+                  {s.family && (
+                    <span className="badge" title={familyInfo(s.family).description}>
+                      {familyInfo(s.family).title}
+                    </span>
+                  )}
                   <span className={cx('badge', s.builtin ? '' : 'accent')}>{s.builtin ? 'Built-in' : 'Custom'}</span>
                 </button>
               ))}

@@ -23,6 +23,7 @@ import type {
   RoutingReport,
   Skill,
   SkillCandidate,
+  SkillFamily,
   Trigger,
   TriggerDetail,
   TriggerList,
@@ -172,7 +173,7 @@ export const api = {
   screenshot: (id: string, path: string, device: string, fullPage = false) => post<UploadResult>(`/api/projects/${id}/screenshot`, { path, device, fullPage }),
   fs: (path?: string) => get<{ path: string; parent: string | null; home: string; entries: { name: string; path: string; isProject: boolean }[] }>(`/api/fs${path ? `?path=${q(path)}` : ''}`),
 
-  saveSkill: (s: Partial<Skill> & { name: string; previousName?: string }) => post<Skill>('/api/skills', s),
+  saveSkill: (s: Omit<Partial<Skill>, 'family'> & { name: string; previousName?: string; family?: SkillFamily | null }) => post<Skill>('/api/skills', s),
   deleteSkill: (name: string) => del(`/api/skills/${q(name)}`),
   skillFromRecording: (p: { name: string; title: string; goal: string; page: string; steps: RecordedStep[] }) => post<Skill>('/api/skills/from-recording', p),
 
