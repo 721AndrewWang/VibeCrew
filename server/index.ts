@@ -18,6 +18,8 @@ import { initIfNeeded } from './entities';
 import { stopGateway, syncGateway } from './gateway';
 import { stopBroker, syncBroker } from './hardening/broker';
 import { agentPeer, fence, refuse } from './hardening/fence';
+import { redactForUi } from './hardening/redactor';
+import { installRedaction, redactResponses } from './hardening/secrets';
 import { recoverJobs, stopAllJobs } from './jobs';
 import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
@@ -34,6 +36,8 @@ import { stopAllWatches } from './watcher';
 import { reconcileWorkspaces } from './workspaces';
 
 const log = logger('server');
+// Before anything logs or answers: secrets never reach a log, a file or the UI (ADR 104).
+installRedaction();
 
 const app = express();
 app.disable('x-powered-by');
@@ -41,6 +45,7 @@ app.set('trust proxy', false);
 app.use(guard);
 // Processes Crew started (agents, their commands) may not drive Crew itself (ADR 104).
 app.use('/api', fence);
+app.use('/api', redactResponses);
 app.use('/api', apiRouter());
 
 // The favicon follows the logo chosen in Settings → Appearance; it is drawn here, built UI or not.
@@ -93,7 +98,7 @@ server.on('upgrade', (req, socket, head) => {
 
 wss.on('connection', (ws: WebSocket) => {
   const send = (data: unknown) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(data));
+    if (ws.readyState === ws.OPEN) ws.send(redactForUi(JSON.stringify(data)));
   };
   const off = bus.on(send);
   const termSend = new Map<string, (d: string) => void>();

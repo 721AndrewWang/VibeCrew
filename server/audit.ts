@@ -4,12 +4,14 @@
 
 import type { AuditEntry } from '../shared/types';
 import { bus } from './bus';
+import { redactDeep } from './hardening/redactor';
 import { auditLog, settings, uid } from './store';
 
 /** Appends an entry when the log is on; returns it, or null when it is off. */
 export function audit(e: Omit<AuditEntry, 'id' | 'at'>): AuditEntry | null {
   if (!settings.get().safety.audit) return null;
-  const entry: AuditEntry = { id: uid('au_'), at: Date.now(), ...e };
+  // Commands and outputs may carry a secret; the log never does (ADR 104).
+  const entry: AuditEntry = { id: uid('au_'), at: Date.now(), ...redactDeep(e) };
   auditLog.append(entry);
   bus.emit({ t: 'audit', entry });
   return entry;
