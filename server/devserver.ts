@@ -3,6 +3,7 @@ import type { DevServerState, Project } from '../shared/types';
 import { bus } from './bus';
 import { ANSI, killGroup, spawnGroup } from './procs';
 import { devCommand, getProject, needsInstall, packageManager } from './projects';
+import { agentEnvOptions } from './safety';
 
 const URL_RE = /(https?):\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|[\w.-]+):(\d{2,5})(\/[^\s'"]*)?/i;
 const MAX_LOG = 200_000;
@@ -35,7 +36,8 @@ class DevServer {
 
   private spawnStep(command: string, project: Project): ChildProcess {
     this.append(`\x1b[36m$ ${command}\x1b[0m\r\n`);
-    const child = spawnGroup(command, project.path, { FORCE_COLOR: '1', BROWSER: 'none', NO_UPDATE_NOTIFIER: '1' });
+    // The project's code, which agents edit and can start: it runs without the user's credentials (ADR 104).
+    const child = spawnGroup(command, project.path, { FORCE_COLOR: '1', BROWSER: 'none', NO_UPDATE_NOTIFIER: '1' }, agentEnvOptions(project));
     const onData = (buf: Buffer) => {
       const text = buf.toString('utf8');
       this.append(text.replace(/(?<!\r)\n/g, '\r\n'));
