@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { modelEnv } from './claudeAuth';
 import { cleanEnv, findClaudeExecutable } from './config';
+import { settings } from './store';
 
 export interface OneShotResult {
   text: string;
@@ -38,7 +39,8 @@ export async function oneShot(prompt: string, opts: { model?: string; timeoutMs?
     ];
     const child = spawn(cli, args, {
       cwd: os.tmpdir(),
-      env: cleanEnv(modelEnv()),
+      // A background call: the gateway routes it as one (role override, fast tier) when it is on.
+      env: cleanEnv(modelEnv(settings.get(), { role: 'oneshot' })),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';

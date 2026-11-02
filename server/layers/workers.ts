@@ -235,7 +235,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
   const lead = leadOf(chat);
   const cfg: SessionConfig = {
     cwd,
-    model: botModel(workerModel(chat)),
+    model: botModel(workerModel(chat), { role: 'worker', botId: bot.id }),
     effort: eff.effort || undefined,
     systemAppend: buildSystemAppend({ bot: eff, chat, project, team: bots.all(), skills: skills.list(), worker: { lead: lead?.name || 'the lead', shared: w.shared } }),
     resume: w.sessionId,
@@ -261,7 +261,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
-    env: agentEnv(),
+    env: agentEnv({ role: 'worker', botId: bot.id }, workerModel(chat) || settings.get().defaultModel || undefined),
     role: 'worker',
   };
   const onSessionId = (sid: string) => {

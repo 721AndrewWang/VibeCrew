@@ -4,7 +4,7 @@ import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
 import { isLogoId } from '../shared/logos';
-import type { Attachment, Bootstrap, FilteredSource, RecordedStep, SourceRule } from '../shared/types';
+import type { Attachment, Bootstrap, FilteredSource, GatewayProvider, GatewaySettings, RecordedStep, SourceRule } from '../shared/types';
 import { memoryFile, readMemory } from './agents/prompts';
 import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
 import { hasBrowser, screenshot } from './browser';
@@ -16,6 +16,8 @@ import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { frictionReport } from './friction';
+import { addImportedProvider, gatewayOn, gatewayReport, syncGateway, testGateway } from './gateway';
+import { normalizeGateway } from './gateway/config';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, routerInfos, stopWorker } from './layers';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
@@ -50,6 +52,7 @@ import {
   BotPatch,
   body,
   ChatPatch,
+  GatewayTestBody,
   GroupCreate,
   ImprovementReject,
   MessageSend,
@@ -116,6 +119,9 @@ function bootstrap(): Bootstrap {
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+/** The gateway settings a session is made with (the rest is read per request). */
+const sessionView = (g: GatewaySettings) => JSON.stringify([g.enabled, g.port, g.providers, g.groups, g.defaultTarget, g.fastTarget, g.roles]);
 
 /** Connection fields from a request body (Settings page), applied over the saved settings. */
 function connectionPatch(b: Record<string, unknown>, cur: Settings): Partial<Settings> {
@@ -194,6 +200,17 @@ export function apiRouter() {
       for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
       patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources, router: { ...cur.superAgent.router, ...b.superAgent.router } });
     }
+    if (b.gateway || b.gatewayTokens) {
+      patch.gateway = normalizeGateway({ ...cur.gateway, ...b.gateway });
+      const tokens = { ...cur.gatewayTokens };
+      for (const [k, v] of Object.entries(b.gatewayTokens || {})) {
+        if (v.trim()) tokens[k] = v.trim();
+        else delete tokens[k];
+      }
+      // A removed provider's key goes with it.
+      for (const k of Object.keys(tokens)) if (!patch.gateway.providers.some((p) => p.id === k)) delete tokens[k];
+      patch.gatewayTokens = tokens;
+    }
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }
@@ -206,7 +223,15 @@ export function apiRouter() {
       patch.pluginSecrets = next;
     }
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
+    const routesChanged = !!patch.gateway && sessionView(patch.gateway) !== sessionView(cur.gateway);
     settings.update(patch);
+    // Sessions get the gateway's address, credential and target when they start.
+    if (routesChanged) {
+      await syncGateway();
+      invalidateAllSessions();
+      invalidateRouters();
+      void checkAuth(true);
+    }
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
     if (patch.denyRules || patch.sandbox) invalidateAllSessions();
@@ -232,6 +257,24 @@ export function apiRouter() {
   });
 
   r.get('/usage', (_req, res) => res.json(usageOf()));
+
+  // ------------------------------------------------------------ model gateway (ADR 009)
+  r.get('/gateway', (req, res) => res.json(gatewayReport(Math.max(1, Math.min(1000, Number(req.query.limit) || 100)))));
+  r.post('/gateway/test', async (req, res) => res.json(await testGateway(body(GatewayTestBody, req.body).target)));
+  r.post('/gateway/import-connection', async (_req, res) => {
+    let provider: GatewayProvider;
+    try {
+      provider = addImportedProvider();
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    bus.emit({ t: 'settings', settings: settings.public() });
+    if (gatewayOn()) {
+      invalidateAllSessions();
+      invalidateRouters();
+    }
+    res.json({ provider, settings: settings.public() });
+  });
   r.get('/routing', (_req, res) => res.json(routingReport()));
 
   // ------------------------------------------------------------ triggers (Super-agent)

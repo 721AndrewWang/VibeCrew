@@ -125,7 +125,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   const eff = effectiveBot(chat, bot);
   const cfg: SessionConfig = {
     cwd: project?.path || os.homedir(),
-    model: botModel(eff.model),
+    model: botModel(eff.model, { role: 'bot', botId: bot.id }),
     effort: eff.effort || undefined,
     systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list() }),
     resume: bot.freshSession ? undefined : chat.sessions[bot.id],
@@ -152,7 +152,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
-    env: agentEnv(),
+    env: agentEnv({ role: 'bot', botId: bot.id }, eff.model || settings.get().defaultModel || undefined),
   };
   const onSessionId = (sid: string) => {
     const c = chats.get(chat.id);

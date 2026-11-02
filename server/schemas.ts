@@ -171,8 +171,26 @@ export const SettingsPatch = z
         router: z.object({ enabled: z.boolean(), model: text(200), workerModel: text(200), maxWorkers: z.number().int().min(1).max(8) }).partial(),
       })
       .partial(),
+    // Shapes only; normalizeGateway drops what does not parse (bad ids, URLs, members).
+    gateway: z
+      .object({
+        enabled: z.boolean(),
+        port: z.number().int().min(0).max(65535),
+        providers: z.array(z.looseObject({ id: text(40), baseUrl: text(500) })).max(50),
+        groups: z.array(z.looseObject({ id: text(40), members: z.array(text(200)).max(20) })).max(50),
+        defaultTarget: text(200),
+        fastTarget: text(200),
+        roles: z.record(z.string(), text(200)),
+        windows: z.array(z.looseObject({ role: text(20) })).max(50),
+        masking: z.boolean(),
+      })
+      .partial(),
+    /** Provider id → key; '' removes it. */
+    gatewayTokens: z.record(z.string(), z.string().max(2000)),
   })
   .partial();
+
+export const GatewayTestBody = z.object({ target: text(200) });
 
 /** Console output the preview reported, forwarded by the UI while the Super-agent is on. */
 export const PreviewConsole = z.object({

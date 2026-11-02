@@ -7,6 +7,7 @@ import { modelEnv } from '../claudeAuth';
 import { cleanEnv } from '../config';
 import { PLUGINS } from '../data/catalog';
 import { devServer } from '../devserver';
+import type { Scope } from '../gateway/config';
 import { configOf, devCommand } from '../projects';
 import { ALWAYS_ALLOWED, sandboxStatus } from '../sandbox';
 import { settings } from '../store';
@@ -36,9 +37,12 @@ export function effectiveBot(chat: Chat, bot: Bot): Bot {
   };
 }
 
-/** The bots' environment: which endpoint, credentials and models their Claude Code uses. */
-export function agentEnv(): Record<string, string> {
-  return cleanEnv(modelEnv());
+/**
+ * The bots' environment: which endpoint, credentials and models their Claude Code uses. The scope
+ * says who the session is for (the gateway's routes, windows and usage log go by it).
+ */
+export function agentEnv(scope: Scope, model?: string): Record<string, string> {
+  return cleanEnv(modelEnv(settings.get(), scope, model));
 }
 
 function substitute(value: string, env: Record<string, string>): string {

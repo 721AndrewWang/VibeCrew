@@ -121,7 +121,7 @@ class ChatRouter {
       .map((b) => ({ name: b.id === lead.id ? `${b.name} (you)` : b.name, title: b.title, profile: profileOf(b) }));
     const cfg: SessionConfig = {
       cwd: ROUTER_CWD,
-      model: botModel(rs.model),
+      model: botModel(rs.model, { role: 'router', botId: lead.id }),
       systemAppend: '',
       systemPrompt: routerSystemPrompt({ lead: lead.name, leadTitle: lead.title, chat: chat.title, role: lead.description, team, maxWorkers: rs.maxWorkers }),
       // No Bash, Read, Edit, Write, WebFetch or Task: the Router coordinates, Workers execute.
@@ -134,7 +134,7 @@ class ChatRouter {
       mcpServers: { crew_router: routerMcpServer(this.tools) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],
-      env: agentEnv(),
+      env: agentEnv({ role: 'router', botId: lead.id }, rs.model || settings.get().defaultModel || undefined),
       role: 'router',
       fakeTools: this.tools,
     };
