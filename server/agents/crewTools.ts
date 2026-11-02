@@ -4,6 +4,8 @@ import type { ConsoleEntry } from '../../shared/types';
 import { act, consoleCheck, debugTarget, screenshot } from '../browser';
 import { notify } from '../bus';
 import { devServer } from '../devserver';
+import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
+import { ANSI } from '../procs';
 import { bots, messages } from '../store';
 import { appendMemory } from './prompts';
 
@@ -20,9 +22,9 @@ export interface CrewContext {
   actKey?: string;
   /** A Worker (two-layer mode) never talks to the user, so it gets no notify_user. */
   worker?: boolean;
+  /** Full duplex (ADR 004): the start/stop/status tools, for a bot with fullDuplex on. */
+  jobs?: JobHost;
 }
-
-const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
 
 function text(t: string) {
   return { content: [{ type: 'text' as const, text: t }] };
@@ -55,6 +57,12 @@ export function crewServer(ctx: CrewContext) {
     return id;
   };
   const pagePath = (p?: string) => p || ctx.currentPage() || '/';
+
+  const jobs = ctx.jobs ? jobTools(ctx.jobs) : null;
+  const call = (h: JobHandler) => async (args: Record<string, unknown>) => {
+    const r = await h(args);
+    return r.isError ? fail(r.text) : text(r.text);
+  };
 
   return createSdkMcpServer({
     name: 'crew',
@@ -234,6 +242,43 @@ export function crewServer(ctx: CrewContext) {
           return text('Saved.');
         },
       ),
+      ...(jobs
+        ? [
+            tool(
+              'start',
+              'Start a long-running shell command (a build, a test suite, an install, a migration) or a sub-task in the background, and return at once with its job id. Its result arrives later as a new message: the first and last lines of the output, with the full log readable through status. Use it for anything that may take more than about 30 seconds, instead of Bash. A command runs in your working directory under the same rules as Bash (blocked actions, approval, sandbox). Not for dev servers: use dev_server.',
+              {
+                command: z.string().optional().describe('The shell command to run (bash -c). Give command or task, not both.'),
+                task: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'A sub-task for a background session of you, with the same tools and rules (it cannot start jobs itself): investigation or a check you do not need to watch. It shares your folder, so do not give it edits that overlap yours.',
+                  ),
+                title: z.string().optional().describe('A few words saying what it is, shown to the user'),
+                timeoutMin: z.number().optional().describe('Stop it after this many minutes (default 60, at most 720; a sandboxed command at most 10)'),
+              },
+              call(jobs.start),
+            ),
+            tool(
+              'stop',
+              'Stop a background job you started (a command is terminated with its child processes). Returns its output so far.',
+              { id: z.string().describe('The job id (job_…)') },
+              call(jobs.stop),
+            ),
+            tool(
+              'status',
+              "List this chat's background jobs, or show one job's status and output (head and tail). With from/lines, read that slice of its full log.",
+              {
+                id: z.string().optional().describe('A job id; leave empty to list the jobs'),
+                from: z.number().int().optional().describe('First line to read (1-based)'),
+                lines: z.number().int().optional().describe('How many lines to read (at most 400)'),
+              },
+              call(jobs.status),
+              { annotations: { readOnlyHint: true } },
+            ),
+          ]
+        : []),
       ...(ctx.worker
         ? []
         : [

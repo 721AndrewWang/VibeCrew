@@ -1,9 +1,9 @@
 import os from 'node:os';
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project } from '../../shared/types';
 import { crewServer } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
-import { buildSystemAppend, buildTurnPrompt, contextDelta } from '../agents/prompts';
+import { buildSystemAppend, buildTurnPrompt, contextDelta, type NewInput, newInputNote, renderUserMessage } from '../agents/prompts';
 import { summarize, TurnRecorder } from '../agents/recorder';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import { TurnStream } from '../agents/stream';
@@ -14,6 +14,9 @@ import { botModel } from '../claudeAuth';
 import { FAKE_AGENT } from '../config';
 import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
+import { type Delivery, forgetChatJobs, jobsRunningIn, onJobDone, runningJobs, stopChatJobs } from '../jobs';
+import { jobLine } from '../jobs/spill';
+import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
 import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
 import { logger } from '../log';
 import { chatProjectId, configOf, decorate, gitIn, HttpError, touchProject } from '../projects';
@@ -23,7 +26,7 @@ import { shadowRoute } from '../router';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { continueNote, leadContinues, stalledLead, stallNote } from '../stall';
-import { bots, chats, messages, projects, routines, settings, uid } from '../store';
+import { bots, chats, jobs, messages, projects, routines, settings, uid } from '../store';
 import { chatThread, closeThread, publishTrigger, routineThread } from '../triggers';
 import { monthSpend, shareOfTurn, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
@@ -83,6 +86,12 @@ interface Running {
   msg: ChatMessage;
   session: AgentSession;
   stream: TurnStream;
+  /** The turn's tool gate: `start` asks it about the command, as Claude Code asks it about Bash. */
+  gate: CanUseTool;
+  /** Full duplex: input for this bot that arrived during the turn, not yet handed to the model. */
+  inbox: NewInput[];
+  /** Sequence numbers of chat messages the model was handed mid-turn. */
+  injected: Set<number>;
 }
 
 const queues = new Map<string, Job[]>();
@@ -120,15 +129,39 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   if (existing) existing.close();
   staleSessions.delete(key);
 
+  const cfg = sessionConfig(chat, bot, project);
+  const onSessionId = (sid: string) => {
+    const c = chats.get(chat.id);
+    if (!c || c.sessions[bot.id] === sid) return;
+    c.sessions[bot.id] = sid;
+    chats.save();
+  };
+  const members = bots
+    .all()
+    .filter((b) => chat.botIds.includes(b.id))
+    .map((b) => b.name);
+  const session = FAKE ? new FakeSession(cfg, bot.name, members, onSessionId) : new BotSession(cfg, onSessionId);
+  sessions.set(key, session);
+  return session;
+}
+
+/**
+ * The Claude Code session a bot gets in a chat: its own turns (resumed), or a background sub-task
+ * of it (a new conversation, without the full-duplex tools).
+ */
+function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { subtask?: { actKey: string } } = {}): SessionConfig {
   const team = bots.all();
   const conf = project ? configOf(project) : null;
   const eff = effectiveBot(chat, bot);
-  const cfg: SessionConfig = {
+  const duplex = !!bot.fullDuplex && !opts.subtask;
+  const host = duplex ? jobHost(chat.id, bot.id) : undefined;
+  const handlers = host ? jobTools(host) : undefined;
+  return {
     cwd: project?.path || os.homedir(),
     model: botModel(eff.model),
     effort: eff.effort || undefined,
-    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list() }),
-    resume: bot.freshSession ? undefined : chat.sessions[bot.id],
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list(), subtask: !!opts.subtask }),
+    resume: bot.freshSession || opts.subtask ? undefined : chat.sessions[bot.id],
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
@@ -148,23 +181,159 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
           const pid = chatProjectId(chats.get(chat.id));
           return pid ? previewPageOf(pid) : undefined;
         },
+        actKey: opts.subtask?.actKey,
+        jobs: host,
       }) as McpServerConfig,
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
     env: agentEnv(),
+    midTurnNote: duplex ? () => drainInbox(chat.id, bot.id) : undefined,
+    fakeTools: handlers ? (handlers as Record<string, JobHandler>) : undefined,
   };
-  const onSessionId = (sid: string) => {
-    const c = chats.get(chat.id);
-    if (!c || c.sessions[bot.id] === sid) return;
-    c.sessions[bot.id] = sid;
-    chats.save();
-  };
-  const members = team.filter((b) => chat.botIds.includes(b.id)).map((b) => b.name);
-  const session = FAKE ? new FakeSession(cfg, bot.name, members, onSessionId) : new BotSession(cfg, onSessionId);
-  sessions.set(key, session);
-  return session;
 }
+
+// ---------------------------------------------------------------- full duplex (ADR 004)
+
+/** The running turn of this bot in this chat, if it is one. */
+function turnOf(chatId: string, botId: string): Running | undefined {
+  const r = running.get(chatId);
+  return r && r.job.botId === botId ? r : undefined;
+}
+
+/** What arrived for the bot during its turn, handed to the model once, after its current step. */
+function drainInbox(chatId: string, botId: string): string | null {
+  const r = turnOf(chatId, botId);
+  if (!r?.inbox.length) return null;
+  const items = r.inbox.splice(0);
+  for (const i of items) r.injected.add(i.seq);
+  return newInputNote(items);
+}
+
+/** Input for a full-duplex bot whose turn is running: it reads it after its current step. */
+function offerMidTurn(chatId: string, botId: string, item: NewInput) {
+  const r = turnOf(chatId, botId);
+  // Only what came after the turn began: the message that started it is already in its prompt.
+  if (r && item.seq > r.msg.seq && bots.get(botId)?.fullDuplex) r.inbox.push(item);
+}
+
+/**
+ * The turn is over: if the model was handed every message that came in during it, the bot has
+ * seen them, and the turn queued for them is not needed. Otherwise it runs as usual.
+ */
+function settleMidTurn(chatId: string, botId: string, r: Running) {
+  if (!r.injected.size) return;
+  const chat = chats.get(chatId);
+  if (!chat) return;
+  const after = messages.sorted(chatId).filter((m) => m.seq > r.msg.seq && !m.uiOnly && !(m.role === 'bot' && m.botId === botId));
+  if (!after.length || !after.every((m) => r.injected.has(m.seq))) return;
+  chat.cursors[botId] = Math.max(chat.cursors[botId] ?? 0, ...after.map((m) => m.seq));
+  chats.save();
+  const q = queues.get(chatId);
+  if (q)
+    queues.set(
+      chatId,
+      q.filter((j) => !(j.botId === botId && (j.trigger.type === 'user' || j.trigger.type === 'job'))),
+    );
+}
+
+/** What the start/stop/status tools of a bot in a chat need, read fresh at each call. */
+function jobHost(chatId: string, botId: string): JobHost {
+  const here = () => {
+    const chat = chats.get(chatId);
+    const bot = bots.get(botId);
+    if (!chat || !bot) throw new Error('The chat or the bot no longer exists');
+    const project = projects.get(chatProjectId(chat)) ?? null;
+    return { chat, bot, project, cwd: project?.path || os.homedir() };
+  };
+  return {
+    chatId,
+    botId,
+    level: () => {
+      const { chat, bot } = here();
+      return effectiveBot(chat, bot).permission;
+    },
+    where: () => {
+      const { project, cwd } = here();
+      return { projectId: project?.id ?? null, cwd };
+    },
+    turnMessageId: () => turnOf(chatId, botId)?.msg.id,
+    gateCommand: async (command, title) => {
+      const r = turnOf(chatId, botId);
+      if (!r) return 'start can only be used during your own turn.';
+      // The same question Claude Code would ask about Bash: deny list, rules, level, approval card.
+      const d = await r.gate('Bash', { command, description: title }, { signal: new AbortController().signal, toolUseID: uid('start_') } as Parameters<CanUseTool>[2]);
+      if (d?.behavior === 'allow') return null;
+      return (d && 'message' in d && d.message) || 'Not allowed.';
+    },
+    commandSpec: (command) => {
+      const { project, cwd } = here();
+      const conf = project ? configOf(project) : null;
+      const s = settings.get();
+      // The demo agent has no Claude Code to run a sandboxed Bash call in.
+      const sandbox = FAKE ? undefined : sandboxOptions(s.sandbox.enabled, s.sandbox.allowedDomains, conf?.allowedDomains);
+      return {
+        command,
+        sandbox,
+        denyRules: s.denyRules || [],
+        deniedReason: (toolName, input) => deniedReason(toolName, input, cwd),
+        env: { CREW_JOB: '1' },
+        agentEnv: agentEnv(),
+      };
+    },
+    taskSpec: (task) => {
+      const { chat, bot, project, cwd } = here();
+      const cfg = sessionConfig(chat, bot, project, { subtask: { actKey: `${chatId}:${botId}:${uid('st_')}` } });
+      return {
+        task,
+        content: [`<context>\n${contextLines(project).join('\n')}\n</context>`, `Your task, from your main session:\n\n${task}`].join('\n\n'),
+        session: () => (FAKE ? new FakeSession(cfg, bot.name, [], () => {}) : new BotSession(cfg, () => {})),
+        hooks: (stream, status) => ({
+          beforeEdit: () => {},
+          canUseTool: permissionGate({
+            chat,
+            bot,
+            project,
+            cwd,
+            stream,
+            who: `${bot.name} (background sub-task)`,
+            status: (st) => status(st.state === 'waiting' ? st.detail || 'an action' : null),
+          }),
+        }),
+      };
+    },
+  };
+}
+
+/** A job ended: its result goes into the chat as an event, and the bot that started it gets a turn. */
+function deliverJob({ job, text, turn }: Delivery) {
+  const chat = chats.get(job.chatId);
+  if (!chat) return;
+  const bot = bots.get(job.botId);
+  const msg = systemMessage(chat, text, { notice: 'job', jobId: job.id });
+  const t = publishTrigger({
+    source: 'job',
+    summary: `${bot?.name || 'A bot'}'s job: ${jobLine(job)}`,
+    thread: chatThread(chat),
+    ref: { kind: 'message', chatId: chat.id, messageId: msg.id },
+    chatId: chat.id,
+    projectId: job.projectId,
+    explicit: true,
+    related: [job.id, ...(job.startedBy ? [job.startedBy] : [])],
+    action: turn && bot ? `Delivered to ${bot.name}` : 'Posted in the chat',
+  });
+  const cur = jobs.get(job.id);
+  if (cur) {
+    cur.resultMessageId = msg.id;
+    cur.triggerId = t?.id;
+    jobs.set(cur);
+    bus.emit({ t: 'job', job: cur });
+  }
+  if (!turn || !bot || !chat.botIds.includes(bot.id) || routerMode(chat)) return;
+  offerMidTurn(chat.id, bot.id, { seq: msg.seq, who: 'System', text });
+  enqueue({ chatId: chat.id, botId: bot.id, trigger: { type: 'job', jobId: job.id }, hopsLeft: chat.maxHops });
+}
+onJobDone(deliverJob);
 
 function closeSession(key: string) {
   const s = sessions.get(key);
@@ -335,6 +504,8 @@ export async function withChatLocked<T>(chatId: string, what: string, fn: () => 
   if (locked.has(chatId)) throw new HttpError(409, "The previous operation hasn't finished yet, please wait");
   const shared = sharedWorkerActive(chatId);
   if (shared) throw new HttpError(409, `A Worker ("${shared.title}") is working in this chat's folder; wait for it to finish before ${what}`);
+  const job = runningJobs(chatId)[0];
+  if (job) throw new HttpError(409, `A background job ("${job.title}") is running in this chat's folder; stop it or wait for it before ${what}`);
   locked.add(chatId);
   try {
     // Git operations on the workspace (and a merge into its parent's checkout) are Crew's writes.
@@ -368,7 +539,7 @@ export async function whenChatFree<T>(chatId: string, fn: () => Promise<T>): Pro
 /** A bot turn (or a two-layer Worker) is running in the project (or workspace) right now. */
 export function projectRunning(projectId: string): boolean {
   for (const r of running.values()) if (chatProjectId(chats.get(r.job.chatId)) === projectId) return true;
-  return workerWorkingIn(projectId);
+  return workerWorkingIn(projectId) || jobsRunningIn(projectId);
 }
 
 /** A bot is working in the project, or just finished (its file events are still arriving). */
@@ -474,14 +645,16 @@ async function runTurn(job: Job) {
   );
 
   const cwd = project?.path || os.homedir();
+  const gate = permissionGate({ chat, bot, project, cwd, stream });
   const hooks = {
     onMessage: (m: Parameters<TurnStream['handle']>[0]) => stream.handle(m),
     beforeEdit: (fp: string | undefined) => recorder?.beforeEdit(fp),
-    canUseTool: permissionGate({ chat, bot, project, cwd, stream }),
+    canUseTool: gate,
   };
 
   let session = getSession(chat, bot, project);
-  running.set(chat.id, { job, msg, session, stream });
+  const turn: Running = { job, msg, session, stream, gate, inbox: [], injected: new Set() };
+  running.set(chat.id, turn);
   try {
     let result: Awaited<ReturnType<typeof session.run>>;
     try {
@@ -494,7 +667,7 @@ async function runTurn(job: Job) {
       chats.save();
       sessions.delete(sessionKey(chat.id, bot.id));
       session = getSession(chat, bot, project);
-      running.set(chat.id, { job, msg, session, stream });
+      turn.session = session;
       result = await session.run(contentFor(session), hooks);
     }
     progress.cancel();
@@ -515,10 +688,11 @@ async function runTurn(job: Job) {
   }
 
   if (project) lastTurnEnd.set(project.id, Date.now());
-  const turn = recorder?.finish();
-  if (turn) {
-    msg.changes = { files: turn.files.map((f) => f.path) };
-    bus.emit({ t: 'turn', turn: summarize(turn) });
+  settleMidTurn(chat.id, bot.id, turn);
+  const recorded = recorder?.finish();
+  if (recorded) {
+    msg.changes = { files: recorded.files.map((f) => f.path) };
+    bus.emit({ t: 'turn', turn: summarize(recorded) });
   }
   msg.text = stream.finalText();
   // In a workspace every turn becomes a commit on the chat's branch.
@@ -742,6 +916,8 @@ export function sendUserMessage(chatId: string, input: { text: string; attachmen
     action: targets.length ? `Sent to ${targets.map((b) => b.name).join(', ')}` : 'No bot in the chat to send it to',
   });
   for (const b of targets) enqueue({ chatId, botId: b.id, trigger: { type: 'user' }, hopsLeft: chat.maxHops });
+  // Full duplex: a bot working right now reads this after its current step (text only).
+  if (!msg.attachments?.some((a) => a.kind === 'image')) for (const b of targets) offerMidTurn(chatId, b.id, { seq: msg.seq, who: 'User', text: renderUserMessage(msg) });
   return msg;
 }
 
@@ -816,6 +992,7 @@ export function runInChat(chatId: string, botId: string, prompt: string, trigger
 
 export async function stopChat(chatId: string) {
   await stopLayers(chatId);
+  await stopChatJobs(chatId, 'The user stopped the chat');
   const q = queues.get(chatId) || [];
   queues.delete(chatId);
   for (const j of q) settleStatus(j.botId);
@@ -847,6 +1024,7 @@ export function resetChat(chatId: string) {
   chat.sessions = {};
   chat.context = {};
   resetLayers(chatId);
+  void stopChatJobs(chatId, 'A new topic was started');
   closeThread(`chat:${chatId}`);
   const msg = systemMessage(chat, '—— New topic ——', { uiOnly: true });
   for (const b of chat.botIds) chat.cursors[b] = msg.seq;
@@ -857,6 +1035,7 @@ export function resetChat(chatId: string) {
 export function forgetChat(chatId: string) {
   queues.delete(chatId);
   forgetLayers(chatId);
+  void forgetChatJobs(chatId).catch((e) => log.warn('forget jobs:', e));
   closeThread(`chat:${chatId}`);
   for (const key of [...sessions.keys()]) {
     if (key.startsWith(`${chatId}:`)) {

@@ -7,7 +7,7 @@
 // the running total as their cost; they are told apart by the missing `sessionCostUsd`.
 
 import type { BotUsage, ChatMessage, TurnTokens, UsageSummary } from '../shared/types';
-import { chats, messages, routerLogId, workers } from './store';
+import { chats, jobs, messages, routerLogId, workers } from './store';
 
 const noTokens = (): TurnTokens => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
 const empty = (): BotUsage => ({ costUsd: 0, turns: 0, durationMs: 0, tokens: noTokens(), tokenTurns: 0 });
@@ -57,8 +57,8 @@ export function usageOf(now = new Date()): Record<string, UsageSummary> {
   const day = startOfToday(now);
   const month = startOfMonth(now);
   const out: Record<string, UsageSummary> = {};
-  // Chats, and the logs of two-layer mode: each chat's Router turns, and each Worker's.
-  const logs = [...chats.all().flatMap((c) => [c.id, routerLogId(c.id)]), ...workers.all().map((w) => w.id)];
+  // Chats, the logs of two-layer mode (each chat's Router turns, and each Worker's), and background sub-tasks.
+  const logs = [...chats.all().flatMap((c) => [c.id, routerLogId(c.id)]), ...workers.all().map((w) => w.id), ...jobs.all().flatMap((j) => (j.kind === 'task' ? [j.id] : []))];
   for (const logId of logs) {
     // Running totals seen so far per session, for turns saved with the total as their cost.
     const legacyTotal = new Map<string, number>();

@@ -236,6 +236,7 @@ const NOTICED: Record<TriggerSource, string> = {
   turn: 'a failed turn',
   'outside-edit': 'an outside edit',
   'preview-console': 'a preview console error',
+  job: 'a background job result',
 };
 
 export function noticeText(t: Trigger): string {

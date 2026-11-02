@@ -42,6 +42,9 @@ export const DATA = {
   triggerPayloads: path.join(HOME_DIR, 'triggers', 'payloads'),
   /** Two-layer mode's Workers (server/layers): written on the first dispatch. */
   workers: path.join(HOME_DIR, 'workers.json'),
+  /** Full duplex's background jobs (server/jobs): created on the first job. */
+  jobs: path.join(HOME_DIR, 'jobs', 'jobs.json'),
+  jobLogs: path.join(HOME_DIR, 'jobs'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

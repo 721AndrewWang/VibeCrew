@@ -142,11 +142,14 @@ const SOURCE_NAME: Record<TriggerSource, string> = {
   turn: 'Bot turn results',
   'outside-edit': 'Outside edits',
   'preview-console': 'Preview console errors',
+  job: 'Background job results',
 };
 
 export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   const act = (rule: string, reason: string): TriggerFilter => ({ verdict: 'act', stage: 'fast', rule, reason });
   const drop = (rule: string, reason: string): TriggerFilter => ({ verdict: 'drop', stage: 'fast', rule, reason });
+  // A background job's result goes back to the bot that started it (full duplex), in code.
+  if (t.source === 'job') return act('job-result', 'A background job ended; its result went to the bot that started it');
   // The user's own messages and routines, and a bot handing work to a teammate: the chat acts on them as always.
   if (t.explicit || t.source === 'user' || t.source === 'routine') return act('explicit-request', 'An explicit request; handled by the chat without a model');
   // A Worker's turn result already went straight to the Router that dispatched it.

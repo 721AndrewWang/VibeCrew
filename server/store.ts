@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type {
   AuthMode,
+  BackgroundJob,
   Bot,
   Chat,
   ChatMessage,
@@ -422,5 +423,7 @@ export const triggerLog = new JsonlLog<Trigger>(DATA.triggers, TRIGGER_LIMITS, (
 export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });
 /** Two-layer mode's Workers; their turns are kept by `messages` under the Worker's id. */
 export const workers = new Collection<Worker>(DATA.workers);
+/** Full duplex's background jobs; a sub-task's transcript is kept by `messages` under the job's id. */
+export const jobs = new Collection<BackgroundJob>(DATA.jobs, { mkdir: true });
 /** Where `messages` keeps a chat's Router turns. */
 export const routerLogId = (chatId: string) => `rt_${chatId}`;

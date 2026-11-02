@@ -17,6 +17,7 @@ import { devServer, devServerStates } from './devserver';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { frictionReport } from './friction';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
+import { getJob, jobLog, listJobs, stopJob } from './jobs';
 import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, routerInfos, stopWorker } from './layers';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
@@ -104,6 +105,7 @@ function bootstrap(): Bootstrap {
     statuses: botStatuses(),
     workers: listWorkers(),
     routers: routerInfos(),
+    jobs: listJobs(),
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
@@ -273,6 +275,21 @@ export function apiRouter() {
     if (['starting', 'running', 'waiting'].includes(w.status)) throw new HttpError(409, 'Stop the Worker first');
     await dismissWorker(w);
     res.json(w);
+  });
+  // ------------------------------------------------------------ full duplex: background jobs
+  r.get('/jobs', (req, res) => res.json(listJobs(str(req.query.chatId) || undefined)));
+  const job = (id: string) => {
+    const j = getJob(id);
+    if (!j) throw new HttpError(404, 'Job not found');
+    return j;
+  };
+  r.get('/jobs/:id/log', (req, res) => {
+    const j = job(req.params.id);
+    const num = (v: unknown) => (typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : undefined);
+    res.json({ ...jobLog(j.id, num(req.query.from), num(req.query.lines)), messages: j.kind === 'task' ? messages.list(j.id, { limit: 50 }) : undefined });
+  });
+  r.post('/jobs/:id/stop', async (req, res) => {
+    res.json(await stopJob(job(req.params.id).id, 'Stopped by the user'));
   });
   r.get('/chats/:id/router/messages', (req, res) => {
     if (!chats.get(req.params.id)) throw new HttpError(404, 'Chat not found');
