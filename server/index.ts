@@ -13,6 +13,7 @@ import { checkAuth } from './claudeAuth';
 import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
 import { stopAllDevServers } from './devserver';
 import { initIfNeeded } from './entities';
+import { stopGateway, syncGateway } from './gateway';
 import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
 import { closeAllSessions } from './orchestrator';
@@ -124,6 +125,8 @@ wss.on('connection', (ws: WebSocket) => {
 
 async function main() {
   await initIfNeeded();
+  // Before anything can start a session: sessions get the gateway's address when they start.
+  await syncGateway();
   const layers = recoverLayers();
   await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
@@ -182,6 +185,7 @@ async function shutdown() {
   closeAllSessions();
   closeAllTerminals();
   closeAllPreviews();
+  void stopGateway();
   await Promise.race([Promise.all([stopAllDevServers(), closeBrowser(), stopAllWatches()]), new Promise((r) => setTimeout(r, 4000))]);
   process.exit(0);
 }

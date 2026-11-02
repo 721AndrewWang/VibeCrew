@@ -494,6 +494,118 @@ export interface PublicSettings {
   push: { configured: boolean; afterMinutes: number };
   /** The event-driven core (Trigger bus, threads, two-stage filter); off = Crew as before. */
   superAgent: SuperAgentSettings;
+  /** The local model gateway (ADR 009); keys are never included, only whether each provider has one. */
+  gateway: PublicGatewaySettings;
+}
+
+/** Who a gateway call is for: chat turns, two-layer roles, and background one-shot calls. */
+export type GatewayRole = 'bot' | 'worker' | 'router' | 'watchdog' | 'speculative' | 'oneshot';
+
+/** One Anthropic-compatible endpoint with one key (several accounts = several providers). */
+export interface GatewayProvider {
+  /** Used in addresses: <id>/<model>. Letters, digits, '-', '_', '.'. */
+  id: string;
+  name: string;
+  baseUrl: string;
+  /** How the key is sent: Authorization: Bearer, or x-api-key (Anthropic's own API). */
+  auth: 'bearer' | 'x-api-key';
+  /** Models offered in the pickers; any model name works in an address. */
+  models: string[];
+  /** USD per million tokens, for the usage log's estimate; unset = a built-in Claude price table, else 0. */
+  price?: { input: number; output: number };
+}
+
+/** An ordered list of provider/model members: the next one answers when one refuses. */
+export interface GatewayGroup {
+  /** A name without '/'. */
+  id: string;
+  members: string[];
+}
+
+/** A rolling limit on what a role (or one bot) may spend; 0 = no limit on that measure. */
+export interface SpendWindow {
+  id: string;
+  role: GatewayRole | '*';
+  /** Only this bot's calls; unset = every call of the role. */
+  botId?: string;
+  hours: number;
+  maxUsd: number;
+  maxTokens: number;
+}
+
+export interface GatewaySettings {
+  enabled: boolean;
+  /** 0 = any free port, picked when it starts. Always 127.0.0.1. */
+  port: number;
+  providers: GatewayProvider[];
+  groups: GatewayGroup[];
+  /** Where a request without an address goes (a group or provider/model). */
+  defaultTarget: string;
+  /** Claude Code's haiku tier (its background calls); '' = the role's target. */
+  fastTarget: string;
+  /** Overrides the role's own model setting, when set. Bots pick through their own model field. */
+  roles: Partial<Record<Exclude<GatewayRole, 'bot'>, string>>;
+  windows: SpendWindow[];
+  /** Replace keys, passwords and emails in prompts with placeholders, restored in replies. */
+  masking: boolean;
+}
+
+export type PublicGatewaySettings = Omit<GatewaySettings, 'providers'> & { providers: (GatewayProvider & { hasToken: boolean })[] };
+
+export interface GatewayTry {
+  member: string;
+  /** handed-on: the provider refused (quota, rate limit, outage) and the next member was asked. */
+  outcome: 'answered' | 'handed-on' | 'failed' | 'skipped';
+  status?: number;
+  detail?: string;
+  ms: number;
+}
+
+/** One call through the gateway, attributed to whoever actually answered. */
+export interface GatewayCall {
+  id: string;
+  at: number;
+  role: GatewayRole;
+  botId?: string;
+  /** The model Claude Code asked for. */
+  requested: string;
+  /** The group or address it resolved to. */
+  target: string;
+  provider?: string;
+  model?: string;
+  outcome: 'ok' | 'error' | 'limited';
+  status: number;
+  tries: GatewayTry[];
+  tokens?: TurnTokens;
+  /** Estimated from the provider's price. */
+  costUsd: number;
+  latencyMs: number;
+  stream: boolean;
+  masked?: number;
+  /** The spend window that refused it. */
+  window?: string;
+  /** Why it failed. */
+  detail?: string;
+}
+
+export interface GatewayTotals {
+  calls: number;
+  costUsd: number;
+  tokens: number;
+  handedOn: number;
+  errors: number;
+}
+
+export interface GatewayReport {
+  running: boolean;
+  url?: string;
+  error?: string;
+  calls: GatewayCall[];
+  /** Over the last 7 days: by provider that answered, and by scope (role or role:botId). */
+  byProvider: Record<string, GatewayTotals>;
+  byScope: Record<string, GatewayTotals>;
+  /** What each window has used now. */
+  windows: { id: string; usedUsd: number; usedTokens: number; spent: boolean; retryAfterSec?: number }[];
 }
 
 /**

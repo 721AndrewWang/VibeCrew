@@ -171,6 +171,7 @@ export const useStore = create<AppState>(() => ({
     rotateAtTokens: 60_000,
     wrapUpAtTokens: 120_000,
     push: { configured: false, afterMinutes: 10 },
+    gateway: { enabled: false, port: 0, providers: [], groups: [], defaultTarget: '', fastTarget: '', roles: {}, windows: [], masking: false },
     superAgent: {
       enabled: false,
       sources: { turn: { mode: 'candidate', allow: [] }, 'outside-edit': { mode: 'candidate', allow: [] }, 'preview-console': { mode: 'candidate', allow: [] } },

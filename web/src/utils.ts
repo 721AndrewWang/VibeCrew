@@ -1,4 +1,4 @@
-import type { BotStatus, PermissionLevel, ToolPart } from '../../shared/types';
+import type { BotStatus, PermissionLevel, PublicSettings, ToolPart } from '../../shared/types';
 
 export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
@@ -247,4 +247,12 @@ export function copyText(text: string) {
   document.execCommand('copy');
   ta.remove();
   return Promise.resolve();
+}
+
+/** The model gateway's addresses for the model pickers: groups first, then each provider's models. */
+export function gatewayOptions(gw: Pick<PublicSettings['gateway'], 'groups' | 'providers'>): { id: string; label: string }[] {
+  return [
+    ...gw.groups.map((g) => ({ id: g.id, label: `${g.id} (group: ${g.members.join(' → ') || 'empty'})` })),
+    ...gw.providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}/${m}`, label: `${p.id}/${m}` }))),
+  ];
 }

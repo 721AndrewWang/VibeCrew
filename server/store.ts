@@ -7,6 +7,7 @@ import type {
   Bot,
   Chat,
   ChatMessage,
+  GatewaySettings,
   Improvement,
   PermissionLevel,
   Project,
@@ -21,6 +22,7 @@ import type {
   Worker,
 } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
+import { DEFAULT_GATEWAY, normalizeGateway } from './gateway/config';
 import { SCHEMA_VERSION } from './migrations';
 import { DEFAULT_ALLOWED } from './sandbox';
 import { DEFAULT_SUPER_AGENT, normalizeSuperAgent } from './triggers/fastPath';
@@ -229,6 +231,10 @@ export interface Settings {
   /** Phone push (Bark) when an approval stays open this many minutes; the URL holds the device key. */
   push: { barkUrl: string; afterMinutes: number };
   superAgent: SuperAgentSettings;
+  /** The local model gateway (ADR 009). */
+  gateway: GatewaySettings;
+  /** Gateway providers' keys by provider id; never leave the server except to their own provider. */
+  gatewayTokens: Record<string, string>;
   initialized: boolean;
 }
 
@@ -255,6 +261,8 @@ const DEFAULT_SETTINGS: Settings = {
   pluginSecrets: {},
   push: { barkUrl: '', afterMinutes: 10 },
   superAgent: DEFAULT_SUPER_AGENT,
+  gateway: DEFAULT_GATEWAY,
+  gatewayTokens: {},
   initialized: false,
 };
 
@@ -267,6 +275,8 @@ class SettingsStore {
     if (!this.data.routing) this.data.routing = { mode: 'shadow' };
     if (!this.data.sandbox) this.data.sandbox = { ...DEFAULT_SETTINGS.sandbox, allowedDomains: [...DEFAULT_ALLOWED] };
     this.data.superAgent = normalizeSuperAgent(this.data.superAgent);
+    this.data.gateway = normalizeGateway(this.data.gateway);
+    if (!this.data.gatewayTokens || typeof this.data.gatewayTokens !== 'object') this.data.gatewayTokens = {};
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -305,6 +315,7 @@ class SettingsStore {
       wrapUpAtTokens: s.wrapUpAtTokens ?? 120_000,
       push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
       superAgent: s.superAgent,
+      gateway: { ...s.gateway, providers: s.gateway.providers.map((p) => ({ ...p, hasToken: !!s.gatewayTokens[p.id] })) },
     };
   }
 

@@ -42,6 +42,8 @@ export const DATA = {
   triggerPayloads: path.join(HOME_DIR, 'triggers', 'payloads'),
   /** Two-layer mode's Workers (server/layers): written on the first dispatch. */
   workers: path.join(HOME_DIR, 'workers.json'),
+  /** The model gateway's usage log (server/gateway): written on its first call. */
+  gatewayCalls: path.join(HOME_DIR, 'gateway', 'calls.jsonl'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {
