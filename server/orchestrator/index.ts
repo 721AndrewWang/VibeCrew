@@ -1,7 +1,7 @@
 import os from 'node:os';
 import type { CanUseTool, McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project, Trigger } from '../../shared/types';
-import { crewServer } from '../agents/crewTools';
+import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
 import { buildSystemAppend, buildTurnPrompt, contextDelta, type NewInput, newInputNote, renderUserMessage } from '../agents/prompts';
 import { summarize, TurnRecorder } from '../agents/recorder';
@@ -12,6 +12,7 @@ import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { FAKE_AGENT } from '../config';
+import type { DraftFields } from '../drafts';
 import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { type Delivery, forgetChatJobs, jobsRunningIn, onJobDone, runningJobs, stopChatJobs } from '../jobs';
@@ -25,6 +26,7 @@ import { quietly } from '../quietWrites';
 import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { parseVerdict, reviewDiff } from '../review';
 import { shadowRoute } from '../router';
+import { agentEnvOptions } from '../safety';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { continueNote, leadContinues, stalledLead, stallNote } from '../stall';
@@ -168,41 +170,45 @@ function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { su
   const duplex = !!bot.fullDuplex && !opts.subtask;
   const host = duplex ? jobHost(chat.id, bot.id) : undefined;
   const handlers = host ? jobTools(host) : undefined;
+  const crewCtx: CrewContext = {
+    botId: bot.id,
+    botName: bot.name,
+    chatId: chat.id,
+    blind: !!bot.blindReview,
+    projectId: () => chatProjectId(chats.get(chat.id)),
+    currentPage: () => {
+      const pid = chatProjectId(chats.get(chat.id));
+      return pid ? previewPageOf(pid) : undefined;
+    },
+    recall,
+    actKey: opts.subtask?.actKey,
+    jobs: host,
+  };
   return {
     cwd: project?.path || os.homedir(),
     model: botModel(eff.model, { role: 'bot', botId: bot.id }),
     effort: eff.effort || undefined,
-    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list(), subtask: !!opts.subtask, recall }),
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.forPrompt(project), subtask: !!opts.subtask, recall }),
     resume: bot.freshSession || opts.subtask ? undefined : chat.sessions[bot.id],
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
     denyRules: settings.get().denyRules || [],
-    deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir()),
+    deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir(), { project, actor: { botId: bot.id, botName: bot.name, chatId: chat.id } }),
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     attributionOff: !!conf?.noAttribution,
     sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
     mcpServers: {
-      crew: crewServer({
-        botId: bot.id,
-        botName: bot.name,
-        chatId: chat.id,
-        blind: !!bot.blindReview,
-        projectId: () => chatProjectId(chats.get(chat.id)),
-        currentPage: () => {
-          const pid = chatProjectId(chats.get(chat.id));
-          return pid ? previewPageOf(pid) : undefined;
-        },
-        recall,
-        actKey: opts.subtask?.actKey,
-        jobs: host,
-      }) as McpServerConfig,
+      crew: crewServer(crewCtx) as McpServerConfig,
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
-    env: agentEnv({ role: 'bot', botId: bot.id }, eff.model || settings.get().defaultModel || undefined),
+    env: agentEnv({ role: 'bot', botId: bot.id }, eff.model || settings.get().defaultModel || undefined, project),
     midTurnNote: duplex ? () => drainInbox(chat.id, bot.id) : undefined,
-    fakeTools: handlers ? (handlers as Record<string, JobHandler>) : undefined,
+    fakeTools: {
+      ...(handlers as Record<string, JobHandler> | undefined),
+      draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields),
+    },
   };
 }
 
@@ -280,7 +286,7 @@ function jobHost(chatId: string, botId: string): JobHost {
       return (d && 'message' in d && d.message) || 'Not allowed.';
     },
     commandSpec: (command) => {
-      const { project, cwd } = here();
+      const { bot, project, cwd } = here();
       const conf = project ? configOf(project) : null;
       const s = settings.get();
       // The demo agent has no Claude Code to run a sandboxed Bash call in.
@@ -289,10 +295,12 @@ function jobHost(chatId: string, botId: string): JobHost {
         command,
         sandbox,
         denyRules: s.denyRules || [],
-        deniedReason: (toolName, input) => deniedReason(toolName, input, cwd),
+        deniedReason: (toolName, input) => deniedReason(toolName, input, cwd, { project, actor: { botId, botName: bot.name, chatId } }),
         env: { CREW_JOB: '1' },
+        // A job is the bot's command: it runs without the user's credentials, like the bot's own Bash calls (ADR 007).
+        envOptions: agentEnvOptions(project),
         // The helper session is the bot's own spend: through the gateway it counts toward the bot's windows.
-        agentEnv: agentEnv({ role: 'bot', botId }),
+        agentEnv: agentEnv({ role: 'bot', botId }, undefined, project),
       };
     },
     taskSpec: (task) => {

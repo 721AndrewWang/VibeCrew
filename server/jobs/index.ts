@@ -9,7 +9,7 @@ import type { BackgroundJob, JobLog } from '../../shared/types';
 import type { AgentSession, TurnHooks } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
 import { bus } from '../bus';
-import { DATA } from '../config';
+import { type CleanEnvOptions, DATA } from '../config';
 import { runLogged } from '../layers/turn';
 import { logger } from '../log';
 import { jobs, messages, uid } from '../store';
@@ -99,7 +99,9 @@ export interface CommandSpec {
   denyRules: string[];
   deniedReason(tool: string, input: unknown): string | null;
   env: Record<string, string>;
-  /** The helper session's environment (model endpoint and credentials). */
+  /** How a command Crew runs itself has its environment cleaned: an agent's command runs without the user's credentials (ADR 007). */
+  envOptions?: CleanEnvOptions;
+  /** The helper session's environment (model endpoint, credentials stripped as for the bot's own session). */
   agentEnv: Record<string, string>;
 }
 
@@ -165,7 +167,7 @@ export function startCommand(base: JobBase, spec: CommandSpec): BackgroundJob {
         { cwd: base.cwd, title: base.title, timeoutMin: base.timeoutMin, sandbox: spec.sandbox, denyRules: spec.denyRules, deniedReason: spec.deniedReason, env: spec.agentEnv },
         hooks,
       )
-    : runDirect(spec.command, base.cwd, spec.env, hooks);
+    : runDirect(spec.command, base.cwd, spec.env, hooks, spec.envOptions);
   log.info(`${j.id} started in ${base.cwd}${j.sandboxed ? ' (sandboxed)' : ''}: ${spec.command.slice(0, 200)}`);
   return j;
 }

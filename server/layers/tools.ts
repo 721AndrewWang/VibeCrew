@@ -4,10 +4,12 @@
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { Bot, ChatMessage } from '../../shared/types';
+import { FAMILY_IDS, isFamily } from '../../shared/families';
+import type { Bot, ChatMessage, SkillFamily } from '../../shared/types';
 import { bus, notify } from '../bus';
 import { emitChat, preview, setLastMessage } from '../orchestrator/chatLog';
 import { RECALL_TOOL, recallText } from '../recall';
+import { projectFamilies } from '../skills';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
 import { monthSpend } from '../usage';
 import { workspaceOf } from '../workspaces';
@@ -111,8 +113,19 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
         maxHops: Math.max(1, chat.maxHops),
       });
       if (refused || !member) return fail(refused || 'No member to run it as.');
+      const family = str(args.family).trim();
+      let picked: SkillFamily | undefined;
+      if (family) {
+        if (!isFamily(family)) return fail(`${family} is not a skill family. Use one of: ${FAMILY_IDS.join(', ')}.`);
+        const enabled = projectFamilies(projects.get(chat.projectId));
+        if (!enabled.includes(family))
+          return fail(
+            `This chat's project has not enabled the ${family} family${enabled.length ? ` (it uses ${enabled.join(', ')})` : ''}. Leave family out, or tell the user they can enable it on the project page.`,
+          );
+        picked = family;
+      }
       const subscribe = subscriptionsOn(settings.get().superAgent) && args.subscribe !== false;
-      const w = startWorker(chat, member, { title, task, related: c.related, userMessageIds: c.userMessageIds, subscribe, threads: c.threads });
+      const w = startWorker(chat, member, { title, task, related: c.related, userMessageIds: c.userMessageIds, subscribe, threads: c.threads, family: picked });
       return ok(`Started ${w.id} as ${member.name}: "${w.title}". It works in the background and its report will arrive as an event; don't wait for it.`);
     },
 
@@ -194,6 +207,7 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
           title: z.string().max(80).describe('A few words naming the task, shown to the user'),
           task: z.string().describe('A self-contained brief: the goal, the files or pages involved, what counts as done'),
           bot: z.string().optional().describe('The member to run it as (a name from the team list); default you'),
+          family: z.string().optional().describe("A skill family the project enabled (see your instructions): the Worker gets that family's skills as its playbook"),
           ...(o.subscriptions
             ? {
                 subscribe: z

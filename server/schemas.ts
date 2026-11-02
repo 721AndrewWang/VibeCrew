@@ -7,6 +7,8 @@ import { z } from 'zod';
 import { HttpError } from './projects';
 
 const PERMISSION = z.enum(['auto', 'edits', 'ask', 'review', 'plan']);
+const FAMILY = z.enum(['triage', 'reproduce', 'draft-fix', 'review', 'release', 'repo-health']);
+const MODE = z.enum(['chat', 'worker', 'speculative']);
 const EFFORT = z.enum(['', 'low', 'medium', 'high', 'xhigh', 'max']);
 const id = z.string().min(1).max(64);
 const text = (max: number) => z.string().max(max);
@@ -91,6 +93,15 @@ export const ProjectPatch = z
     allowedDomains: z.array(text(300)).max(100),
     requireChallenge: z.boolean(),
     autoChallenge: z.object({ enabled: z.boolean(), paths: z.array(text(200)).max(50), minLines: z.number().int().min(0).max(100_000) }),
+    skillFamilies: z.array(FAMILY).max(20),
+    passEnv: z
+      .array(
+        z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'should be variable names (letters, digits, _)')
+          .max(200),
+      )
+      .max(50),
   })
   .partial();
 
@@ -136,6 +147,9 @@ export const SkillSave = z.object({
   argsHint: text(200).optional(),
   body: text(100_000).optional(),
   previousName: text(40).optional(),
+  family: FAMILY.nullable().optional(),
+  modes: z.array(MODE).max(3).optional(),
+  readOnly: z.boolean().optional(),
 });
 
 const sourceRule = z.object({ mode: z.enum(['explicit', 'candidate', 'ignore']), allow: z.array(text(300)).max(50) }).partial();
@@ -200,6 +214,7 @@ export const SettingsPatch = z
       .partial(),
     /** Provider id → key; '' removes it. */
     gatewayTokens: z.record(z.string(), z.string().max(2000)),
+    safety: z.object({ guard: z.boolean(), stripCredentials: z.boolean(), audit: z.boolean() }).partial(),
   })
   .partial();
 
@@ -218,6 +233,24 @@ export const PreviewConsole = z.object({
 
 /** The user takes a Worker off one of its Threads (ADR 003). */
 export const WorkerUnsubscribe = z.object({ threadId: id });
+
+/** A draft of an external action: its kind and fields; Crew builds the exact command from them. */
+export const DraftInput = z.object({
+  kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'message']),
+  remote: text(200).optional(),
+  branch: text(200).optional(),
+  number: z.number().int().min(1).max(10_000_000).optional(),
+  title: text(300).optional(),
+  body: text(60_000).optional(),
+  base: text(200).optional(),
+  head: text(200).optional(),
+  repo: text(200).optional(),
+  channel: text(200).optional(),
+  why: text(1000).optional(),
+});
+
+/** A command for the guard's dry run (Settings → Safety). */
+export const GuardCheck = z.object({ command: text(20_000), projectId: id.nullable().optional() });
 
 export const ImprovementReject = z.object({ note: text(500).optional() });
 

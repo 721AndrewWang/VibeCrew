@@ -266,7 +266,8 @@ describe.skipIf(!claudeCli())('with Claude Code and a mock model', () => {
     expect(worker[0].tools).not.toContain('mcp__crew__notify_user');
     // The Worker got the task and the user's own words; the Router got the report back.
     expect(JSON.stringify(worker[0].body.messages)).toContain('Make the header blue.');
-    expect(JSON.stringify(router.at(-2)?.body.messages ?? '')).toContain('Report: made the header blue.');
+    // Whichever call it was: the Router's follow-up after its reply may or may not have been sent yet.
+    expect(router.some((r) => JSON.stringify(r.body.messages ?? '').includes('Report: made the header blue.'))).toBe(true);
   });
 });
 

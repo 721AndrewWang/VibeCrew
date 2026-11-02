@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  AuditEntry,
   AuthStatus,
   BackgroundJob,
   Bootstrap,
@@ -9,10 +10,12 @@ import type {
   ConsoleEntry,
   DevServerState,
   Effort,
+  ExternalDraft,
   FrictionReport,
   GatewayProvider,
   GatewayReport,
   GatewayTry,
+  GuardVerdict,
   Improvement,
   ImprovementEffect,
   JobLog,
@@ -25,6 +28,7 @@ import type {
   RoutingReport,
   Skill,
   SkillCandidate,
+  SkillFamily,
   Thread,
   Trigger,
   TriggerDetail,
@@ -184,7 +188,7 @@ export const api = {
   screenshot: (id: string, path: string, device: string, fullPage = false) => post<UploadResult>(`/api/projects/${id}/screenshot`, { path, device, fullPage }),
   fs: (path?: string) => get<{ path: string; parent: string | null; home: string; entries: { name: string; path: string; isProject: boolean }[] }>(`/api/fs${path ? `?path=${q(path)}` : ''}`),
 
-  saveSkill: (s: Partial<Skill> & { name: string; previousName?: string }) => post<Skill>('/api/skills', s),
+  saveSkill: (s: Omit<Partial<Skill>, 'family'> & { name: string; previousName?: string; family?: SkillFamily | null }) => post<Skill>('/api/skills', s),
   deleteSkill: (name: string) => del(`/api/skills/${q(name)}`),
   skillFromRecording: (p: { name: string; title: string; goal: string; page: string; steps: RecordedStep[] }) => post<Skill>('/api/skills/from-recording', p),
 
@@ -229,6 +233,12 @@ export const api = {
   // Full duplex: background jobs.
   jobLog: (id: string, from?: number, lines?: number) => get<JobLog & { messages?: ChatMessage[] }>(`/api/jobs/${q(id)}/log${from !== undefined ? `?from=${from}&lines=${lines ?? 400}` : ''}`),
   stopJob: (id: string) => post<BackgroundJob>(`/api/jobs/${q(id)}/stop`),
+
+  // Safety (ADR 007): drafts of external actions, the audit log, the guard's dry run.
+  approveDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/approve`),
+  discardDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/discard`),
+  audit: (limit = 200) => get<{ enabled: boolean; entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),
+  guardCheck: (command: string, projectId?: string | null) => post<{ enabled: boolean; verdict: GuardVerdict }>('/api/guard/check', { command, projectId: projectId || null }),
 };
 
 export function fileToBase64(file: Blob): Promise<string> {

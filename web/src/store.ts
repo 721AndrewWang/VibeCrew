@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import type {
   Attachment,
+  AuditEntry,
   AuthStatus,
   BackgroundJob,
   Bootstrap,
@@ -12,6 +13,7 @@ import type {
   ChatMessage,
   ConsoleEntry,
   DevServerState,
+  ExternalDraft,
   PluginDef,
   PreviewInfo,
   Project,
@@ -98,6 +100,10 @@ export interface AppState {
   watchdog: WatchdogInfo | null;
   /** Full duplex: background jobs of full-duplex bots. */
   jobs: Record<string, BackgroundJob>;
+  /** External-action drafts (ADR 007), by id: pending ones and the latest decided. */
+  actionDrafts: Record<string, ExternalDraft>;
+  /** The audit log's newest entries, newest first: loaded by Settings → Safety, then kept live. */
+  audit: { entries: AuditEntry[]; loaded: boolean };
   devServers: Record<string, DevServerState>;
   previews: Record<string, PreviewInfo>;
   devLogs: Record<string, string>;
@@ -180,6 +186,7 @@ export const useStore = create<AppState>(() => ({
     wrapUpAtTokens: 120_000,
     push: { configured: false, afterMinutes: 10 },
     gateway: { enabled: false, port: 0, providers: [], groups: [], defaultTarget: '', fastTarget: '', roles: {}, windows: [], masking: false },
+    safety: { guard: true, stripCredentials: true, audit: false },
     superAgent: {
       enabled: false,
       sources: { turn: { mode: 'candidate', allow: [] }, 'outside-edit': { mode: 'candidate', allow: [] }, 'preview-console': { mode: 'candidate', allow: [] } },
@@ -208,6 +215,8 @@ export const useStore = create<AppState>(() => ({
   jobs: {},
   routers: {},
   watchdog: null,
+  actionDrafts: {},
+  audit: { entries: [], loaded: false },
   devServers: {},
   previews: {},
   devLogs: {},
@@ -277,6 +286,7 @@ export async function boot() {
       workers: byId(b.workers || []),
       jobs: byId(b.jobs || []),
       routers: Object.fromEntries((b.routers || []).map((r) => [r.chatId, r])),
+      actionDrafts: byId(b.drafts || []),
       devServers: Object.fromEntries(b.devServers.map((d) => [d.projectId, d])),
       previews: Object.fromEntries(b.previews.map((p) => [p.projectId, p])),
       activeChatId: active,
@@ -482,6 +492,12 @@ export function applyEvent(ev: ServerEvent) {
       set({ jobs });
       break;
     }
+    case 'draft':
+      set({ actionDrafts: { ...s.actionDrafts, [ev.draft.id]: ev.draft } });
+      break;
+    case 'audit':
+      if (s.audit.loaded) set({ audit: { loaded: true, entries: [ev.entry, ...s.audit.entries].slice(0, 500) } });
+      break;
     case 'auth':
       set({ auth: ev.auth });
       break;

@@ -9,6 +9,7 @@ import { PLUGINS } from '../data/catalog';
 import { devServer } from '../devserver';
 import type { Scope } from '../gateway/config';
 import { configOf, devCommand } from '../projects';
+import { agentEnvOptions } from '../safety';
 import { ALWAYS_ALLOWED, sandboxStatus } from '../sandbox';
 import { settings } from '../store';
 import { IMAGE_MIMES, readUpload } from '../uploads';
@@ -39,10 +40,13 @@ export function effectiveBot(chat: Chat, bot: Bot): Bot {
 
 /**
  * The bots' environment: which endpoint, credentials and models their Claude Code uses. The scope
- * says who the session is for (the gateway's routes, windows and usage log go by it).
+ * says who the session is for (the gateway's routes, windows and usage log go by it, ADR 009). The
+ * user's own tokens and keys are stripped (ADR 007) unless the project passes them through; the
+ * model's connection (the gateway's scope token, or the provider key) is added after, so Claude
+ * Code still runs.
  */
-export function agentEnv(scope: Scope, model?: string): Record<string, string> {
-  return cleanEnv(modelEnv(settings.get(), scope, model));
+export function agentEnv(scope: Scope, model?: string, project: Project | null = null): Record<string, string> {
+  return cleanEnv(modelEnv(settings.get(), scope, model), agentEnvOptions(project));
 }
 
 function substitute(value: string, env: Record<string, string>): string {

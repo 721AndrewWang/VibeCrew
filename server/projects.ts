@@ -213,7 +213,10 @@ export async function createProject(input: { name: string; template: string; par
 }
 
 type ProjectPatch = Partial<
-  Pick<Project, 'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains' | 'requireChallenge' | 'autoChallenge'>
+  Pick<
+    Project,
+    'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains' | 'requireChallenge' | 'autoChallenge' | 'skillFamilies' | 'passEnv'
+  >
 >;
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) || undefined : undefined);
@@ -239,6 +242,11 @@ export function updateProject(id: string, patch: ProjectPatch): Project {
   if (patch.allowedDomains !== undefined) {
     const domains = cleanDomains(patch.allowedDomains);
     p.allowedDomains = domains.length ? domains : undefined;
+  }
+  if (patch.skillFamilies !== undefined) p.skillFamilies = patch.skillFamilies.length ? [...new Set(patch.skillFamilies)] : undefined;
+  if (patch.passEnv !== undefined) {
+    const names = [...new Set(patch.passEnv.map((n) => n.trim()).filter(Boolean))];
+    p.passEnv = names.length ? names : undefined;
   }
   p.framework = detectFramework(p.path);
   p.updatedAt = Date.now();

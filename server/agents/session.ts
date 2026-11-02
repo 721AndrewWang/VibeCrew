@@ -16,6 +16,7 @@ import {
 import type { ContextUsage, Effort } from '../../shared/types';
 import { APP_VERSION, findClaudeExecutable } from '../config';
 import { logger } from '../log';
+import { fetchedNote } from '../untrusted';
 import { wrapUpNote } from './wrapUp';
 
 const log = logger('session');
@@ -206,6 +207,17 @@ export class BotSession implements AgentSession {
           },
         ],
         PostToolUse: [
+          {
+            // A fetched page or search result is outside content: labelled as data (ADR 007).
+            matcher: 'WebFetch|WebSearch',
+            hooks: [
+              async (input) => {
+                const post = input as PostToolUseHookInput;
+                const note = fetchedNote(post.tool_name, post.tool_input);
+                return note ? { hookSpecificOutput: { hookEventName: 'PostToolUse' as const, additionalContext: note } } : {};
+              },
+            ],
+          },
           {
             // A turn grown past the limit is asked to finish the step in hand and hand back; a
             // full-duplex turn is also given what arrived while it worked (ADR 004), and a Worker
@@ -410,7 +422,9 @@ export class FakeSession implements AgentSession {
       await sleep(300);
       let result: string;
       let isError = false;
-      const perm = await hooks.canUseTool(name, input, { signal: new AbortController().signal, toolUseID: id, requestId: id } as never);
+      // As in Claude Code: the PreToolUse deny hook (blocked actions, the command guard) runs first, in every mode.
+      const refused = this.cfg.deniedReason?.(name, input);
+      const perm = refused ? { behavior: 'deny' as const, message: refused } : await hooks.canUseTool(name, input, { signal: new AbortController().signal, toolUseID: id, requestId: id } as never);
       if (perm && perm.behavior === 'deny') {
         result = `Permission denied: ${perm.message}`;
         isError = true;
@@ -493,6 +507,17 @@ export class FakeSession implements AgentSession {
         if (/complex/i.test(ask)) {
           // A complex request: a few more looks around, enough to count as real work.
           for (const pattern of ['*.html', '*.css', '*.js', '*.md']) await runTool('Glob', { pattern }, () => '(demo)');
+        }
+        // "push": the direct way is refused by the command guard, so the demo drafts it for the user (ADR 007).
+        const draft = this.cfg.fakeTools?.draft_external_action;
+        if (/\bpush\b/i.test(ask) && draft && !this.stopped) {
+          await runTool('Bash', { command: 'git push origin HEAD', description: 'Push the branch' }, () => '(demo: pushed)');
+          const args = { kind: 'git-push', why: 'You asked for the branch to be pushed.' };
+          await runTool('mcp__crew__draft_external_action', args, async () => {
+            const r = await draft(args);
+            if (r.isError) throw new Error(r.text);
+            return r.text;
+          });
         }
         // A demo Worker on a "slow" task keeps working until it is stopped, an event comes in on its threads, or 30 s pass.
         if (this.cfg.role === 'worker' && /\bslow\b/i.test(ask))
@@ -626,7 +651,14 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
       const parts = /\bsplit\b/i.test(body) ? 2 : 1;
       const started: string[] = [];
       for (let i = 0; i < parts; i++) {
-        const r = await call('dispatch_worker', { title: parts > 1 ? `${short} (part ${i + 1})` : short, task: body, ...(a.to || a.bot ? { bot: a.to || a.bot } : {}) });
+        // "family:triage" in the demo picks a lifecycle skill family (ADR 007).
+        const family = body.match(/\bfamily:([a-z-]+)/)?.[1];
+        const r = await call('dispatch_worker', {
+          title: parts > 1 ? `${short} (part ${i + 1})` : short,
+          task: body,
+          ...(a.to || a.bot ? { bot: a.to || a.bot } : {}),
+          ...(family ? { family } : {}),
+        });
         started.push(r.replace(/ It works in the background.*$/s, ''));
       }
       replies.push(`On it. ${started.join(' ')}`);

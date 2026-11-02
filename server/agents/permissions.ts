@@ -216,7 +216,7 @@ export function insideDir(dir: string, p: string | undefined): boolean {
  * (passed as settings); this sees whatever it would have prompted for.
  * `projectRules` are the project's own must-ask rules, named apart from the bot's.
  */
-export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown; projectRules?: string[] }): Decision {
+export function decide(bot: Bot, level: PermissionLevel, toolName: string, input: any, cwd: string, opts: { matchedAskRule?: unknown; projectRules?: string[]; readOnlyCommand?: boolean }): Decision {
   const mode = `permission mode is "${LEVEL_LABEL[level]}"`;
   if (toolName.startsWith('mcp__crew__')) return { behavior: 'allow', because: "Crew's own tool" };
   if (READ_ONLY.has(toolName) && !opts.matchedAskRule) return { behavior: 'allow', because: 'read-only action' };
@@ -256,6 +256,9 @@ export function decide(bot: Bot, level: PermissionLevel, toolName: string, input
     const ours = toolName === 'Bash' && matchingRule([...bot.askRules, ...(opts.projectRules || [])], toolName, input, cwd) !== null;
     if (!ours) return { behavior: 'ask', because: `ask rule in Claude Code settings ${ruleText(opts.matchedAskRule)}` };
   }
+  // The command guard read every part of it as a read (ADR 007): reads never prompt, at any level,
+  // as Read, Grep and Glob never did. Must-ask rules above still win.
+  if (toolName === 'Bash' && opts.readOnlyCommand) return { behavior: 'allow', because: 'the command only reads (command guard)' };
   // Only reading and printing (cd, cat, head, echo…): no need to ask when edits are allowed anyway.
   if (toolName === 'Bash' && (level === 'edits' || level === 'review')) {
     const segs = splitCommand(String(input?.command || '')).filter((seg) => seg.trim());

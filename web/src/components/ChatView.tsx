@@ -23,6 +23,7 @@ import { cx, fmtDay, isSameDay, statusLabel } from '../utils';
 import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { Composer } from './Composer';
 import { ComputerPane } from './computer/ComputerPane';
+import { DraftsBar } from './DraftsBar';
 import { JobsBar } from './JobsBar';
 import { BotMessage, SystemMessage, UserMessage } from './Message';
 import { chatMenuItems } from './Sidebar';
@@ -394,6 +395,7 @@ export function ChatView() {
         <MessageList chat={chat} />
         <WorkersBar chat={chat} />
         <JobsBar chatId={chat.id} />
+        <DraftsBar chat={chat} />
         <Composer chat={chat} />
       </section>
       {computer.open && <Resizer />}

@@ -275,6 +275,13 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
           </span>
         )}
       </div>
+      {part.effects?.length ? (
+        <ul className="approval-effects" title="What this changes, as Crew's command guard reads it">
+          {part.effects.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      ) : null}
       {part.detail && <pre className="approval-detail">{part.detail}</pre>}
       {part.because && <div className="approval-reason">Why approval is needed: {part.because}</div>}
       {part.reason && pending && <div className="approval-reason">{part.reason}</div>}

@@ -6,8 +6,9 @@
 
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import type { Bot, Chat, ChatMessage, Project, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
-import { type CrewContext, crewServer } from '../agents/crewTools';
+import { familyInfo } from '../../shared/families';
+import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
+import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
 import { buildSystemAppend, buildTurnPrompt, contextDelta, renderUserMessage } from '../agents/prompts';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
@@ -15,6 +16,7 @@ import type { TurnStream } from '../agents/stream';
 import { bus } from '../bus';
 import { botModel } from '../claudeAuth';
 import { FAKE_AGENT } from '../config';
+import type { DraftFields } from '../drafts';
 import { autoCommit, commitSubject, gitError, isMerging, zList } from '../gitops';
 import { logger } from '../log';
 import { whenChatFree } from '../orchestrator';
@@ -138,6 +140,13 @@ export interface DispatchInput {
   /** Subscribe it to the threads it works on (ADR 003): the chat's workspace once it is ready, and these (the batch's routines). */
   subscribe?: boolean;
   threads?: string[];
+  /** The lifecycle family whose skills are its playbook (checked against the project by the caller, ADR 007). */
+  family?: SkillFamily;
+}
+
+/** The Worker's family when that family only reads (ADR 007): it may not edit files, and changes ask. */
+export function readOnlyFamily(w: Pick<Worker, 'family'>): SkillFamily | undefined {
+  return w.family && familyInfo(w.family)?.readOnly ? w.family : undefined;
 }
 
 /** Starts a Worker in the background and returns it at once (the gates are the caller's). */
@@ -157,6 +166,7 @@ export function startWorker(chat: Chat, bot: Bot, input: DispatchInput): Worker 
     turns: 0,
     costUsd: 0,
     related: input.related.slice(0, 20),
+    family: input.family,
   };
   // A blind reviewer stays blind: nothing from the environment or other Workers reaches it.
   if (input.subscribe && !bot.blindReview)
@@ -357,6 +367,20 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
   // Read when the session starts: switching subscriptions or recall on or off refreshes Worker sessions.
   const subscribed = subscriptionsOn(settings.get().superAgent) && !!w.threads;
   const recall = recallBudget();
+  const crewCtx: CrewContext = {
+    botId: bot.id,
+    botName: bot.name,
+    chatId: chat.id,
+    blind: !!bot.blindReview,
+    projectId: () => w.projectId,
+    currentPage: () => (w.projectId ? previewPageOf(w.projectId) : undefined),
+    actKey: w.id,
+    worker: true,
+    workerId: w.id,
+    threads: subscribed ? threadHandlers(w.id) : undefined,
+    recall: !!recall,
+  };
+  const actor = { botId: bot.id, botName: bot.name, chatId: chat.id, workerId: w.id };
   const cfg: SessionConfig = {
     cwd,
     model: botModel(workerModel(chat), { role: 'worker', botId: bot.id }),
@@ -366,7 +390,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
       chat,
       project,
       team: bots.all(),
-      skills: skills.list(),
+      skills: skills.forPrompt(project),
       worker: { lead: lead?.name || 'the lead', shared: w.shared, subscriptions: subscribed },
       recall: !!recall,
     }),
@@ -375,30 +399,22 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
     allowRules: [...bot.allowRules, 'mcp__crew'],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
     denyRules: settings.get().denyRules || [],
-    deniedReason: (toolName, input) => deniedReason(toolName, input, cwd),
+    deniedReason: (toolName, input) => deniedReason(toolName, input, cwd, { project, actor, readOnly: readOnlyFamily(w) }),
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     deliveries: subscribed ? () => takeDeliveries(w.id) : undefined,
     attributionOff: !!conf?.noAttribution,
     sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
     mcpServers: {
-      crew: crewServer({
-        botId: bot.id,
-        botName: bot.name,
-        chatId: chat.id,
-        blind: !!bot.blindReview,
-        projectId: () => w.projectId,
-        currentPage: () => (w.projectId ? previewPageOf(w.projectId) : undefined),
-        actKey: w.id,
-        worker: true,
-        threads: subscribed ? threadHandlers(w.id) : undefined,
-        recall: !!recall,
-      }) as McpServerConfig,
+      crew: crewServer(crewCtx) as McpServerConfig,
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
-    env: agentEnv({ role: 'worker', botId: bot.id }, workerModel(chat) || settings.get().defaultModel || undefined),
+    env: agentEnv({ role: 'worker', botId: bot.id }, workerModel(chat) || settings.get().defaultModel || undefined, project),
     role: 'worker',
-    fakeTools: subscribed ? fakeThreadTools(w.id) : undefined,
+    fakeTools: {
+      ...(subscribed ? fakeThreadTools(w.id) : undefined),
+      draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields),
+    },
   };
   const onSessionId = (sid: string) => {
     if (w.sessionId !== sid) save(w, { sessionId: sid });
@@ -449,6 +465,14 @@ async function promptFor(w: Worker, chat: Chat, bot: Bot, project: Project | nul
       threads: first ? threadsOf(w.threads).map((t) => ({ id: t.id, title: t.title, kind: t.kind })) : undefined,
       delivered,
       recall: !!recall,
+      playbook:
+        first && w.family
+          ? {
+              family: w.family,
+              readOnly: !!readOnlyFamily(w),
+              skills: skills.forFamily(project, w.family, 'worker').map((s) => ({ name: s.name, title: s.title, body: s.body })),
+            }
+          : undefined,
     });
   };
   let text = build();
@@ -497,7 +521,17 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
     content: (_s, msg) => promptFor(w, chat, bot, project, first, followUps, delivered, msg),
     hooks: (stream) => ({
       beforeEdit: () => {},
-      canUseTool: permissionGate({ chat, bot, project, cwd, stream, status: (s) => status(s.state, s.detail), who: `${bot.name} (Worker "${w.title}")` }),
+      canUseTool: permissionGate({
+        chat,
+        bot,
+        project,
+        cwd,
+        stream,
+        status: (s) => status(s.state, s.detail),
+        who: `${bot.name} (Worker "${w.title}")`,
+        workerId: w.id,
+        readOnly: readOnlyFamily(w),
+      }),
     }),
     onActivity: (state, detail) => status(state, detail),
     started: (stream, s) => {

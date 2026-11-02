@@ -3,11 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type {
+  AuditEntry,
   AuthMode,
   BackgroundJob,
   Bot,
   Chat,
   ChatMessage,
+  ExternalDraft,
   GatewaySettings,
   Improvement,
   PermissionLevel,
@@ -16,6 +18,7 @@ import type {
   PublicSettings,
   Routine,
   RoutingRecord,
+  SafetySettings,
   SandboxSettings,
   SuperAgentSettings,
   Thread,
@@ -29,6 +32,7 @@ import type {
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { DEFAULT_GATEWAY, normalizeGateway } from './gateway/config';
 import { SCHEMA_VERSION } from './migrations';
+import { DEFAULT_SAFETY, normalizeSafety } from './safetyConfig';
 import { DEFAULT_ALLOWED } from './sandbox';
 import { DEFAULT_SUPER_AGENT, normalizeSuperAgent } from './triggers/fastPath';
 
@@ -240,6 +244,8 @@ export interface Settings {
   gateway: GatewaySettings;
   /** Gateway providers' keys by provider id; never leave the server except to their own provider. */
   gatewayTokens: Record<string, string>;
+  /** The command guard, the credential-stripped environment and the audit log (ADR 007). */
+  safety: SafetySettings;
   initialized: boolean;
 }
 
@@ -268,6 +274,7 @@ const DEFAULT_SETTINGS: Settings = {
   superAgent: DEFAULT_SUPER_AGENT,
   gateway: DEFAULT_GATEWAY,
   gatewayTokens: {},
+  safety: DEFAULT_SAFETY,
   initialized: false,
 };
 
@@ -282,6 +289,7 @@ class SettingsStore {
     this.data.superAgent = normalizeSuperAgent(this.data.superAgent);
     this.data.gateway = normalizeGateway(this.data.gateway);
     if (!this.data.gatewayTokens || typeof this.data.gatewayTokens !== 'object') this.data.gatewayTokens = {};
+    this.data.safety = normalizeSafety(this.data.safety);
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -321,6 +329,7 @@ class SettingsStore {
       push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
       superAgent: s.superAgent,
       gateway: { ...s.gateway, providers: s.gateway.providers.map((p) => ({ ...p, hasToken: !!s.gatewayTokens[p.id] })) },
+      safety: s.safety,
     };
   }
 
@@ -440,6 +449,11 @@ export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });
 export const workers = new Collection<Worker>(DATA.workers);
 /** Full duplex's background jobs; a sub-task's transcript is kept by `messages` under the job's id. */
 export const jobs = new Collection<BackgroundJob>(DATA.jobs, { mkdir: true });
+/** Drafts of actions that leave the machine in the user's name; they run only on the user's click. */
+export const drafts = new Collection<ExternalDraft>(DATA.drafts);
+export const AUDIT_LIMITS = { max: 5000, maxAgeMs: 180 * 86_400_000 };
+/** Agent-authored external actions, their approvals and the guard's refusals (only while safety.audit is on). */
+export const auditLog = new JsonlLog<AuditEntry>(DATA.audit, AUDIT_LIMITS);
 /** Where `messages` keeps a chat's Router turns. */
 export const routerLogId = (chatId: string) => `rt_${chatId}`;
 

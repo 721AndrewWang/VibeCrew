@@ -139,13 +139,16 @@ describe('in demo mode', () => {
   it('asks before starting a command, exactly as for Bash, and starts nothing when denied', async () => {
     await crew.api('PATCH', `/chats/${chat.id}`, { permission: 'ask' });
     const before = (await chatJobs(crew, chat.id)).length;
-    const sent = await send('Run `echo should-not-run` in the background');
+    // A command that changes something: the command guard lets reads (`echo`, `ls`) start without asking (ADR 007).
+    const sent = await send('Run `touch should-not-run` in the background');
     const part = await waitFor(async () => {
       for (const m of await chatMessages(crew, chat.id)) for (const p of m.parts || []) if (p.type === 'approval' && p.status === 'pending' && p.toolName === 'Bash') return p;
       return null;
     });
-    expect(part.input.command).toBe('echo should-not-run');
+    expect(part.input.command).toBe('touch should-not-run');
     expect(part.because).toBe('permission mode is "Ask every step"');
+    // The same card a Bash call gets, with what the command changes.
+    expect(part.effects).toEqual(['Creates or touches: should-not-run']);
     await crew.api('POST', `/approvals/${part.id}`, { decision: 'deny' });
     const reply = await waitTurn(crew.api, chat.id, sent.seq);
     expect(reply.text).toMatch(/^Couldn't start it: Not started\. The user denied this action/);

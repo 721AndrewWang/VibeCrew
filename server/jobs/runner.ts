@@ -7,6 +7,7 @@ import type { ChildProcess } from 'node:child_process';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { BotSession } from '../agents/session';
 import { botModel } from '../claudeAuth';
+import type { CleanEnvOptions } from '../config';
 import { logger } from '../log';
 import { ANSI, killGroup, spawnGroup } from '../procs';
 import { SANDBOX_TIMEOUT_MIN } from './gates';
@@ -29,19 +30,24 @@ export function plain(chunk: string): string {
 }
 
 /** Runs the command in its own process group in `cwd`; output streams as it comes. */
-export function runDirect(command: string, cwd: string, env: Record<string, string>, hooks: RunHooks): Run {
+export function runDirect(command: string, cwd: string, env: Record<string, string>, hooks: RunHooks, envOptions: CleanEnvOptions = {}): Run {
   let child: ChildProcess;
   try {
-    child = spawnGroup(command, cwd, env);
+    child = spawnGroup(command, cwd, env, envOptions);
   } catch (e) {
     queueMicrotask(() => hooks.onExit({ exitCode: null, signal: null, error: (e as Error).message }));
     return { stop: async () => {} };
   }
   let ended = false;
+  let closed = () => {};
+  const done = new Promise<void>((resolve) => {
+    closed = resolve;
+  });
   const end = (r: Parameters<RunHooks['onExit']>[0]) => {
     if (ended) return;
     ended = true;
     hooks.onExit(r);
+    closed();
   };
   const onData = (b: Buffer) => hooks.onOutput(plain(b.toString('utf8')));
   child.stdout?.on('data', onData);
@@ -49,7 +55,14 @@ export function runDirect(command: string, cwd: string, env: Record<string, stri
   // 'close' (not 'exit') so the last output is read before the result is built.
   child.on('close', (code, signal) => end({ exitCode: code, signal }));
   child.on('error', (e) => end({ exitCode: null, signal: null, error: e.message }));
-  return { stop: () => killGroup(child) };
+  return {
+    stop: async () => {
+      await killGroup(child);
+      // killGroup returns on 'exit'; the result is built on 'close', which can trail it. Wait for it
+      // (briefly), so whoever stopped the job reads it as stopped.
+      await Promise.race([done, new Promise((r) => setTimeout(r, 2000).unref())]);
+    },
+  };
 }
 
 export const HELPER_SYSTEM = 'You run one shell command for Crew. Call the Bash tool exactly once with the command you are given, then reply with the single word: done.';
