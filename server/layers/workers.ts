@@ -403,7 +403,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     deliveries: subscribed ? () => takeDeliveries(w.id) : undefined,
     attributionOff: !!conf?.noAttribution,
-    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
+    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains, cwd),
     mcpServers: {
       crew: crewServer(crewCtx) as McpServerConfig,
       ...pluginServers(bot),

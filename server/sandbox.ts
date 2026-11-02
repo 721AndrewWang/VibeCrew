@@ -4,7 +4,11 @@
 // auto-allows a command just because it is sandboxed, so Crew's own gate still decides.
 
 import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 import type { SandboxStatus } from '../shared/types';
+import { DATA, HOME_DIR } from './config';
+import { CREDENTIAL_PATHS } from './guard';
+import { gitCommonDir, sandboxHardening } from './hardening/sandboxPolicy';
 import { logger } from './log';
 
 const log = logger('sandbox');
@@ -77,10 +81,17 @@ function probe(): SandboxStatus {
 
 /**
  * The SDK's sandbox settings for a session, or undefined when the sandbox is off or unavailable
- * (the caller tells the user; the deny list and the approval gate still apply).
+ * (the caller tells the user; the deny list and the approval gate still apply). `cwd`, the
+ * session's folder, adds its git hooks and config and its tool settings to what may not be written
+ * (ADR 104).
  */
-export function sandboxOptions(enabled: boolean, allowedDomains: string[], projectDomains: string[] = []) {
+export function sandboxOptions(enabled: boolean, allowedDomains: string[], projectDomains: string[] = [], cwd?: string) {
   if (!enabled || !sandboxStatus().available) return undefined;
+  return sandboxSettings(allowedDomains, projectDomains, cwd);
+}
+
+/** The settings themselves, once the sandbox is known to be on and available. */
+export function sandboxSettings(allowedDomains: string[], projectDomains: string[] = [], cwd?: string) {
   return {
     enabled: true,
     // Checked by sandboxStatus() already; a surprise at start should not strand the turn silently.
@@ -95,5 +106,16 @@ export function sandboxOptions(enabled: boolean, allowedDomains: string[], proje
       strictAllowlist: true,
       allowLocalBinding: true,
     },
+    // Credential stores unreadable, configuration that runs later unwritable, and the model's
+    // own variables unset, for every command, scripts included (ADR 104).
+    ...sandboxHardening({
+      home: os.homedir(),
+      crewHome: HOME_DIR,
+      settingsFile: DATA.settings,
+      worktrees: DATA.worktrees,
+      credentialPaths: CREDENTIAL_PATHS,
+      cwd,
+      gitCommonDir: cwd ? gitCommonDir(cwd) : undefined,
+    }),
   };
 }
