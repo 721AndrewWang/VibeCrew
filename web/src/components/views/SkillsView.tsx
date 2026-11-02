@@ -47,7 +47,7 @@ const EMPTY: Form = { name: '', title: '', icon: '⚡', argsHint: '', descriptio
 const MODES: { id: SkillMode; label: string; title: string }[] = [
   { id: 'chat', label: 'Chat', title: 'You type it as a slash command' },
   { id: 'worker', label: 'Worker', title: 'The Router hands it to a Worker as its playbook (family skills only, in projects that enabled the family)' },
-  { id: 'speculative', label: 'Speculative', title: 'Silent background runs on reported problems (a later milestone)' },
+  { id: 'speculative', label: 'Speculative', title: 'Silent background runs that reproduce and fix a reported problem (the triage, reproduce and draft-fix families)' },
 ];
 
 function toForm(skill: Skill): Form {

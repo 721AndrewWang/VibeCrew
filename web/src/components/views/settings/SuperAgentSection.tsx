@@ -1,9 +1,10 @@
-import { Link2, Network, Radio, Save, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
-import type { FilteredSource, RecallSettings, RouterSettings, SourceMode, SuperAgentSettings, WatchdogSettings } from '../../../../../shared/types';
+import { Link2, Network, Radio, Save, ShieldCheck, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type { FilteredSource, RecallSettings, RouterSettings, SourceMode, SpeculativeSettings, SuperAgentSettings, WatchdogSettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
 import { cx, gatewayOptions } from '../../../utils';
+import { SIGNAL_LABEL, SPECULATION_STATUS } from '../../SpeculativeBar';
 import { Toggle } from '../../ui';
 import { Section } from './Section';
 
@@ -50,7 +51,7 @@ function toForm(s: SuperAgentSettings): Form {
   return { sources, projects: s.projects, policies: s.policies, maxCandidatesPerHour: s.maxCandidatesPerHour };
 }
 
-function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router' | 'recall' | 'watchdog'> {
+function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router' | 'recall' | 'watchdog' | 'speculative'> {
   const sources = {} as SuperAgentSettings['sources'];
   for (const { id } of SOURCES) {
     sources[id] = {
@@ -182,6 +183,7 @@ export function SuperAgentSection() {
           <RouterSettingsBlock saved={saved.router} save={save} saving={saving} />
           <RecallSettingsBlock saved={saved.recall} save={save} saving={saving} />
           <WatchdogSettingsBlock saved={saved.watchdog} save={save} saving={saving} />
+          <SpeculativeSettingsBlock saved={saved.speculative} save={save} saving={saving} />
         </>
       )}
     </Section>
@@ -375,6 +377,109 @@ function WatchdogSettingsBlock({ saved, save, saving }: { saved: WatchdogSetting
             </button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+const SPECULATIVE_LIMITS: { key: keyof Omit<SpeculativeSettings, 'model'>; label: string; min: number; max: number; step?: number; hint: string }[] = [
+  { key: 'dailyBudgetUsd', label: 'Budget per day (USD)', min: 0, max: 100, step: 0.1, hint: "What today's runs may cost, across projects; past it, signals are skipped until tomorrow." },
+  { key: 'maxConcurrent', label: 'Runs at once, at most', min: 1, max: 4, hint: 'Across projects; never more than one per project. Each is a full session and a worktree.' },
+  { key: 'maxMinutes', label: 'Stop a run after (minutes)', min: 5, max: 120, hint: 'A run still working then is stopped and discarded.' },
+];
+
+/** Speculative execution (ADR 008): the limits all projects share, and what recent runs came to. Each project has its own switch. */
+function SpeculativeSettingsBlock({ saved, save, saving }: { saved: SpeculativeSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
+  const options = useModelOptions();
+  const [form, setForm] = useState(saved);
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+  const live = useStore((s) => s.speculations);
+  const projects = useStore((s) => s.projects);
+  const [spent, setSpent] = useState<number | null>(null);
+  // Read again when a run changes state or cost (not on every store update: the fetch below updates it too).
+  const changes = Object.values(live)
+    .map((x) => `${x.id}:${x.status}:${x.costUsd}`)
+    .join(',');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: today's spend is read again whenever a run changes
+  useEffect(() => {
+    api.speculations().then(
+      (r) => {
+        setSpent(r.spentTodayUsd);
+        useStore.setState((s) => ({ speculations: { ...Object.fromEntries(r.speculations.map((x) => [x.id, x])), ...s.speculations } }));
+      },
+      () => setSpent(null),
+    );
+  }, [changes]);
+  const recent = useMemo(
+    () =>
+      Object.values(live)
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 20),
+    [live],
+  );
+  const optedIn = listProjects(projects).filter((p) => p.speculative?.enabled);
+  return (
+    <div className="router-settings" data-testid="speculative-settings">
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">
+            <Sparkles size={14} /> Speculative runs (silent reproduce-and-fix)
+          </div>
+          <div className="hint">
+            When a check fails, the preview logs an error, or you describe a problem without asking for the fix yet, fixed rules may start a background Worker in a throwaway worktree that tries to
+            reproduce it and find a small fix. Crew then runs the project's check command itself: only a fix that passes it, and without which it fails, is shown in the chat with its diff and a
+            one-click merge. Anything else is thrown away without a word. Each project turns this on in its own settings
+            {optedIn.length ? ` (on now: ${optedIn.map((p) => p.name).join(', ')})` : ' (none has yet)'}.
+          </div>
+        </div>
+      </div>
+      <div className="field">
+        <label>Model for speculative runs</label>
+        <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
+          {options(form.model, "The Workers' model")}
+        </select>
+        <div className="hint">With the model gateway on, its speculative route and spend windows apply.</div>
+      </div>
+      {SPECULATIVE_LIMITS.map((l) => (
+        <div className="field" key={l.key}>
+          <label>{l.label}</label>
+          <input
+            className="input num-input"
+            type="number"
+            data-limit={l.key}
+            min={l.min}
+            max={l.max}
+            step={l.step ?? 1}
+            value={form[l.key]}
+            onChange={(e) => setForm({ ...form, [l.key]: Math.max(l.min, Math.min(l.max, Number(e.target.value) || 0)) })}
+          />
+          <div className="hint">{l.hint}</div>
+        </div>
+      ))}
+      <div className="row">
+        <span className="muted">{spent === null ? '' : `Spent today: $${spent.toFixed(2)} of $${saved.dailyBudgetUsd.toFixed(2)}`}</span>
+        <span className="spacer" />
+        <button className="btn primary" disabled={saving || !dirty} onClick={() => void save({ speculative: form }, 'Speculative run settings saved')}>
+          {saving ? <span className="spinner" /> : <Save size={14} />} Save
+        </button>
+      </div>
+      {!!recent.length && (
+        <div className="field">
+          <label>Recent runs</label>
+          <div className="audit-list spec-runs">
+            {recent.map((sp) => (
+              <div key={sp.id} className="audit-row" data-speculation={sp.id}>
+                <span className="muted">{new Date(sp.at).toLocaleString()}</span>
+                <span className={cx('badge', SPECULATION_STATUS[sp.status].cls)}>{SPECULATION_STATUS[sp.status].label}</span>
+                <span>
+                  <b>{SIGNAL_LABEL[sp.signal]}</b>: {sp.summary}
+                  {sp.why && <div className="muted">{sp.why}</div>}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="hint">Kept for tuning: why a signal was skipped, or why a run was thrown away. None of this is shown in the chats.</div>
+        </div>
       )}
     </div>
   );

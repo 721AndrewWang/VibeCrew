@@ -1977,3 +1977,37 @@ body.resizing iframe {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ---------------------------------------------------------------- speculative fixes (ADR 008) */
+.spec-bar {
+  border-color: var(--border-strong, var(--border));
+}
+
+.spec-card .draft-head b {
+  white-space: nowrap;
+}
+
+.spec-card .spec-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+
+.spec-card .spec-files .add {
+  color: var(--green);
+}
+
+.spec-card .spec-files .del {
+  color: var(--red);
+}
+
+.spec-diff-head {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+}
+
+.spec-runs .audit-row {
+  grid-template-columns: 150px 120px 1fr;
+}

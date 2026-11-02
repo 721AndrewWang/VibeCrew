@@ -25,6 +25,7 @@ import type {
   SandboxStatus,
   ServerEvent,
   Skill,
+  Speculation,
   Thread,
   Trigger,
   TurnSummary,
@@ -102,6 +103,8 @@ export interface AppState {
   jobs: Record<string, BackgroundJob>;
   /** External-action drafts (ADR 007), by id: pending ones and the latest decided. */
   actionDrafts: Record<string, ExternalDraft>;
+  /** Speculative runs (ADR 008), by id: ready fixes and the latest others, kept live. */
+  speculations: Record<string, Speculation>;
   /** The audit log's newest entries, newest first: loaded by Settings → Safety, then kept live. */
   audit: { entries: AuditEntry[]; loaded: boolean };
   devServers: Record<string, DevServerState>;
@@ -196,6 +199,7 @@ export const useStore = create<AppState>(() => ({
       router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false },
       recall: { enabled: false, inlineWords: 50 },
       watchdog: { enabled: false, model: 'claude-sonnet-5', everyMinutes: 15, maxTicksPerHour: 4, maxActionsPerTick: 3, dailyBudgetUsd: 1, stuckMinutes: 20 },
+      speculative: { model: '', dailyBudgetUsd: 2, maxConcurrent: 2, maxMinutes: 20 },
     },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
@@ -216,6 +220,7 @@ export const useStore = create<AppState>(() => ({
   routers: {},
   watchdog: null,
   actionDrafts: {},
+  speculations: {},
   audit: { entries: [], loaded: false },
   devServers: {},
   previews: {},
@@ -287,6 +292,7 @@ export async function boot() {
       jobs: byId(b.jobs || []),
       routers: Object.fromEntries((b.routers || []).map((r) => [r.chatId, r])),
       actionDrafts: byId(b.drafts || []),
+      speculations: byId(b.speculations || []),
       devServers: Object.fromEntries(b.devServers.map((d) => [d.projectId, d])),
       previews: Object.fromEntries(b.previews.map((p) => [p.projectId, p])),
       activeChatId: active,
@@ -494,6 +500,9 @@ export function applyEvent(ev: ServerEvent) {
     }
     case 'draft':
       set({ actionDrafts: { ...s.actionDrafts, [ev.draft.id]: ev.draft } });
+      break;
+    case 'speculation':
+      set({ speculations: { ...s.speculations, [ev.speculation.id]: ev.speculation } });
       break;
     case 'audit':
       if (s.audit.loaded) set({ audit: { loaded: true, entries: [ev.entry, ...s.audit.entries].slice(0, 500) } });
