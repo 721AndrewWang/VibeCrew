@@ -11,6 +11,7 @@
 
 import fs from 'node:fs';
 import type {
+  BackgroundJob,
   Chat,
   ConsoleEntry,
   FilteredSource,
@@ -492,6 +493,34 @@ export function publishConsole(input: { project: Project; chatId?: string | null
     chatId: chat?.id ?? null,
     subjects: errors.map((e) => e.text),
     facts: { errors: errors.length },
+  });
+}
+
+/**
+ * A background job's result, for the Workers subscribed to the folder it ran in (ADR 003 × 004, see
+ * ADR 010): a test run or a build in a shared folder is news to whoever else works there. Published
+ * beside the explicit Trigger on the chat's thread (which only the bot that started the job acts
+ * on), as an environment event on the folder's workspace thread: the fast path sends it straight to
+ * the active subscribers and drops it with none, so it never reaches the slow path or a Router as a
+ * decision. Nothing is published while direct routing is off or nobody subscribes to the thread.
+ */
+export function publishJobResult(input: { job: BackgroundJob; summary: string; digest: () => string; resultTriggerId?: string }): Trigger | null {
+  const sa = settings.get().superAgent;
+  const project = projects.get(input.job.projectId);
+  if (!subscriptionsOn(sa) || !project) return null;
+  const spec = workspaceThread(project);
+  const open = threads.all().find((th) => th.key === spec.key && !th.closedAt);
+  if (!open || !workers.all().some((w) => !w.dismissedAt && w.threads?.includes(open.id))) return null;
+  return publishTrigger({
+    source: 'job',
+    summary: input.summary,
+    thread: spec,
+    ref: { kind: 'payload' },
+    payload: { text: input.digest() },
+    chatId: input.job.chatId,
+    projectId: project.id,
+    subjects: [input.job.command || input.job.task || input.job.title],
+    related: [input.job.id, ...(input.resultTriggerId ? [input.resultTriggerId] : [])],
   });
 }
 

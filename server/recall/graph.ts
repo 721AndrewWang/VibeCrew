@@ -9,7 +9,7 @@ import { outputOf } from '../jobs';
 import { fmtDuration, inlineOutput, jobLine } from '../jobs/spill';
 import { contextLines } from '../orchestrator/turnContext';
 import { chatProjectId } from '../projects';
-import { bots, chats, jobs, messages, projects, threads, triggerLog, workers } from '../store';
+import { bots, chats, jobs, messages, projects, threads, triggerLog, watchdogActions, watchdogWatches, workers } from '../store';
 import { detailText } from '../triggers';
 import { MAX_LINKS } from './spill';
 
@@ -30,7 +30,7 @@ export function registerRecall(prefix: string, resolver: RecallResolver) {
   extra.set(prefix, resolver);
 }
 
-const ago = (at: number) => {
+export const ago = (at: number) => {
   const s = Math.max(0, Math.round((Date.now() - at) / 1000));
   return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 172_800 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86_400)} days ago`;
 };
@@ -150,8 +150,17 @@ function triggerInScope(t: { chatId: string | null; projectId: string | null }, 
   return !!root && rootOf(t.projectId) === root;
 }
 
+/**
+ * A background job: the caller's chat's (ADR 005), or one whose result was delivered straight to a
+ * Worker of the caller's chat, subscribed to the folder the job ran in (ADR 010).
+ */
+function jobInScope(j: BackgroundJob, chat: Chat): boolean {
+  if (j.chatId === chat.id) return true;
+  return triggerLog.recent(20, (t) => t.source === 'job' && !t.explicit && t.related.includes(j.id)).some((t) => (t.filter.direct || []).some((id) => workers.get(id)?.chatId === chat.id));
+}
+
 /** One line about any id in scope, for links: unknown or out-of-scope ids are left out. */
-function linkFor(id: string, rel: string, chat: Chat): RecallLink | null {
+export function linkFor(id: string, rel: string, chat: Chat): RecallLink | null {
   if (id.startsWith('tg_')) {
     const t = triggerLog.get(id);
     return t && triggerInScope(t, chat) ? triggerLink(t, rel) : null;
@@ -162,7 +171,7 @@ function linkFor(id: string, rel: string, chat: Chat): RecallLink | null {
   }
   if (id.startsWith('job_')) {
     const j = jobs.get(id);
-    return j && j.chatId === chat.id ? jobLink(j, rel) : null;
+    return j && jobInScope(j, chat) ? jobLink(j, rel) : null;
   }
   const m = messages.get(chat.id, id);
   return m && !m.uiOnly ? messageLink(m, rel) : null;
@@ -242,6 +251,9 @@ function workerNode(w: Worker, chat: Chat): RecallNode {
     const th = threads.get(id);
     if (th && !links.some((l) => l.id === th.id)) links.push(threadLink(th, 'subscribes'));
   }
+  // What the Watchdog did to it, and what it keeps watching (ADR 006): recall wa_… or ww_… for why.
+  for (const a of watchdogActions.recent(3, (x) => x.target === w.id && !x.refused)) links.push({ id: a.id, rel: 'watchdog', summary: `${a.kind}, ${ago(a.at)}: ${a.text}` });
+  for (const x of watchdogWatches.all().filter((v) => v.subject === w.id && !v.resolvedAt)) links.push({ id: x.id, rel: 'watched', summary: `${x.checks} checks so far: ${x.note}` });
   const ws = projects.get(w.projectId)?.workspace;
   const attrs: [string, string][] = [
     ['member', bots.get(w.botId)?.name || 'deleted bot'],
@@ -292,11 +304,11 @@ function jobNode(j: BackgroundJob, chat: Chat): RecallNode {
   };
 }
 
-/** Background jobs are a kind milestone 4 adds through the registry; the caller's chat only. */
+/** Background jobs are a kind milestone 4 adds through the registry: the caller's chat's, and those whose result reached its Workers. */
 registerRecall('job_', (id, scope) => {
   const j = jobs.get(id);
   const chat = chats.get(scope.chatId);
-  if (!j || !chat || j.chatId !== chat.id) return { error: `No background job ${id} in this chat.` };
+  if (!j || !chat || !jobInScope(j, chat)) return { error: `No background job ${id} in this chat.` };
   return { node: jobNode(j, chat) };
 });
 
@@ -341,5 +353,7 @@ export function resolve(rawId: string, scope: RecallScope): Resolved {
     const got = r(id, scope);
     if (got) return got;
   }
-  return fail(`Unknown id "${id}". Ids look like #12 (a message here), chat, env, tg_… (a trigger), th_… (a thread), wk_… (a Worker) or job_… (a background job).`);
+  return fail(
+    `Unknown id "${id}". Ids look like #12 (a message here), chat, env, tg_… (a trigger), th_… (a thread), wk_… (a Worker), job_… (a background job), or the Watchdog's: watchdog, wa_… (an action), wt_… (a tick), ww_… (a watch).`,
+  );
 }

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import express from 'express';
 import { type WebSocket, WebSocketServer } from 'ws';
@@ -147,7 +148,10 @@ async function main() {
   });
 
   const s = settings.get();
-  const port = Number(process.env.CREW_PORT) || s.port;
+  // CREW_PORT=0 asks for any free port, picked by the system as the server binds: nothing can take it
+  // in between (the test harness runs many servers side by side this way). The bound port is printed and kept.
+  const asked = process.env.CREW_PORT?.trim();
+  const port = asked && /^\d+$/.test(asked) ? Number(asked) : s.port;
   const host = s.lanEnabled ? '0.0.0.0' : '127.0.0.1';
   server.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code === 'EADDRINUSE') {
@@ -159,8 +163,9 @@ async function main() {
     process.exit(1);
   });
   server.listen(port, host, () => {
-    if (port !== s.port) settings.update({ port });
-    const local = `http://localhost:${port}`;
+    const bound = (server.address() as AddressInfo | null)?.port ?? port;
+    if (bound !== s.port) settings.update({ port: bound });
+    const local = `http://localhost:${bound}`;
     console.log(`\n  🤖 ${APP_NAME} ${APP_VERSION} is running\n`);
     console.log(`  Local:       ${local}`);
     const lan = lanUrl();

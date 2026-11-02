@@ -14,7 +14,10 @@ export function tempDir(prefix = 'crew-test'): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`));
 }
 
-/** A port nothing listens on right now. */
+/**
+ * A port nothing listens on right now. Only for processes that cannot be told to take any free port
+ * themselves: between this check and their bind, anything else may take it. Crew servers bind port 0.
+ */
 export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -84,13 +87,17 @@ export interface StartOptions {
 /** Variables of the shell running the tests that must not reach the server (Claude Code's own session). */
 const LEAKY = /^(CLAUDE|ANTHROPIC_|CREW_|VIBECREW_)/;
 
+/** The line Crew prints once it listens, with the port it bound. */
+const LISTENING = /Local:\s+http:\/\/localhost:(\d+)/;
+
 export async function startServer(opts: StartOptions = {}): Promise<CrewServer> {
   const owned = !opts.dir;
   const dir = opts.dir ?? tempDir();
-  const port = await freePort();
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !LEAKY.test(k)) env[k] = v;
-  Object.assign(env, gitEnv(dir), { CREW_PORT: String(port) });
+  // Port 0: the server takes any free port as it binds, so servers, mock providers and gateways
+  // started side by side by parallel test files can never be handed the same one.
+  Object.assign(env, gitEnv(dir), { CREW_PORT: '0' });
   if (opts.isolate !== false) {
     // Claude Code's own config too: a test must never reach the developer's real Claude login.
     Object.assign(env, { CREW_HOME: path.join(dir, 'home'), CREW_PROJECTS: path.join(dir, 'projects'), CLAUDE_CONFIG_DIR: path.join(dir, 'claude') });
@@ -107,7 +114,9 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
   let out = '';
   proc.stdout?.on('data', (d) => (out += d));
   proc.stderr?.on('data', (d) => (out += d));
-  const base = `http://127.0.0.1:${port}`;
+  // Known once the server says where it listens (below), before anything uses it.
+  let port = 0;
+  let base = '';
 
   const api: Api = async (method, url, body) => {
     const r = await fetch(`${base}/api${url}`, { method, headers: body === undefined ? {} : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -137,8 +146,13 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
   };
 
   for (let i = 0; ; i++) {
+    const listening = LISTENING.exec(out);
+    if (listening && !port) {
+      port = Number(listening[1]);
+      base = `http://127.0.0.1:${port}`;
+    }
     try {
-      if ((await fetch(`${base}/api/health`)).ok) break;
+      if (port && (await fetch(`${base}/api/health`)).ok) break;
     } catch {
       /* not up yet */
     }

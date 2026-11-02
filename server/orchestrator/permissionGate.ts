@@ -63,11 +63,13 @@ export function permissionGate(turn: {
   /** A Worker's run: who it is (audit log), and its read-only skill family, if any. */
   workerId?: string;
   readOnly?: string;
+  /** A background sub-task's run (ADR 004): which job, for the audit log. */
+  jobId?: string;
 }) {
   const { chat, bot, project, cwd, stream } = turn;
   const status = turn.status ?? ((s: Omit<BotStatus, 'since'>) => setStatus(bot.id, s));
   const who = turn.who ?? bot.name;
-  const actor: Actor = { botId: bot.id, botName: bot.name, chatId: chat.id, workerId: turn.workerId };
+  const actor: Actor = { botId: bot.id, botName: bot.name, chatId: chat.id, workerId: turn.workerId, jobId: turn.jobId };
   /** Commands the user allowed in this turn: the same one is not asked about again (a state change prompts once). */
   const allowedOnce = new Set<string>();
   return async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; matchedAskRule?: unknown; decisionReason?: string; title?: string }) => {

@@ -21,6 +21,7 @@ import { FAKE_AGENT, HOME_DIR } from '../config';
 import { MODEL_OPTIONS } from '../data/catalog';
 import { logger } from '../log';
 import { emitChat, systemMessage } from '../orchestrator/chatLog';
+import { deniedReason } from '../orchestrator/permissionGate';
 import { agentEnv } from '../orchestrator/turnContext';
 import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { projectFamilies } from '../skills';
@@ -169,6 +170,8 @@ class ChatRouter {
       allowRules: ['mcp__crew_router'],
       askRules: [],
       denyRules: settings.get().denyRules || [],
+      // The deny hook every agent session has (blocked actions, then the command guard, ADR 007), as for the Watchdog.
+      deniedReason: (toolName, input) => deniedReason(toolName, input, ROUTER_CWD, { actor: { botId: lead.id, botName: lead.name, chatId: chat.id } }),
       mcpServers: { crew_router: routerMcpServer(this.tools, { subscriptions: subscribed, recall: !!this.recall }) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],

@@ -157,9 +157,9 @@ const SOURCE_NAME: Record<TriggerSource, string> = {
 export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   const act = (rule: string, reason: string): TriggerFilter => ({ verdict: 'act', stage: 'fast', rule, reason });
   const drop = (rule: string, reason: string): TriggerFilter => ({ verdict: 'drop', stage: 'fast', rule, reason });
-  // A background job's result goes back to the bot that started it (full duplex), in code. It is
-  // on the chat's thread, which nobody subscribes to, so it never goes to Workers.
-  if (t.source === 'job') return act('job-result', 'A background job ended; its result went to the bot that started it');
+  // A background job's result goes back to the bot that started it (full duplex), in code. That one
+  // is on the chat's thread, which nobody subscribes to, so it never goes to Workers.
+  if (t.source === 'job' && t.explicit) return act('job-result', 'A background job ended; its result went to the bot that started it');
   const subscribers = ctx.subscribers ?? [];
   const direct = () => act('subscribed', `Sent straight to ${subscribers.length === 1 ? 'the Worker' : `${subscribers.length} Workers`} subscribed to this thread; no Router decision`);
   // The user's own messages and routines, and a bot handing work to a teammate: the chat acts on them as always.
@@ -168,6 +168,9 @@ export function fastPath(t: FastInput, ctx: FastContext): TriggerFilter {
   if (t.facts.routed) return act('routed', 'A Worker reported back; delivered to its Router directly');
   // Another Worker's merge matters only to the Workers sharing the workspace; the Router has its report.
   if (t.source === 'landing') return subscribers.length ? direct() : drop('no-subscribers', 'No other Worker is working on this branch right now');
+  // The same job's result again, on the workspace thread of the folder it ran in: it matters only to
+  // the Workers working there (the bot that started it has it already).
+  if (t.source === 'job') return subscribers.length ? direct() : drop('no-subscribers', 'No Worker is working in the folder the job ran in right now');
 
   const source = t.source;
   const rule = ctx.settings.sources[source];

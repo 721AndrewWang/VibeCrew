@@ -174,11 +174,11 @@ export function startCommand(base: JobBase, spec: CommandSpec): BackgroundJob {
 
 export interface TaskSpec {
   task: string;
-  /** A new session of the bot for this sub-task (no start/stop tools, no resume). */
-  session(): AgentSession;
+  /** A new session of the bot for this sub-task (no start/stop tools, no resume); `jobId` is the job it runs. */
+  session(jobId: string): AgentSession;
   content: string;
-  /** The tool gate: the bot's own, its approval cards in the sub-task's transcript. */
-  hooks(stream: TurnStream, status: (waiting: string | null) => void): Omit<TurnHooks, 'onMessage'>;
+  /** The tool gate: the bot's own, its approval cards in the sub-task's transcript; `jobId` names it in the audit log. */
+  hooks(stream: TurnStream, status: (waiting: string | null) => void, jobId: string): Omit<TurnHooks, 'onMessage'>;
 }
 
 /** Starts a sub-task: one turn of a background session of the same bot, kept in its own log. */
@@ -198,12 +198,12 @@ export function startTask(base: JobBase, spec: TaskSpec): BackgroundJob {
     cwd: base.cwd,
     trigger: { type: 'job', jobId: j.id },
     session: () => {
-      l.session = spec.session();
+      l.session = spec.session(j.id);
       return l.session;
     },
     forgetResume: () => false,
     content: () => spec.content,
-    hooks: (stream) => spec.hooks(stream, status),
+    hooks: (stream) => spec.hooks(stream, status, j.id),
     onActivity: (state, detail) => {
       const cur = jobs.get(j.id);
       if (!cur || cur.status === 'waiting') return;

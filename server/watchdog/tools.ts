@@ -6,9 +6,11 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { WatchdogActionKind, Worker } from '../../shared/types';
+import { jobLine, jobSource } from '../jobs/spill';
 import { firstWords } from '../layers/prompts';
-import { bots, chats, messages, projects, settings, triggerLog, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
+import { auditLog, bots, chats, jobs, messages, projects, settings, triggerLog, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
 import { triggerDetail } from '../triggers';
+import { untrusted } from '../untrusted';
 import { actionRefusal, noteRefusal, notifyRefusal, nudgeRefusal, proposeRefusal, restartRefusal, stopRefusal, watchRefusal } from './gates';
 import { restartRecap, watchdogNote } from './prompts';
 import { callSignature, nextCheck } from './signals';
@@ -77,8 +79,8 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         str(args.id),
         text,
         () => noteRefusal(text) ?? nudgeRefusal(workerState(w), w ? fx.countToday(['nudge', 'stop'], w.id) : 0),
-        () => {
-          fx.nudge(w!, watchdogNote(text));
+        (actionId) => {
+          fx.nudge(w!, watchdogNote(text, actionId));
           return `Queued for ${w!.id}; it reads the note when its current turn ends.`;
         },
         w?.chatId,
@@ -94,10 +96,10 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         str(args.id),
         then ? `${why} Then: ${then}` : why,
         () => stopRefusal(workerState(w)) ?? (then ? (noteRefusal(then) ?? nudgeRefusal(workerState(w), fx.countToday(['nudge', 'stop'], w!.id))) : noteRefusal(why)),
-        async () => {
+        async (actionId) => {
           await fx.stop(w!, why);
           if (!then) return `Stopping ${w!.id}; the Router is told it was stopped.`;
-          fx.nudge(w!, watchdogNote(then));
+          fx.nudge(w!, watchdogNote(then, actionId));
           return `Stopping ${w!.id}; it resumes with your note right after.`;
         },
         w?.chatId,
@@ -112,9 +114,9 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         str(args.id),
         note,
         () => restartRefusal(workerState(w), w ? fx.countToday('restart', w.id) : 0) ?? (note ? noteRefusal(note) : null),
-        () => {
+        (actionId) => {
           const branch = projects.get(w!.projectId)?.workspace?.branch;
-          fx.restart(w!, watchdogNote(restartRecap({ status: w!.status, report: w!.report?.text || w!.detail || '', branch, note })));
+          fx.restart(w!, watchdogNote(restartRecap({ status: w!.status, report: w!.report?.text || w!.detail || '', branch, note }), actionId));
           return `Restarting ${w!.id} in a new session from a recap.`;
         },
         w?.chatId,
@@ -198,12 +200,12 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
           [
             `${w.id} · ${bots.get(w.botId)?.name || 'deleted bot'} · ${w.status}${w.detail ? ` (${w.detail})` : ''} · chat ${w.chatId} · started ${ago(w.createdAt)} · ${w.turns} turns · $${w.costUsd.toFixed(3)}`,
             `Title: ${w.title}`,
-            `Task (data): ${w.task.slice(0, 3000)}`,
+            `Task: ${untrusted('worker task', w.task.slice(0, 3000))}`,
             `Latest turn: ${last ? `${last.status}, ${calls.length} tool calls` : 'none yet'}`,
-            ...(calls.length ? [`Calls, oldest first: ${calls.slice(-30).join(' · ')}`] : []),
-            ...(last?.error ? [`Error: ${last.error.slice(0, 1000)}`] : []),
-            ...(last?.text ? [`Its latest text (data): ${last.text.slice(-2000)}`] : []),
-            ...(w.report ? [`Last report (${w.report.status}, data): ${w.report.text.slice(0, 2000)}`] : []),
+            ...(calls.length ? [`Calls, oldest first: ${untrusted('tool calls', calls.slice(-30).join(' · '))}`] : []),
+            ...(last?.error ? [`Error: ${untrusted('turn error', last.error.slice(0, 1000))}`] : []),
+            ...(last?.text ? [`Its latest text: ${untrusted('worker text', last.text.slice(-2000))}`] : []),
+            ...(w.report ? [`Last report (${w.report.status}): ${untrusted('worker report', w.report.text.slice(0, 2000))}`] : []),
             ...(w.pending?.length ? [`Follow-ups waiting: ${w.pending.length}`] : []),
           ].join('\n'),
         );
@@ -214,9 +216,38 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         return ok(
           [
             `${d.trigger.id} · ${d.trigger.source} · ${d.trigger.filter.verdict} (${d.trigger.filter.reason})`,
-            `Summary (data): ${d.trigger.summary}`,
-            `Content (data): ${d.detail.slice(0, 3000)}`,
+            `Summary: ${untrusted(d.trigger.source, d.trigger.summary)}`,
+            `Content: ${untrusted(d.trigger.source, d.detail.slice(0, 3000))}`,
           ].join('\n'),
+        );
+      }
+      if (id.startsWith('ww_')) {
+        const x = watchdogWatches.get(id);
+        if (!x) return fail('No such watch.');
+        return ok(
+          `${x.id} · ${x.subject} · opened by ${x.by} ${ago(x.createdAt)} · ${x.checks} checks · ${x.resolvedAt ? `resolved ${ago(x.resolvedAt)}: ${x.resolution || ''}` : `next check ${x.nextAt <= Date.now() ? 'due now' : `at ${new Date(x.nextAt).toLocaleTimeString('en-US')}`}`}\nNote: ${x.note}`,
+        );
+      }
+      // The lifecycle audit log (ADR 007): a guard refusal or a draft's run.
+      if (id.startsWith('au_')) {
+        const e = auditLog.get(id);
+        if (!e) return fail('No such audit entry (it may have aged out).');
+        const who = [e.actor.botName || (e.actor.user ? 'the user' : 'an agent'), e.actor.workerId, e.actor.jobId, e.actor.chatId && `chat ${e.actor.chatId}`].filter(Boolean).join(' · ');
+        return ok(
+          [
+            `${e.id} · ${e.event}${e.rule ? ` (rule ${e.rule})` : ''}${e.kind ? ` (${e.kind})` : ''} · ${ago(e.at)} · ${who}`,
+            ...(e.command ? [`Command: ${untrusted('audit log', e.command.slice(0, 2000))}`] : []),
+            ...(e.detail ? [`Detail: ${untrusted('audit log', e.detail.slice(0, 2000))}`] : []),
+            ...(e.cwd ? [`Folder: ${e.cwd}`] : []),
+          ].join('\n'),
+        );
+      }
+      // A background job (ADR 004), named by an audit entry or a trigger.
+      if (id.startsWith('job_')) {
+        const j = jobs.get(id);
+        if (!j) return fail('No such background job (it may have aged out).');
+        return ok(
+          `${jobLine(j)}\nChat ${j.chatId} · bot ${bots.get(j.botId)?.name || 'deleted bot'}\n${untrusted(jobSource(j), (j.kind === 'command' ? `$ ${j.command || ''}` : `Task: ${j.task || ''}`).slice(0, 2000))}`,
         );
       }
       if (id.startsWith('wt_')) {
@@ -247,7 +278,7 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
       }
       const tr = triggerLog.get(id);
       if (tr) return ok(`${tr.id} · ${tr.summary}`);
-      return fail('Unknown id. Use ids from the snapshot: wk_…, tg_…, wt_…, or a chat id.');
+      return fail('Unknown id. Use ids from the snapshot: wk_…, tg_…, wt_…, ww_…, au_…, job_…, or a chat id.');
     },
   };
 }
@@ -319,7 +350,7 @@ export function watchdogMcpServer(h: Record<string, Handler>) {
       ),
       tool(
         'inspect',
-        'Read more about an id from the snapshot: a Worker (wk_…: full task, tool calls, report), a trigger (tg_…), a tick (wt_…), or a chat id. Free.',
+        'Read more about an id from the snapshot: a Worker (wk_…: full task, tool calls, report), a trigger (tg_…), a tick (wt_…), a watch (ww_…), an audit entry (au_…), a background job (job_…), or a chat id. Free.',
         { id: z.string() },
         wrap('inspect'),
         { annotations: { readOnlyHint: true } },

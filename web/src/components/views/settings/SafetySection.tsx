@@ -60,6 +60,7 @@ function AuditRow({ e }: { e: AuditEntry }) {
         <div>
           <b>{who}</b>
           {e.actor.workerId ? ' (Worker)' : ''}
+          {e.actor.jobId ? ' (background job)' : ''}
           {where ? ` in "${where}"` : ''}
           {e.kind ? ` · ${DRAFT_KIND[e.kind]}` : ''}
           {e.rule ? ` · rule: ${RULE[e.rule] || e.rule}` : ''}

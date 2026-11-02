@@ -511,7 +511,8 @@ export class FakeSession implements AgentSession {
         // "push": the direct way is refused by the command guard, so the demo drafts it for the user (ADR 007).
         const draft = this.cfg.fakeTools?.draft_external_action;
         if (/\bpush\b/i.test(ask) && draft && !this.stopped) {
-          await runTool('Bash', { command: 'git push origin HEAD', description: 'Push the branch' }, () => '(demo: pushed)');
+          // "twice": it tries again after the refusal, as an agent steered by what it read might (the Watchdog sees it in the audit log).
+          for (let i = /\btwice\b/i.test(ask) ? 2 : 1; i > 0; i--) await runTool('Bash', { command: 'git push origin HEAD', description: 'Push the branch' }, () => '(demo: pushed)');
           const args = { kind: 'git-push', why: 'You asked for the branch to be pushed.' };
           await runTool('mcp__crew__draft_external_action', args, async () => {
             const r = await draft(args);
@@ -612,7 +613,9 @@ async function fakeFullDuplex(ask: string, say: (text: string) => Promise<void>,
     return;
   }
   if (/\bsub-?task\b/i.test(ask)) {
-    const started = await call('start', { task: 'Look around the project and report what is there.', title: 'Demo check' });
+    // The sub-task's own words in backticks, if any (so a test can have it try something the guard refuses).
+    const task = ask.match(/`([^`]+)`/)?.[1] || 'Look around the project and report what is there.';
+    const started = await call('start', { task, title: 'Demo check' });
     await say(started.startsWith('Started ') ? `${started.split(':')[0]}; I'll pass on its report.` : `Couldn't start it: ${started.replace(/^Error: /, '')}`);
     return;
   }
@@ -687,6 +690,13 @@ async function fakeWatchdog(prompt: string, say: (text: string) => Promise<void>
       done.push(`${a.id}: ${await result(call('stop_worker', { id: a.id, why: 'It is not making progress on its task.', redirect: 'Refocus on your task and report what is done.' }))}`);
     else if (!maintainer && a.status === 'error' && flags.includes('failed-transient'))
       done.push(`${a.id}: ${await result(call('restart_worker', { id: a.id, note: 'The failure looked transient; try again.' }))}`);
+  }
+  // The guard refusing one agent again and again (the audit log, ADR 007): its chat is told.
+  for (const m of maintainer ? [] : prompt.matchAll(/<audit ([^>]*)>/g)) {
+    const a = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((x) => [x[1], x[2]]));
+    if (a.event !== 'blocked' || Number(a.count) < 2 || !a.chat) continue;
+    const text = `The command guard refused ${a.worker || a.who} ${a.count} times (rule: ${a.rule}). It should draft that action for you instead.`;
+    done.push(`${a.chat}: ${await call('notify', { chat: a.chat, text }).catch((e) => `refused: ${(e as Error).message}`)}`);
   }
   if (maintainer) {
     const failed = [...prompt.matchAll(/<worker id="([^"]+)"[^>]*status="error"/g)].map((x) => x[1]);

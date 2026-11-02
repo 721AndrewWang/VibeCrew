@@ -22,6 +22,11 @@ export function untrusted(source: string, text: string, attrs: Record<string, st
   return `<untrusted source="${attrValue(source)}"${extra}>\n${defuseUntrusted(text)}\n</untrusted>`;
 }
 
+/** The wrapper on one line, for short fragments inside a structured prompt (the Watchdog's snapshot). */
+export function untrustedLine(source: string, text: string): string {
+  return `<untrusted source="${attrValue(source)}">${defuseUntrusted(text.replace(/\s*\n\s*/g, ' ').trim())}</untrusted>`;
+}
+
 /** The note added after a fetched page or a search result: Claude Code owns the result, so it is labelled. */
 export function fetchedNote(toolName: string, input: unknown): string | null {
   const i = (input || {}) as { url?: unknown; query?: unknown };

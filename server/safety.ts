@@ -18,6 +18,8 @@ export interface Actor {
   botName?: string;
   chatId?: string;
   workerId?: string;
+  /** A full-duplex bot's background sub-task (ADR 004). */
+  jobId?: string;
 }
 
 /** The guard's view of a folder: the user's home, the sandbox allow-list with the project's own, and Crew's secrets. */

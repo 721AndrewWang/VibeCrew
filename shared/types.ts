@@ -686,7 +686,8 @@ export interface AuditEntry {
   id: ID;
   at: number;
   event: 'drafted' | 'approved' | 'discarded' | 'ran' | 'failed' | 'blocked';
-  actor: { botId?: ID; botName?: string; chatId?: ID; workerId?: ID; user?: boolean };
+  /** Who: a bot in a chat, a Worker, a background job of a bot, the Watchdog (botName only), or the user. */
+  actor: { botId?: ID; botName?: string; chatId?: ID; workerId?: ID; jobId?: ID; user?: boolean };
   kind?: DraftKind;
   rule?: GuardRule;
   target?: string;
@@ -698,16 +699,19 @@ export interface AuditEntry {
 }
 
 /**
- * Where an event came from. user, routine and job (a background job's result, ADR 004) are always
- * explicit requests; the others are environment events the filter decides on. landing (Crew merged
- * a Worker's branch into its chat's branch) only ever goes to the Workers subscribed to that
- * workspace (ADR 003).
+ * Where an event came from. user and routine are always explicit requests; the others are
+ * environment events the filter decides on. landing (Crew merged a Worker's branch into its chat's
+ * branch) only ever goes to the Workers subscribed to that workspace (ADR 003). job (a background
+ * job's result, ADR 004) is an explicit request on the chat's thread, for the bot that started it,
+ * and, when Workers subscribe to the folder it ran in, an environment event on that workspace
+ * thread that only goes to them, like landing (ADR 010).
  */
 export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job';
 
 /**
  * Sources whose fast-path rule the user can change. landing has no settings (it only ever goes to
- * subscribers), and a job result is always explicit: the bot asked for it.
+ * subscribers), and neither has a job result: the bot asked for it, and the copy on a workspace
+ * thread only ever goes to subscribers.
  */
 export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job'>;
 

@@ -26,16 +26,17 @@ import { BatchQueue } from '../layers/batch';
 import { nextSeq, runLogged } from '../layers/turn';
 import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
-import { openApprovals } from '../orchestrator/permissionGate';
+import { deniedReason, openApprovals } from '../orchestrator/permissionGate';
 import { agentEnv } from '../orchestrator/turnContext';
 import { HttpError } from '../projects';
-import { bots, chats, messages, settings, triggerLog, uid, WATCHDOG_LOG, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
+import { auditLog, bots, chats, messages, settings, triggerLog, uid, WATCHDOG_LOG, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
 import { normalizeSuperAgent } from '../triggers/fastPath';
 import { cronExpr } from './config';
 import { tickRefusal } from './gates';
 import { maintainerPrompt, tickPrompt, watchdogRecap, watchdogSystemPrompt } from './prompts';
+import { registerWatchdogRecall } from './recall';
 import { isTransient, nextCheck, progressOf, WATCH_MAX_CHECKS } from './signals';
-import { isQuiet, renderSnapshot, type Snapshot, snapshotFlags, type WorkerSnap } from './snapshot';
+import { auditSnaps, isQuiet, renderSnapshot, type Snapshot, snapshotFlags, type WorkerSnap } from './snapshot';
 import { type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
 
 const log = logger('watchdog');
@@ -243,6 +244,11 @@ export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().su
         .map((t) => ({ kind: 'console' as const, id: t.id, at: t.at, chatId: t.chatId ?? undefined, chatTitle: title(t.chatId ?? undefined), text: t.summary })),
     ],
     watches: openWatches().map((w) => ({ id: w.id, subject: w.subject, note: w.note, checks: w.checks, nextAt: w.nextAt, by: w.by })),
+    // The lifecycle audit log (ADR 007): the guard's refusals and failed draft runs since the last look.
+    audit: auditSnaps(
+      auditLog.recent(200, (e) => e.at >= since && (e.event === 'blocked' || e.event === 'failed')),
+      (chatId) => title(chatId),
+    ),
   };
 }
 
@@ -284,6 +290,38 @@ const effects = {
 
 // ---------------------------------------------------------------- the session
 
+/** Who the Watchdog is in the audit log, when the guard refuses one of its calls. */
+const WATCHDOG_ACTOR = { botName: 'Watchdog' };
+
+/**
+ * The Watchdog's session, like the Router's: no built-in tools, its own system prompt, no settings
+ * files, only its crew_watchdog tools. It also gets the deny hook every agent session has (blocked
+ * actions, then the command guard, ADR 007), so the same hard rules hold for it as for chat bots,
+ * Workers and background jobs, whatever tool it might ever be offered.
+ */
+export function watchdogSessionConfig(tools: ReturnType<typeof watchdogTools>): SessionConfig {
+  const wd = settings.get().superAgent.watchdog;
+  return {
+    cwd: DATA.watchdog,
+    // With the model gateway on (ADR 009) its calls go out under the watchdog scope: its route, windows and usage log.
+    model: botModel(wd.model, WATCHDOG_SCOPE),
+    systemAppend: '',
+    systemPrompt: watchdogSystemPrompt({ maxActions: wd.maxActionsPerTick, stuckMinutes: wd.stuckMinutes }),
+    // No Bash, Read, Edit, Write, WebFetch or Task: it watches and steers, never works.
+    tools: [],
+    permissionMode: 'default',
+    allowRules: ['mcp__crew_watchdog'],
+    askRules: [],
+    denyRules: settings.get().denyRules || [],
+    deniedReason: (toolName, input) => deniedReason(toolName, input, DATA.watchdog, { actor: WATCHDOG_ACTOR }),
+    mcpServers: { crew_watchdog: watchdogMcpServer(tools) as McpServerConfig },
+    settingSources: [],
+    env: agentEnv(WATCHDOG_SCOPE, wd.model || settings.get().defaultModel || undefined),
+    role: 'watchdog',
+    fakeTools: tools,
+  };
+}
+
 class WatchdogLoop {
   readonly queue: BatchQueue<Job>;
   session: AgentSession | null = null;
@@ -312,26 +350,8 @@ class WatchdogLoop {
 
   private getSession(): AgentSession {
     if (this.session && !this.session.closed) return this.session;
-    const wd = settings.get().superAgent.watchdog;
     fs.mkdirSync(DATA.watchdog, { recursive: true });
-    const cfg: SessionConfig = {
-      cwd: DATA.watchdog,
-      // With the model gateway on (ADR 009) its calls go out under the watchdog scope: its route, windows and usage log.
-      model: botModel(wd.model, WATCHDOG_SCOPE),
-      systemAppend: '',
-      systemPrompt: watchdogSystemPrompt({ maxActions: wd.maxActionsPerTick, stuckMinutes: wd.stuckMinutes }),
-      // No Bash, Read, Edit, Write, WebFetch or Task: it watches and steers, never works.
-      tools: [],
-      permissionMode: 'default',
-      allowRules: ['mcp__crew_watchdog'],
-      askRules: [],
-      denyRules: settings.get().denyRules || [],
-      mcpServers: { crew_watchdog: watchdogMcpServer(this.tools) as McpServerConfig },
-      settingSources: [],
-      env: agentEnv(WATCHDOG_SCOPE, wd.model || settings.get().defaultModel || undefined),
-      role: 'watchdog',
-      fakeTools: this.tools,
-    };
+    const cfg = watchdogSessionConfig(this.tools);
     this.session = FAKE_AGENT ? new FakeSession(cfg, 'Watchdog', [], () => {}) : new BotSession(cfg, () => {});
     return this.session;
   }
@@ -483,6 +503,8 @@ class WatchdogLoop {
 }
 
 const loop = new WatchdogLoop();
+// Its actions, ticks and watches are ids a chat's agents can recall (ADR 005 × 006).
+registerWatchdogRecall(() => loop.info());
 
 let emitTimer: NodeJS.Timeout | null = null;
 /** State changes come in bursts (an action, its ledger line, a watch): one event per burst. */

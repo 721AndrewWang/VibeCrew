@@ -2,9 +2,10 @@
 // run here, in code. The same handlers serve the `crew` MCP server and the demo agent.
 
 import type { PermissionLevel } from '../../shared/types';
+import { untrusted } from '../untrusted';
 import { DEFAULT_TIMEOUT_MIN, startRefusal, timeoutFor } from './gates';
 import { type CommandSpec, getJob, isRunning, type JobBase, jobLog, listJobs, outputOf, runningJobs, startCommand, startTask, stopJob, type TaskSpec } from './index';
-import { fmtDuration, jobLine, resultText } from './spill';
+import { defuse, fmtDuration, jobLine, jobSource, resultText } from './spill';
 
 type Result = { text: string; isError?: boolean };
 export type JobHandler = (args: Record<string, unknown>) => Promise<Result>;
@@ -95,7 +96,7 @@ export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', Job
         if (!slice?.total) return ok(`${jobLine(j)}\n(no output yet)`);
         const to = slice.from + slice.lines.length - 1;
         const more = to < slice.total ? `\n(lines ${slice.from}-${to} of ${slice.total}; next: status id=${j.id} from=${to + 1})` : `\n(lines ${slice.from}-${to} of ${slice.total})`;
-        return ok(`${jobLine(j)}\n<job_log id="${j.id}" from="${slice.from}">\n${slice.lines.join('\n').replace(/<(\/?)job_log/gi, '<$1 job_log')}\n</job_log>${more}`);
+        return ok(`${jobLine(j)}\n${untrusted(jobSource(j), defuse(slice.lines.join('\n')), { job: j.id, from: String(slice.from) })}${more}`);
       }
       const running = isRunning(j) ? `\n(still running for ${fmtDuration(Date.now() - j.startedAt)}; its result arrives by itself when it ends)` : '';
       return ok(`${resultText(j, outputOf(j))}${running}`);

@@ -15,8 +15,8 @@ import { FAKE_AGENT } from '../config';
 import type { DraftFields } from '../drafts';
 import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
-import { type Delivery, forgetChatJobs, jobsRunningIn, onJobDone, runningJobs, stopChatJobs } from '../jobs';
-import { jobLine } from '../jobs/spill';
+import { type Delivery, forgetChatJobs, jobsRunningIn, onJobDone, outputOf, runningJobs, stopChatJobs } from '../jobs';
+import { jobLine, tailDigest } from '../jobs/spill';
 import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
 import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
 import { subscriptionsOn } from '../layers/subscriptions';
@@ -31,7 +31,7 @@ import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { continueNote, leadContinues, stalledLead, stallNote } from '../stall';
 import { bots, chats, jobs, messages, projects, routines, settings, uid } from '../store';
-import { chatThread, closeThread, publishTrigger, routineThread } from '../triggers';
+import { chatThread, closeThread, publishJobResult, publishTrigger, routineThread } from '../triggers';
 import { monthSpend, shareOfTurn, usageOf } from '../usage';
 import { ensureWatch } from '../watcher';
 import { setStatus } from './botStatus';
@@ -162,7 +162,7 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
  * of it (a new conversation, without the full-duplex tools). Both go through the model gateway as
  * the bot (ADR 009), and both get recall instead of chat_history while the chain of recall is on.
  */
-function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { subtask?: { actKey: string }; recall?: Budget } = {}): SessionConfig {
+function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { subtask?: { actKey: string; jobId?: string }; recall?: Budget } = {}): SessionConfig {
   const team = bots.all();
   const conf = project ? configOf(project) : null;
   const eff = effectiveBot(chat, bot);
@@ -194,7 +194,8 @@ function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { su
     allowRules: [...bot.allowRules, 'mcp__crew'],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
     denyRules: settings.get().denyRules || [],
-    deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir(), { project, actor: { botId: bot.id, botName: bot.name, chatId: chat.id } }),
+    deniedReason: (toolName, input) =>
+      deniedReason(toolName, input, project?.path || os.homedir(), { project, actor: { botId: bot.id, botName: bot.name, chatId: chat.id, jobId: opts.subtask?.jobId } }),
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     attributionOff: !!conf?.noAttribution,
     sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
@@ -305,12 +306,16 @@ function jobHost(chatId: string, botId: string): JobHost {
     },
     taskSpec: (task) => {
       const { chat, bot, project, cwd } = here();
-      const cfg = sessionConfig(chat, bot, project, { subtask: { actKey: `${chatId}:${botId}:${uid('st_')}` }, recall: recallBudget() });
+      const actKey = `${chatId}:${botId}:${uid('st_')}`;
       return {
         task,
         content: [`<context>\n${contextLines(project).join('\n')}\n</context>`, `Your task, from your main session:\n\n${task}`].join('\n\n'),
-        session: () => (FAKE ? new FakeSession(cfg, bot.name, [], () => {}) : new BotSession(cfg, () => {})),
-        hooks: (stream, status) => ({
+        // The job's id names the sub-task in the audit log, for the deny hook as for the gate.
+        session: (jobId) => {
+          const cfg = sessionConfig(chat, bot, project, { subtask: { actKey, jobId }, recall: recallBudget() });
+          return FAKE ? new FakeSession(cfg, bot.name, [], () => {}) : new BotSession(cfg, () => {});
+        },
+        hooks: (stream, status, jobId) => ({
           beforeEdit: () => {},
           canUseTool: permissionGate({
             chat,
@@ -320,6 +325,7 @@ function jobHost(chatId: string, botId: string): JobHost {
             stream,
             who: `${bot.name} (background sub-task)`,
             status: (st) => status(st.state === 'waiting' ? st.detail || 'an action' : null),
+            jobId,
           }),
         }),
       };
@@ -351,6 +357,9 @@ function deliverJob({ job, text, turn }: Delivery) {
     jobs.set(cur);
     bus.emit({ t: 'job', job: cur });
   }
+  // Workers subscribed to the folder it ran in hear of it too (ADR 003 × 004). Not after a restart:
+  // a restart stops every Worker, so nobody would read it.
+  if (turn) publishJobResult({ job, summary: `${bot?.name || 'A bot'}'s background job in ${chat.title}: ${jobLine(job)}`, digest: () => tailDigest(job, outputOf(job)), resultTriggerId: t?.id });
   if (!turn || !bot || !chat.botIds.includes(bot.id) || routerMode(chat)) return;
   offerMidTurn(chat.id, bot.id, { seq: msg.seq, who: 'System', text });
   enqueue({ chatId: chat.id, botId: bot.id, trigger: { type: 'job', jobId: job.id }, hopsLeft: chat.maxHops });
