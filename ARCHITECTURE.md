@@ -22,6 +22,8 @@ This document covers the parts Crew is made of, how a message becomes an agent's
 │                slow path (cheap model); off unless superAgent.enabled  │
 │  layers/       Two-layer mode: a resident Router per group chat and    │
 │                isolated Workers; off unless superAgent.router.enabled  │
+│  gateway/      Local model gateway (127.0.0.1): provider/model groups, │
+│                failover, spend windows, masking; off unless enabled    │
 │  preview       Preview server (static / reverse proxy + injected       │
 │                script)                                                 │
 │  store         JSON storage under ~/.crew                              │
@@ -98,6 +100,17 @@ The second step (design: [ADR 002](docs/adr/002-two-layer.md)): global continuit
 - **Restarts.** A Worker record is written at once when it is created and on every status change. On start, Workers cut off mid-turn are marked stopped (`Crew restarted`), their worktrees are committed (`reconcileWorkspaces` keeps Worker workspaces whose Worker still exists), and their Routers are told. User messages past `Chat.router.cursor` (written at once when a turn takes them) are handed to the Router again.
 - **Seeing it**: in a router-mode chat, a Workers bar above the composer shows the Router's state and queue, and each Worker's title, member, status and last report or landing. Each row opens that Worker's transcript (the chat's own message rendering, approval cards included); the bar also offers Stop, Dismiss and the Router log. The chat header and the composer's Stop button count the Router and Workers. API: `GET /api/workers?chatId=`, `GET /api/workers/:id/messages`, `POST /api/workers/:id/stop`, `POST /api/workers/:id/dismiss`, `GET /api/chats/:id/router/messages`; `ServerEvent` `worker`, `worker_deleted`, `router`.
 
+## Model gateway
+
+Design: [ADR 009](docs/adr/009-model-routing.md). Behind `gateway.enabled`, off by default; off, `modelEnv()` and `botModel()` return what they always did, nothing listens and no file is created.
+
+- **Where it sits.** `gateway/index.ts` runs an HTTP server on `127.0.0.1` (`gateway.port`, 0 = any free port), started in `index.ts` before anything can start a session and re-synced when the settings change. Every Claude Code session Crew starts gets `ANTHROPIC_BASE_URL=http://127.0.0.1:<port>/s/<role>/<botId>` and `ANTHROPIC_AUTH_TOKEN=<scope credential>` (an HMAC of the scope with a per-process secret), from `modelEnv(settings, scope)`: chat turns pass `bot`, Workers `worker`, the Router `router`, `oneShot` `oneshot`; the Watchdog and speculative Workers will pass theirs. The gateway refuses a credential that does not match its path, so an agent cannot spend under another role's window, and provider keys (`gatewayTokens` in `settings.json`) never reach an agent's environment.
+- **Routing** (`gateway/config.ts`, pure). A target is a group (an ordered list of `provider/model` members) or a `provider/model`. `routeFor(scope, model)`: the gateway's role override (`gateway.roles`), else the model asked for when it is an address (this is how each bot picks, through its own model field and the chat's switch), else `defaultTarget`. The session's model and its tier variables are set to the target; Claude Code's haiku tier goes to `fastTarget` when set. A `provider/*` member passes the requested model through.
+- **Failover** (`gateway/proxy.ts`). Members are asked in order; no connection, 429, 5xx, a 400/402/403 that says quota/balance/billing, or a stream whose first event is an overloaded/rate-limit/api error hands on to the next member. Nothing reaches the client until a member answered, and a stream's first event is held back until it is known not to be such an error, so failover is transparent for streams too. Other errors are final. When all refuse, the last refusal goes back (status, body, `retry-after`). Upstream requests go through `gateway/upstream.ts`, which honours `HTTPS_PROXY`/`NO_PROXY` (Node's http does not).
+- **Spend windows** (`gateway/windows.ts`, pure): rolling per role (and optionally per bot) limits in USD and tokens, checked against the usage log before any provider is asked; a spent window answers 429 with `Retry-After` and `x-should-retry: false`, and the call is logged as `limited`.
+- **Usage log**: one `GatewayCall` per call in `gateway/calls.jsonl` (`JsonlLog`, 20,000 / 35 days): scope, requested model, target, the provider and model that answered, every try, tokens (from the response's usage, `message_start` + `message_delta` for streams), estimated cost (`gateway/pricing.ts`: the provider's price, else Anthropic's list prices), latency. `GET /api/gateway` returns it with totals and window states; `POST /api/gateway/test` sends a tiny prompt through the real listener.
+- **Masking** (`gateway/mask.ts`, pure, off by default): emails, common key shapes and assigned passwords in `system`, text, tool results and tool inputs become `CREW_MASKED_<KIND>_<hmac>` (stable per value, so resent history stays cacheable); replies are restored, streams per content block with a restorer that holds back a possible partial placeholder. Thinking blocks are never changed, so their signatures stay valid.
+
 ## Adversarial review
 
 Builders (Pixel and others), acceptance (Probe) and review (Lens) all look for supporting evidence, and each one sees the previous one's conclusion, so they tend to vouch for each other. Skeptic is the link dedicated to finding counter-evidence. Its design has these points (`server/review.ts`, `blindPrompt`):
@@ -158,6 +171,7 @@ triggers/      Only once the Super-agent is on: triggers.jsonl (append-only, at 
 workers.json   Only once a Router has dispatched a Worker; the Workers' and Routers' turns
                are in messages/ under wk_<id> and rt_<chatId>
 router/        Only once a Router has run: the empty folder its sessions work in
+gateway/       Only once the model gateway has answered a call: calls.jsonl (its usage log)
 ```
 
 - All writes in `store.ts` are "write a temp file, then rename", and are batched and deferred; on exit `flushAll()` finishes any pending writes.

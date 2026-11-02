@@ -58,6 +58,18 @@ Agents always run through Claude Code, but the model behind it can come from ano
 - Keys are stored only in `~/.crew/settings.json` on your machine and are sent only to the provider you chose; in this mode Claude Code also stops sending telemetry to Anthropic.
 - Claude Code is optimized for Claude models. With other models, quality and stability depend on that model (features such as web search may not work).
 
+### Several providers at once: the model gateway (preview)
+
+"Settings → Model gateway" (off by default) puts a small gateway inside Crew between every agent and the providers. It listens on `127.0.0.1` only and speaks the Anthropic Messages API, so providers still need an Anthropic-compatible endpoint (no translation).
+
+- **Providers and accounts**: add as many as you like, each with its own address and key ("Copy current connection" brings over the one above). Models are addressed as `provider/model`, e.g. `deepseek/deepseek-v4-pro`; two accounts at one provider are two providers (`deepseek`, `deepseek-2`).
+- **Routing groups**: an ordered list of members, e.g. `strong` = `anthropic/claude-opus-5-5`, `deepseek/deepseek-v4-pro`. When a member answers with a rate limit (429), an outage (5xx) or a quota/balance error, the next one answers instead, streams included; the agent never sees the refusal, and the usage log records the try as "handed on".
+- **Per role**: each bot picks a group or `provider/model` in its own model setting (and the chat's model switch); the Router, Workers, Watchdog, speculative Workers and background calls can be routed in the gateway settings, e.g. a light group for the Router and the strongest for Workers.
+- **Spend windows**: rolling limits in dollars or tokens for a role or one bot, e.g. $5 per 5 hours and $30 per week for Workers. A used-up window answers 429 with `Retry-After` before any provider is asked. Bots' monthly budgets still apply.
+- **Usage log**: every call, with the provider and model that actually answered, tokens, estimated cost (from the prices you enter, or Anthropic's list prices for Claude models) and latency.
+- **Masking** (off by default): keys, passwords and email addresses in prompts are replaced with placeholders before they leave the machine and put back in the replies. Best effort, not a security boundary.
+- Keys stay in `~/.crew/settings.json`; agents' environments hold only a credential for the gateway, scoped to their role. Turning the gateway off goes back to the connection above at the next turn. Design: [ADR 009](docs/adr/009-model-routing.md).
+
 ## Install and run
 
 ```bash
@@ -159,6 +171,7 @@ If you would rather use the SDK's bundled binary, remove `overrides` from `packa
 - Agents run commands on your computer as your user. Set permission levels according to how much you trust them, and keep the "always ask" rules (by default: `git push`, `sudo`, `rm -rf`, `npm publish`, deploy commands).
 - "Settings → Sandbox" is on by default: commands run by agents are confined to Claude Code's sandbox, can only write to the project directory, and can only reach localhost and domains you allow (you can add more in the project settings). Agents cannot turn it off themselves. "Blocked actions" match command text; they only prevent accidents and are not a security boundary. Commands inside the sandbox that reach local services (such as the dev server) need `env -u no_proxy -u NO_PROXY`; agents know this.
 - The preview server never serves hidden files in the project (such as `.env`).
+- The model gateway, when on, always listens on `127.0.0.1` (whatever "Mobile access" says) and refuses calls without a credential Crew gave one of its own sessions.
 
 ## Directory structure
 
@@ -174,6 +187,7 @@ server/            Node server (Express + WebSocket)
   workspaces/      Isolated workspaces: git worktree, auto-commit, merge, sync
   triggers/        Super-agent trigger bus: threads, fast path (rules), slow path (cheap model)
   layers/          Super-agent two-layer mode: a resident Router per group chat, isolated Workers
+  gateway/         Local model gateway: provider/model routing groups, failover, spend windows, masking
   browser.ts       Headless Chrome (screenshots, console, page actions)
   log.ts           Server logging
 web/               React UI (Vite)
