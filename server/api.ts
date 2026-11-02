@@ -4,9 +4,10 @@ import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
 import { isLogoId } from '../shared/logos';
-import type { Attachment, Bootstrap, FilteredSource, RecordedStep, SourceRule } from '../shared/types';
+import type { Attachment, AuditEntry, Bootstrap, FilteredSource, RecordedStep, SourceRule } from '../shared/types';
 import { memoryFile, readMemory } from './agents/prompts';
 import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
+import { auditEntries } from './audit';
 import { hasBrowser, screenshot } from './browser';
 import { bus } from './bus';
 import { authStatus, checkAuth, testConnection } from './claudeAuth';
@@ -14,8 +15,10 @@ import { APP_VERSION, lanAddress, tailscaleAddress } from './config';
 import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
 import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
+import { approveDraft, createDraft, discardDraft, listDrafts } from './drafts';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { frictionReport } from './friction';
+import { guardTool } from './guard';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
 import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, routerInfos, stopWorker } from './layers';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
@@ -25,6 +28,7 @@ import { noteEditorWrite } from './outsideEdits';
 import { ensurePreview, previewInfos, restartPreviews } from './preview';
 import {
   allProjects,
+  chatProjectId,
   createProject,
   decorate,
   getProject,
@@ -43,6 +47,8 @@ import { barkUrlOk, sendBark } from './push';
 import { quietly } from './quietWrites';
 import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
+import { guardContext } from './safety';
+import { normalizeSafety } from './safetyConfig';
 import { cleanDomains, sandboxStatus } from './sandbox';
 import {
   Approval,
@@ -50,7 +56,9 @@ import {
   BotPatch,
   body,
   ChatPatch,
+  DraftInput,
   GroupCreate,
+  GuardCheck,
   ImprovementReject,
   MessageSend,
   PreviewConsole,
@@ -104,6 +112,7 @@ function bootstrap(): Bootstrap {
     statuses: botStatuses(),
     workers: listWorkers(),
     routers: routerInfos(),
+    drafts: listDrafts(),
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
@@ -194,6 +203,7 @@ export function apiRouter() {
       for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
       patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources, router: { ...cur.superAgent.router, ...b.superAgent.router } });
     }
+    if (b.safety) patch.safety = normalizeSafety({ ...cur.safety, ...b.safety });
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }
@@ -209,7 +219,8 @@ export function apiRouter() {
     settings.update(patch);
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
-    if (patch.denyRules || patch.sandbox) invalidateAllSessions();
+    // ...and its environment: stripping credentials changes what a new session starts with.
+    if (patch.denyRules || patch.sandbox || patch.safety?.stripCredentials !== cur.safety.stripCredentials) invalidateAllSessions();
     // The Router's model and limits are in its session.
     if (b.superAgent?.router || b.superAgent?.enabled === false) invalidateRouters();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
@@ -455,6 +466,35 @@ export function apiRouter() {
     bus.emit({ t: 'project_deleted', id: req.params.id });
     res.json({ ok: true });
   });
+  // ------------------------------------------------------------ safety (ADR 007)
+  r.get('/drafts', (req, res) => res.json({ drafts: listDrafts(str(req.query.chatId) || undefined) }));
+  // A draft made by hand (or by a tool on the user's behalf); agents use draft_external_action.
+  r.post('/drafts', async (req, res) => {
+    const b = body(DraftInput, req.body);
+    const chatId = str(req.query.chatId) || null;
+    const chat = chats.get(chatId);
+    const project = projects.get(chat ? chatProjectId(chat) : str(req.query.projectId));
+    if (!project && b.kind !== 'message') throw new HttpError(400, 'A project (or a chat with one) is needed to run that in');
+    try {
+      res.json({ draft: await createDraft(b, { chatId: chat?.id ?? null, botId: null, cwd: project?.path || '' }) });
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  });
+  r.post('/drafts/:id/approve', async (req, res) => res.json({ draft: await approveDraft(req.params.id) }));
+  r.post('/drafts/:id/discard', (req, res) => res.json({ draft: discardDraft(req.params.id) }));
+  r.get('/audit', (req, res) => {
+    const event = str(req.query.event) as AuditEntry['event'] | '';
+    res.json({ enabled: settings.get().safety.audit, entries: auditEntries(Number(req.query.limit) || 200, { chatId: str(req.query.chatId) || undefined, event: event || undefined }) });
+  });
+  // The guard's verdict for a command, without running it (Settings → Safety's tester).
+  r.post('/guard/check', (req, res) => {
+    const b = body(GuardCheck, req.body);
+    const project = projects.get(b.projectId) ?? null;
+    const cwd = project?.path || os.homedir();
+    res.json({ enabled: settings.get().safety.guard, verdict: guardTool('Bash', { command: b.command }, guardContext(cwd, project)) });
+  });
+
   r.get('/projects/:id/tree', (req, res) => res.json(listDir(getProject(req.params.id), str(req.query.path))));
   r.get('/projects/:id/file', (req, res) => res.json(readProjectFile(getProject(req.params.id), str(req.query.path))));
   r.put('/projects/:id/file', (req, res) => {

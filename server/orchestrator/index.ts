@@ -1,7 +1,7 @@
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Attachment, Bot, Chat, ChatMessage, MessageTrigger, Project } from '../../shared/types';
-import { crewServer } from '../agents/crewTools';
+import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
 import { buildSystemAppend, buildTurnPrompt, contextDelta } from '../agents/prompts';
 import { summarize, TurnRecorder } from '../agents/recorder';
@@ -12,6 +12,7 @@ import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { FAKE_AGENT } from '../config';
+import type { DraftFields } from '../drafts';
 import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
@@ -123,36 +124,38 @@ function getSession(chat: Chat, bot: Bot, project: Project | null): AgentSession
   const team = bots.all();
   const conf = project ? configOf(project) : null;
   const eff = effectiveBot(chat, bot);
+  const crewCtx: CrewContext = {
+    botId: bot.id,
+    botName: bot.name,
+    chatId: chat.id,
+    blind: !!bot.blindReview,
+    projectId: () => chatProjectId(chats.get(chat.id)),
+    currentPage: () => {
+      const pid = chatProjectId(chats.get(chat.id));
+      return pid ? previewPageOf(pid) : undefined;
+    },
+  };
   const cfg: SessionConfig = {
     cwd: project?.path || os.homedir(),
     model: botModel(eff.model),
     effort: eff.effort || undefined,
-    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.list() }),
+    systemAppend: buildSystemAppend({ bot: eff, chat, project, team, skills: skills.forPrompt(project) }),
     resume: bot.freshSession ? undefined : chat.sessions[bot.id],
     permissionMode: permissionModeFor(eff.permission),
     allowRules: [...bot.allowRules, 'mcp__crew'],
     askRules: [...bot.askRules, ...(conf?.askRules || [])],
     denyRules: settings.get().denyRules || [],
-    deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir()),
+    deniedReason: (toolName, input) => deniedReason(toolName, input, project?.path || os.homedir(), { project, actor: { botId: bot.id, botName: bot.name, chatId: chat.id } }),
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     attributionOff: !!conf?.noAttribution,
     sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
     mcpServers: {
-      crew: crewServer({
-        botId: bot.id,
-        botName: bot.name,
-        chatId: chat.id,
-        blind: !!bot.blindReview,
-        projectId: () => chatProjectId(chats.get(chat.id)),
-        currentPage: () => {
-          const pid = chatProjectId(chats.get(chat.id));
-          return pid ? previewPageOf(pid) : undefined;
-        },
-      }) as McpServerConfig,
+      crew: crewServer(crewCtx) as McpServerConfig,
       ...pluginServers(bot),
     },
     settingSources: bot.loadUserSettings ? ['user', 'project', 'local'] : ['project', 'local'],
-    env: agentEnv(),
+    env: agentEnv(project),
+    fakeTools: { draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields) },
   };
   const onSessionId = (sid: string) => {
     const c = chats.get(chat.id);

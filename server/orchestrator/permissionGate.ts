@@ -2,13 +2,14 @@
 // answers to approval requests shown in the chat.
 
 import type { ApprovalPart, Bot, BotStatus, Chat, Project } from '../../shared/types';
-import { decide, describeAction, harmless, matchingRule, splitCommand, suggestRules } from '../agents/permissions';
+import { decide, describeAction, EDIT_TOOLS, harmless, matchingRule, splitCommand, suggestRules } from '../agents/permissions';
 import type { TurnStream } from '../agents/stream';
 import { bus, notify } from '../bus';
 import { recordFriction, SLOW_APPROVAL_MS } from '../friction';
 import { logger } from '../log';
 import { configOf } from '../projects';
 import { remindLater } from '../push';
+import { type Actor, guardRefusal, guardVerdict } from '../safety';
 import { bots, chats, settings, uid } from '../store';
 import { setStatus } from './botStatus';
 import { effectiveBot } from './turnContext';
@@ -25,25 +26,53 @@ const log = logger('permission');
 
 const approvals = new Map<string, PendingApproval>();
 
-/** Why the action is refused outright (Settings → Defaults → Blocked actions), or null. Read fresh on every call. */
-export function deniedReason(toolName: string, input: unknown, cwd: string): string | null {
+/** What a refusal needs to know beyond the call: the project (its allow-list), who asked, and a read-only family. */
+export interface DenyScope {
+  project?: Project | null;
+  actor?: Actor;
+  /** A Worker on a read-only skill family (ADR 007): it may not edit files. */
+  readOnly?: string;
+}
+
+/**
+ * Why the action is refused outright, or null: Settings → Defaults → Blocked actions, then the
+ * command guard's hard rules (ADR 007). Read fresh on every call; the PreToolUse hook calls this
+ * in every permission mode, so Full auto and the AI reviewer cannot approve what it refuses.
+ */
+export function deniedReason(toolName: string, input: unknown, cwd: string, scope: DenyScope = {}): string | null {
   const rule = matchingRule(settings.get().denyRules || [], toolName, input, cwd);
-  if (!rule) return null;
-  return `This action is blocked (Settings → Defaults → Blocked actions: ${rule}). Don't try to get around it with a different command; if it's needed, ask the user to do it themselves.`;
+  if (rule) return `This action is blocked (Settings → Defaults → Blocked actions: ${rule}). Don't try to get around it with a different command; if it's needed, ask the user to do it themselves.`;
+  if (scope.readOnly && EDIT_TOOLS.has(toolName))
+    return `This task runs the ${scope.readOnly} skill family, which is read-only: report what you found and what should change instead of editing files.`;
+  return guardRefusal(toolName, input, cwd, scope.project ?? null, scope.actor);
 }
 
 /**
  * The canUseTool hook for one turn of a bot in a chat. A Worker's turn passes `status` (its own
  * state, not the bot's) and `who` (how the approval request names it).
  */
-export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | null; cwd: string; stream: TurnStream; status?: (s: Omit<BotStatus, 'since'>) => void; who?: string }) {
+export function permissionGate(turn: {
+  chat: Chat;
+  bot: Bot;
+  project: Project | null;
+  cwd: string;
+  stream: TurnStream;
+  status?: (s: Omit<BotStatus, 'since'>) => void;
+  who?: string;
+  /** A Worker's run: who it is (audit log), and its read-only skill family, if any. */
+  workerId?: string;
+  readOnly?: string;
+}) {
   const { chat, bot, project, cwd, stream } = turn;
   const status = turn.status ?? ((s: Omit<BotStatus, 'since'>) => setStatus(bot.id, s));
   const who = turn.who ?? bot.name;
+  const actor: Actor = { botId: bot.id, botName: bot.name, chatId: chat.id, workerId: turn.workerId };
+  /** Commands the user allowed in this turn: the same one is not asked about again (a state change prompts once). */
+  const allowedOnce = new Set<string>();
   return async (toolName: string, input: Record<string, unknown>, opts: { signal: AbortSignal; matchedAskRule?: unknown; decisionReason?: string; title?: string }) => {
     const current = bots.get(bot.id) || bot;
     const desc = describeAction(toolName, input, cwd);
-    const refused = deniedReason(toolName, input, cwd);
+    const refused = deniedReason(toolName, input, cwd, { project, actor, readOnly: turn.readOnly });
     if (refused) {
       log.warn(`${bot.name} in ${chat.id}: deny ${desc.title} — ${refused}`);
       return { behavior: 'deny' as const, message: refused };
@@ -52,7 +81,13 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     const projectRules = project ? configOf(project).askRules || [] : [];
     // The chat's mode switch is read each time: switching to Auto applies to the running turn too.
     const level = effectiveBot(chats.get(chat.id) || chat, current).permission;
-    const d = decide(current, level, toolName, input, cwd, { ...opts, projectRules });
+    // The guard's verdict (ADR 007): a read never prompts; a change prompts once, with what it changes.
+    const verdict = toolName === 'Bash' ? guardVerdict(toolName, input, cwd, project) : null;
+    const onceKey = verdict ? `${toolName}\n${String(input.command || '')}` : '';
+    let d = decide(current, level, toolName, input, cwd, { ...opts, projectRules, readOnlyCommand: verdict?.kind === 'read' });
+    // A read-only family: a command that changes something asks, whatever the level.
+    if (turn.readOnly && d.behavior === 'allow' && verdict?.kind === 'change') d = { behavior: 'ask', because: `the ${turn.readOnly} skill family is read-only, and this command changes something` };
+    if (d.behavior === 'ask' && onceKey && allowedOnce.has(onceKey)) d = { behavior: 'allow', because: 'you allowed this same command earlier in this turn' };
     log[d.behavior === 'allow' ? 'debug' : 'info'](`${bot.name} in ${chat.id}: ${d.behavior} ${desc.title} — ${d.because}`);
     if (d.behavior === 'allow') return { behavior: 'allow' as const, updatedInput: input };
     if (d.behavior === 'deny') return { behavior: 'deny' as const, message: d.message };
@@ -68,6 +103,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
       rules: suggestRules(toolName, input, cwd),
       reason: opts.decisionReason,
       because: d.because,
+      effects: verdict?.kind === 'change' && verdict.effects.length ? verdict.effects : undefined,
     };
     part.rule = part.rules?.[0];
     stream.addPart(part);
@@ -96,6 +132,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
         bus.emit({ t: 'bot', bot: b });
       }
     }
+    if (decision.allow && onceKey) allowedOnce.add(onceKey);
     if (decision.allow) return { behavior: 'allow' as const, updatedInput: input };
     return {
       behavior: 'deny' as const,

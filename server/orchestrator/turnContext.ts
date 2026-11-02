@@ -8,6 +8,7 @@ import { cleanEnv } from '../config';
 import { PLUGINS } from '../data/catalog';
 import { devServer } from '../devserver';
 import { configOf, devCommand } from '../projects';
+import { agentEnvOptions } from '../safety';
 import { ALWAYS_ALLOWED, sandboxStatus } from '../sandbox';
 import { settings } from '../store';
 import { IMAGE_MIMES, readUpload } from '../uploads';
@@ -36,9 +37,13 @@ export function effectiveBot(chat: Chat, bot: Bot): Bot {
   };
 }
 
-/** The bots' environment: which endpoint, credentials and models their Claude Code uses. */
-export function agentEnv(): Record<string, string> {
-  return cleanEnv(modelEnv());
+/**
+ * The bots' environment: which endpoint, credentials and models their Claude Code uses. The
+ * user's own tokens and keys are stripped (ADR 007) unless the project passes them through; the
+ * model's connection is added after, so Claude Code still runs.
+ */
+export function agentEnv(project: Project | null = null): Record<string, string> {
+  return cleanEnv(modelEnv(), agentEnvOptions(project));
 }
 
 function substitute(value: string, env: Record<string, string>): string {

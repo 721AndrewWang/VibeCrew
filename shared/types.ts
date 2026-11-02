@@ -185,6 +185,8 @@ export interface ApprovalPart {
   reason?: string;
   /** What made Crew ask: the level, or the rule that matched. */
   because?: string;
+  /** What the action changes, in words a person can judge (the command guard's summary). */
+  effects?: string[];
 }
 
 export type MessagePart = TextPart | ThinkingPart | ToolPart | ApprovalPart;
@@ -274,6 +276,10 @@ export interface Project {
   requireChallenge?: boolean;
   /** Call the adversarial reviewer by itself when a finished change matches these fixed rules. */
   autoChallenge?: AutoChallenge;
+  /** Lifecycle skill families this project opted in to (each costs context in every prompt). */
+  skillFamilies?: SkillFamily[];
+  /** Environment variables passed through to agent sessions although they look like credentials. */
+  passEnv?: string[];
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -374,7 +380,19 @@ export interface Skill {
   body: string;
   builtin: boolean;
   updatedAt: number;
+  /** The lifecycle family it belongs to (ADR 007); none = a general skill, always available. */
+  family?: SkillFamily;
+  /** Where it may run; unset = chat and worker. */
+  modes?: SkillMode[];
+  /** It only reads: a Worker running it cannot edit files. */
+  readOnly?: boolean;
 }
+
+/** The software lifecycle, the way projects opt in to skills (Apache Magpie's families). */
+export type SkillFamily = 'triage' | 'reproduce' | 'draft-fix' | 'review' | 'release' | 'repo-health';
+
+/** chat: the user types /name; worker: a Router-dispatched Worker's playbook; speculative: silent background runs (a later milestone). */
+export type SkillMode = 'chat' | 'worker' | 'speculative';
 
 export type RoutineTrigger =
   | { type: 'interval'; minutes: number }
@@ -490,6 +508,67 @@ export interface PublicSettings {
   push: { configured: boolean; afterMinutes: number };
   /** The event-driven core (Trigger bus, threads, two-stage filter); off = Crew as before. */
   superAgent: SuperAgentSettings;
+  /** The command guard, the credential-stripped environment and the audit log (ADR 007). */
+  safety: SafetySettings;
+}
+
+export interface SafetySettings {
+  /** Hard rules checked before every tool call, in every permission mode; reads never prompt. */
+  guard: boolean;
+  /** Tokens and keys from Crew's environment never reach agent sessions, unless a project passes one through. */
+  stripCredentials: boolean;
+  /** Agent-authored external actions, their approvals and the guard's refusals go to audit.jsonl. */
+  audit: boolean;
+}
+
+/** The guard's hard rules. */
+export type GuardRule = 'credentials' | 'external' | 'network';
+
+/** What the guard makes of an action. */
+export type GuardVerdict = { kind: 'deny'; rule: GuardRule; reason: string } | { kind: 'read' } | { kind: 'change'; effects: string[] };
+
+/** Something that leaves the machine in the user's name: drafted by an agent, run only by the user's click. */
+export type DraftKind = 'git-push' | 'pr-open' | 'pr-comment' | 'issue-open' | 'issue-comment' | 'message';
+
+export interface ExternalDraft {
+  id: ID;
+  at: number;
+  kind: DraftKind;
+  chatId: ID | null;
+  botId: ID | null;
+  workerId?: ID;
+  /** Where the command runs. */
+  cwd: string;
+  /** In words: "origin → crew/landing", "PR #12", "#general". */
+  target: string;
+  /** The exact argv that runs on approval (no shell); null for a message the user posts. */
+  command: string[] | null;
+  title?: string;
+  body?: string;
+  /** The agent's reason, shown on the card. */
+  why?: string;
+  status: 'pending' | 'running' | 'done' | 'failed' | 'discarded';
+  decidedAt?: number;
+  result?: { exitCode: number; output: string; url?: string };
+  /** How to undo it, once known. */
+  reverse?: string;
+  /** git-push: the remote branch's head before the push ('' = it did not exist). */
+  before?: string;
+}
+
+export interface AuditEntry {
+  id: ID;
+  at: number;
+  event: 'drafted' | 'approved' | 'discarded' | 'ran' | 'failed' | 'blocked';
+  actor: { botId?: ID; botName?: string; chatId?: ID; workerId?: ID; user?: boolean };
+  kind?: DraftKind;
+  rule?: GuardRule;
+  target?: string;
+  command?: string;
+  cwd?: string;
+  detail?: string;
+  reverse?: string;
+  draftId?: ID;
 }
 
 /**
@@ -571,6 +650,8 @@ export interface Worker {
   costUsd: number;
   /** Ids of the triggers and messages of the batch that dispatched it. */
   related: ID[];
+  /** The lifecycle family whose skills are its playbook. */
+  family?: SkillFamily;
   /** Follow-ups from the Router waiting for the current turn to end. */
   pending?: string[];
   dismissedAt?: number;
@@ -923,6 +1004,8 @@ export interface Bootstrap {
   /** Two-layer mode: Workers not yet dismissed, and the Routers that exist. */
   workers: Worker[];
   routers: RouterInfo[];
+  /** External-action drafts: pending ones and the latest decided. */
+  drafts: ExternalDraft[];
   devServers: DevServerState[];
   previews: PreviewInfo[];
   models: ModelOption[];
@@ -978,6 +1061,8 @@ export type ServerEvent =
   | { t: 'worker'; worker: Worker }
   | { t: 'worker_deleted'; id: ID }
   | { t: 'router'; router: RouterInfo }
+  | { t: 'draft'; draft: ExternalDraft }
+  | { t: 'audit'; entry: AuditEntry }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */

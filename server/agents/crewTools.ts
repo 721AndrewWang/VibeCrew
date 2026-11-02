@@ -4,7 +4,9 @@ import type { ConsoleEntry } from '../../shared/types';
 import { act, consoleCheck, debugTarget, screenshot } from '../browser';
 import { notify } from '../bus';
 import { devServer } from '../devserver';
-import { bots, messages } from '../store';
+import { createDraft, type DraftFields, showCommand } from '../drafts';
+import { bots, messages, projects } from '../store';
+import { untrusted } from '../untrusted';
 import { appendMemory } from './prompts';
 
 export interface CrewContext {
@@ -20,6 +22,26 @@ export interface CrewContext {
   actKey?: string;
   /** A Worker (two-layer mode) never talks to the user, so it gets no notify_user. */
   worker?: boolean;
+  /** The Worker's id, for drafts and the audit log. */
+  workerId?: string;
+}
+
+/** draft_external_action's handler (also the demo agent's): saves a draft; nothing runs until the user clicks. */
+export async function draftAction(ctx: Pick<CrewContext, 'botId' | 'chatId' | 'projectId' | 'workerId'>, args: DraftFields): Promise<{ text: string; isError?: boolean }> {
+  const cwd = projects.get(ctx.projectId())?.path;
+  if (!cwd && args.kind !== 'message') return { text: 'This conversation has no project folder to run that in.', isError: true };
+  try {
+    const d = await createDraft(args, { chatId: ctx.chatId, botId: ctx.botId, workerId: ctx.workerId, cwd: cwd || '' });
+    return {
+      text: [
+        `Draft ${d.id} saved for the user: ${d.target}.`,
+        d.command ? `Exact command it will run when approved: ${showCommand(d.command)}` : 'The user will post it themselves.',
+        "It does not run until the user approves it in Crew, so don't wait for it and don't try to do it another way. Say in your reply that it is waiting for their approval.",
+      ].join('\n'),
+    };
+  } catch (e) {
+    return { text: `The draft was not saved: ${(e as Error).message}`, isError: true };
+  }
 }
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
@@ -119,7 +141,9 @@ export function crewServer(ctx: CrewContext) {
             const r = await consoleCheck({ projectId: projectId(), path: pagePath(args.path), waitMs: args.waitMs, colorScheme: args.colorScheme });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
             if (!r.logs.length) return text(`Page ${where} (HTTP ${r.status}, ${r.title || 'untitled'}): console is clean, no logs.`);
-            return text(`Page ${where} (HTTP ${r.status}, ${r.title || 'untitled'}), ${r.logs.length} log entr${r.logs.length === 1 ? 'y' : 'ies'}:\n${fmtLogs(r.logs, 60)}`);
+            return text(
+              `Page ${where} (HTTP ${r.status}, ${r.title || 'untitled'}), ${r.logs.length} log entr${r.logs.length === 1 ? 'y' : 'ies'}:\n${untrusted('preview-console', fmtLogs(r.logs, 60), { page: where })}`,
+            );
           } catch (e) {
             return fail(`Could not open the page: ${(e as Error).message}`);
           }
@@ -159,9 +183,13 @@ export function crewServer(ctx: CrewContext) {
               colorScheme: args.colorScheme,
             });
             const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-            const summary = [...r.lines, '', `Current page: ${where} (${r.title || 'untitled'})`, r.logs.length ? `Console logs meanwhile:\n${fmtLogs(r.logs)}` : 'No console logs meanwhile.'].join(
-              '\n',
-            );
+            // The steps' results quote the page (texts, eval output): outside content, wrapped (ADR 007).
+            const summary = [
+              untrusted('browser-page', r.lines.join('\n'), { page: where }),
+              '',
+              `Current page: ${where} (${r.title || 'untitled'})`,
+              r.logs.length ? `Console logs meanwhile:\n${untrusted('preview-console', fmtLogs(r.logs), { page: where })}` : 'No console logs meanwhile.',
+            ].join('\n');
             const content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] = [];
             if (r.png) content.push({ type: 'image', data: r.png.toString('base64'), mimeType: 'image/png' });
             content.push({ type: 'text', text: summary });
@@ -232,6 +260,27 @@ export function crewServer(ctx: CrewContext) {
         async ({ note }) => {
           appendMemory(ctx.botId, note);
           return text('Saved.');
+        },
+      ),
+      tool(
+        'draft_external_action',
+        "Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields and shows it to the user, who approves or discards it with one click; it never runs on its own. This is the only way to do these things: Crew's command guard refuses git push, gh pr create and the like.",
+        {
+          kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'message']).describe('What to do'),
+          remote: z.string().optional().describe('git-push: the remote (default origin)'),
+          branch: z.string().optional().describe('git-push: the branch on the remote to push HEAD to (default: the current branch)'),
+          number: z.number().int().optional().describe('pr-comment / issue-comment: the number'),
+          title: z.string().optional().describe('pr-open / issue-open: the title'),
+          body: z.string().optional().describe('The text: PR description, issue body, comment, or message'),
+          base: z.string().optional().describe('pr-open: the branch to merge into'),
+          head: z.string().optional().describe('pr-open: the branch with the changes'),
+          repo: z.string().optional().describe('owner/name, when it is not the current repository'),
+          channel: z.string().optional().describe('message: where it goes (a person, a channel, a mailing list)'),
+          why: z.string().optional().describe('One sentence for the user: why this should go out'),
+        },
+        async (args) => {
+          const r = await draftAction(ctx, args as DraftFields);
+          return r.isError ? fail(r.text) : text(r.text);
         },
       ),
       ...(ctx.worker

@@ -12,6 +12,7 @@ import { bus } from './bus';
 import { checkAuth } from './claudeAuth';
 import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
 import { stopAllDevServers } from './devserver';
+import { recoverDrafts } from './drafts';
 import { initIfNeeded } from './entities';
 import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
@@ -127,6 +128,7 @@ async function main() {
   const layers = recoverLayers();
   await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
+  recoverDrafts();
   resumeRouters(layers.interrupted);
   startRoutines();
   startOutsideEditNotes();

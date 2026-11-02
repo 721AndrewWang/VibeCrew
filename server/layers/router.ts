@@ -10,9 +10,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import { familyInfo } from '../../shared/families';
 import type { Bot, Chat, ChatMessage, RouterInfo } from '../../shared/types';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
+import { findSkeptic } from '../autoChallenge';
 import { bus, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { FAKE_AGENT, HOME_DIR } from '../config';
@@ -20,15 +22,26 @@ import { MODEL_OPTIONS } from '../data/catalog';
 import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
 import { agentEnv } from '../orchestrator/turnContext';
-import { bots, chats, messages, routerLogId, settings } from '../store';
+import { projectFamilies } from '../skills';
+import { bots, chats, messages, projects, routerLogId, settings } from '../store';
 import { monthSpend } from '../usage';
 import { BatchQueue } from './batch';
-import { explicitEvent, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type TeamMember } from './prompts';
+import { explicitEvent, type FamilyLine, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type TeamMember } from './prompts';
 import { routerMcpServer, routerTools, type TurnCtx } from './tools';
 import { runLogged } from './turn';
 import { type recoverWorkers, workerLines } from './workers';
 
 const log = logger('router');
+
+/** The lifecycle families the chat's project opted in to, with the adversarial reviewer for review (ADR 007). */
+function familiesFor(chat: Chat): FamilyLine[] {
+  const members = bots.all().filter((b) => chat.botIds.includes(b.id));
+  const skeptic = findSkeptic(members);
+  return projectFamilies(projects.get(chat.projectId)).map((id) => {
+    const f = familyInfo(id);
+    return { id, description: f.description, readOnly: f.readOnly, reviewer: id === 'review' ? skeptic?.name : undefined };
+  });
+}
 
 /** Messages a new Router session gets again, so the conversation carries on. */
 const RECAP_MESSAGES = 12;
@@ -123,7 +136,15 @@ class ChatRouter {
       cwd: ROUTER_CWD,
       model: botModel(rs.model),
       systemAppend: '',
-      systemPrompt: routerSystemPrompt({ lead: lead.name, leadTitle: lead.title, chat: chat.title, role: lead.description, team, maxWorkers: rs.maxWorkers }),
+      systemPrompt: routerSystemPrompt({
+        lead: lead.name,
+        leadTitle: lead.title,
+        chat: chat.title,
+        role: lead.description,
+        team,
+        maxWorkers: rs.maxWorkers,
+        families: familiesFor(chat),
+      }),
       // No Bash, Read, Edit, Write, WebFetch or Task: the Router coordinates, Workers execute.
       tools: [],
       resume: chat.router?.sessionId,

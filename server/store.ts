@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type {
+  AuditEntry,
   AuthMode,
   Bot,
   Chat,
   ChatMessage,
+  ExternalDraft,
   Improvement,
   PermissionLevel,
   Project,
@@ -14,6 +16,7 @@ import type {
   PublicSettings,
   Routine,
   RoutingRecord,
+  SafetySettings,
   SandboxSettings,
   SuperAgentSettings,
   Thread,
@@ -22,6 +25,7 @@ import type {
 } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { SCHEMA_VERSION } from './migrations';
+import { DEFAULT_SAFETY, normalizeSafety } from './safetyConfig';
 import { DEFAULT_ALLOWED } from './sandbox';
 import { DEFAULT_SUPER_AGENT, normalizeSuperAgent } from './triggers/fastPath';
 
@@ -229,6 +233,7 @@ export interface Settings {
   /** Phone push (Bark) when an approval stays open this many minutes; the URL holds the device key. */
   push: { barkUrl: string; afterMinutes: number };
   superAgent: SuperAgentSettings;
+  safety: SafetySettings;
   initialized: boolean;
 }
 
@@ -255,6 +260,7 @@ const DEFAULT_SETTINGS: Settings = {
   pluginSecrets: {},
   push: { barkUrl: '', afterMinutes: 10 },
   superAgent: DEFAULT_SUPER_AGENT,
+  safety: DEFAULT_SAFETY,
   initialized: false,
 };
 
@@ -267,6 +273,7 @@ class SettingsStore {
     if (!this.data.routing) this.data.routing = { mode: 'shadow' };
     if (!this.data.sandbox) this.data.sandbox = { ...DEFAULT_SETTINGS.sandbox, allowedDomains: [...DEFAULT_ALLOWED] };
     this.data.superAgent = normalizeSuperAgent(this.data.superAgent);
+    this.data.safety = normalizeSafety(this.data.safety);
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -305,6 +312,7 @@ class SettingsStore {
       wrapUpAtTokens: s.wrapUpAtTokens ?? 120_000,
       push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
       superAgent: s.superAgent,
+      safety: s.safety,
     };
   }
 
@@ -422,5 +430,10 @@ export const triggerLog = new JsonlLog<Trigger>(DATA.triggers, TRIGGER_LIMITS, (
 export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });
 /** Two-layer mode's Workers; their turns are kept by `messages` under the Worker's id. */
 export const workers = new Collection<Worker>(DATA.workers);
+/** Drafts of actions that leave the machine in the user's name; they run only on the user's click. */
+export const drafts = new Collection<ExternalDraft>(DATA.drafts);
+export const AUDIT_LIMITS = { max: 5000, maxAgeMs: 180 * 86_400_000 };
+/** Agent-authored external actions, their approvals and the guard's refusals (only while safety.audit is on). */
+export const auditLog = new JsonlLog<AuditEntry>(DATA.audit, AUDIT_LIMITS);
 /** Where `messages` keeps a chat's Router turns. */
 export const routerLogId = (chatId: string) => `rt_${chatId}`;

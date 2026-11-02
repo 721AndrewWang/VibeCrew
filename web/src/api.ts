@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  AuditEntry,
   AuthStatus,
   Bootstrap,
   Bot,
@@ -8,7 +9,9 @@ import type {
   ConsoleEntry,
   DevServerState,
   Effort,
+  ExternalDraft,
   FrictionReport,
+  GuardVerdict,
   Improvement,
   ImprovementEffect,
   PermissionLevel,
@@ -199,6 +202,12 @@ export const api = {
   stopWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/stop`),
   dismissWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/dismiss`),
   routerLog: (chatId: string) => get<{ messages: ChatMessage[] }>(`/api/chats/${q(chatId)}/router/messages`),
+
+  // Safety (ADR 007): drafts of external actions, the audit log, the guard's dry run.
+  approveDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/approve`),
+  discardDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/discard`),
+  audit: (limit = 200) => get<{ enabled: boolean; entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),
+  guardCheck: (command: string, projectId?: string | null) => post<{ enabled: boolean; verdict: GuardVerdict }>('/api/guard/check', { command, projectId: projectId || null }),
 };
 
 export function fileToBase64(file: Blob): Promise<string> {
