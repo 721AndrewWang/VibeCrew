@@ -1,6 +1,6 @@
-import { Network, Radio, Save } from 'lucide-react';
+import { Network, Radio, Save, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
-import type { FilteredSource, RouterSettings, SourceMode, SuperAgentSettings } from '../../../../../shared/types';
+import type { FilteredSource, RouterSettings, SourceMode, SuperAgentSettings, WatchdogSettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
 import { cx, gatewayOptions } from '../../../utils';
@@ -50,7 +50,7 @@ function toForm(s: SuperAgentSettings): Form {
   return { sources, projects: s.projects, policies: s.policies, maxCandidatesPerHour: s.maxCandidatesPerHour };
 }
 
-function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router'> {
+function fromForm(f: Form): Omit<SuperAgentSettings, 'enabled' | 'router' | 'watchdog'> {
   const sources = {} as SuperAgentSettings['sources'];
   for (const { id } of SOURCES) {
     sources[id] = {
@@ -180,21 +180,19 @@ export function SuperAgentSection() {
             </button>
           </div>
           <RouterSettingsBlock saved={saved.router} save={save} saving={saving} />
+          <WatchdogSettingsBlock saved={saved.watchdog} save={save} saving={saving} />
         </>
       )}
     </Section>
   );
 }
 
-/** Two-layer mode: a Router per group chat that talks to the user and dispatches Workers. */
-function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
+/** The <option>s of a Super-agent model picker: the Claude models, or through the gateway its groups and provider/model addresses (Settings → Model gateway). */
+function useModelOptions() {
   const claudeModels = useStore((s) => s.models);
   const gateway = useStore((s) => s.settings.gateway);
-  // Through the gateway, its groups and provider/model addresses (Settings → Model gateway).
   const models = gateway.enabled ? [{ id: '', label: '' }, ...gatewayOptions(gateway)] : claudeModels;
-  const [form, setForm] = useState({ model: saved.model, workerModel: saved.workerModel, maxWorkers: saved.maxWorkers });
-  const dirty = form.model !== saved.model || form.workerModel !== saved.workerModel || form.maxWorkers !== saved.maxWorkers;
-  const options = (current: string, empty: string) => {
+  return (current: string, empty: string) => {
     const list = models.map((m) => ({ id: m.id, label: m.id ? m.label : empty }));
     // A model typed elsewhere (or a provider's) stays selectable.
     if (!list.some((m) => m.id === current)) list.push({ id: current, label: current });
@@ -204,6 +202,13 @@ function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; s
       </option>
     ));
   };
+}
+
+/** Two-layer mode: a Router per group chat that talks to the user and dispatches Workers. */
+function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
+  const options = useModelOptions();
+  const [form, setForm] = useState({ model: saved.model, workerModel: saved.workerModel, maxWorkers: saved.maxWorkers });
+  const dirty = form.model !== saved.model || form.workerModel !== saved.workerModel || form.maxWorkers !== saved.maxWorkers;
   return (
     <div className="router-settings" data-testid="router-settings">
       <div className="setting-row">
@@ -260,6 +265,74 @@ function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; s
           <div className="row">
             <span className="spacer" />
             <button className="btn primary" disabled={saving || !dirty} onClick={() => void save({ router: { ...saved, ...form } }, 'Router settings saved')}>
+              {saving ? <span className="spinner" /> : <Save size={14} />} Save
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const WATCHDOG_LIMITS: { key: keyof Omit<WatchdogSettings, 'enabled' | 'model'>; label: string; min: number; max: number; step?: number; hint: string }[] = [
+  { key: 'everyMinutes', label: 'Tick every (minutes)', min: 1, max: 60, hint: 'A tick with nothing flagged by the rules costs nothing: no model is called.' },
+  { key: 'maxTicksPerHour', label: 'Ticks that call the model, per hour at most', min: 1, max: 60, hint: 'The rest are skipped and recorded.' },
+  { key: 'maxActionsPerTick', label: 'Actions per tick at most', min: 0, max: 10, hint: '0 lets it look and explain, but never act.' },
+  { key: 'dailyBudgetUsd', label: 'Budget per day (USD)', min: 0, max: 100, step: 0.1, hint: 'Ticks and your questions together; past it the Watchdog waits for tomorrow.' },
+  { key: 'stuckMinutes', label: 'Flag a Worker as stuck after (minutes)', min: 5, max: 240, hint: 'No tool call or other progress for this long.' },
+];
+
+/** The Watchdog: a timer-driven session outside the chats that checks Workers and errors, within hard limits. */
+function WatchdogSettingsBlock({ saved, save, saving }: { saved: WatchdogSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
+  const options = useModelOptions();
+  const [form, setForm] = useState(saved);
+  const dirty = JSON.stringify({ ...form, enabled: saved.enabled }) !== JSON.stringify(saved);
+  return (
+    <div className="router-settings" data-testid="watchdog-settings">
+      <div className="setting-row">
+        <div>
+          <div className="sr-title">
+            <ShieldCheck size={14} /> Watchdog
+          </div>
+          <div className="hint">
+            An independent session on a timer. Each tick, rules in code look at the Workers (progress, repeated tool calls, failures), approvals waiting for you, turn errors, friction and interface
+            errors; only when something is flagged does the Watchdog's model look. It can nudge, stop or restart a Worker and tell a chat, and it re-checks transient failures until they heal. It never
+            does the work, never answers approvals, and only proposes changes to policies or prompts. Off: nothing runs.
+          </div>
+        </div>
+        <Toggle on={saved.enabled} onChange={(v) => void save({ watchdog: { ...saved, enabled: v } }, v ? 'Watchdog on' : 'Watchdog off')} />
+      </div>
+      {saved.enabled && (
+        <>
+          <div className="field">
+            <label>Watchdog model</label>
+            <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
+              {options(form.model, 'Claude Code default')}
+            </select>
+            <div className="hint">It judges and steers; a lighter model is usually enough. With the model gateway on, its watchdog route (if set) takes precedence.</div>
+          </div>
+          {WATCHDOG_LIMITS.map((l) => (
+            <div className="field" key={l.key}>
+              <label>{l.label}</label>
+              <input
+                className="input num-input"
+                type="number"
+                data-limit={l.key}
+                min={l.min}
+                max={l.max}
+                step={l.step ?? 1}
+                value={form[l.key]}
+                onChange={(e) => setForm({ ...form, [l.key]: Math.max(l.min, Math.min(l.max, Number(e.target.value) || 0)) })}
+              />
+              <div className="hint">{l.hint}</div>
+            </div>
+          ))}
+          <div className="row">
+            <button className="btn ghost sm" onClick={() => setView('watchdog')}>
+              Open Watchdog
+            </button>
+            <span className="spacer" />
+            <button className="btn primary" disabled={saving || !dirty} onClick={() => void save({ watchdog: { ...form, enabled: saved.enabled } }, 'Watchdog settings saved')}>
               {saving ? <span className="spinner" /> : <Save size={14} />} Save
             </button>
           </div>

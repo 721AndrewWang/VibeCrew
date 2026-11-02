@@ -8,7 +8,19 @@ import { activeWorkers, closeIdleWorkerSessions, closeWorkerSessions, dismissFin
 
 export type { RouterEvent } from './prompts';
 export { countRouterEvents, invalidateRouters, leadOf, noteDirect, routerEvent, routerInfos, routerMode } from './router';
-export { activeWorkers, deliverToWorker, dismissWorker, listWorkers, refreshWorkerSessions, sharedWorkerActive, stopWorker, unsubscribeWorker, workerWorkingIn } from './workers';
+export {
+  activeWorkers,
+  deliverToWorker,
+  dismissWorker,
+  listWorkers,
+  messageWorker,
+  refreshWorkerSessions,
+  restartWorker,
+  sharedWorkerActive,
+  stopWorker,
+  unsubscribeWorker,
+  workerWorkingIn,
+} from './workers';
 
 const log = logger('layers');
 

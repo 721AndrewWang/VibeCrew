@@ -26,12 +26,13 @@ import type {
   Trigger,
   TurnSummary,
   UsageSummary,
+  WatchdogInfo,
   Worker,
 } from '../../shared/types';
 import { api } from './api';
 import { desktop } from './desktop';
 
-export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'triggers' | 'settings';
+export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'triggers' | 'watchdog' | 'settings';
 export type ComputerTab = 'browser' | 'files' | 'terminal' | 'changes';
 export type Device = 'fill' | 'desktop' | 'tablet' | 'mobile';
 
@@ -92,6 +93,8 @@ export interface AppState {
   /** Two-layer mode: Workers not yet dismissed, and each chat's Router. */
   workers: Record<string, Worker>;
   routers: Record<string, RouterInfo>;
+  /** The Watchdog's live state, once the server has sent it (or the Watchdog page loaded it). */
+  watchdog: WatchdogInfo | null;
   devServers: Record<string, DevServerState>;
   previews: Record<string, PreviewInfo>;
   devLogs: Record<string, string>;
@@ -179,6 +182,7 @@ export const useStore = create<AppState>(() => ({
       policies: '',
       maxCandidatesPerHour: 30,
       router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false },
+      watchdog: { enabled: false, model: 'claude-sonnet-5', everyMinutes: 15, maxTicksPerHour: 4, maxActionsPerTick: 3, dailyBudgetUsd: 1, stuckMinutes: 20 },
     },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
@@ -196,6 +200,7 @@ export const useStore = create<AppState>(() => ({
   statuses: {},
   workers: {},
   routers: {},
+  watchdog: null,
   devServers: {},
   previews: {},
   devLogs: {},
@@ -456,6 +461,9 @@ export function applyEvent(ev: ServerEvent) {
     }
     case 'router':
       set({ routers: { ...s.routers, [ev.router.chatId]: ev.router } });
+      break;
+    case 'watchdog':
+      set({ watchdog: ev.watchdog });
       break;
     case 'auth':
       set({ auth: ev.auth });

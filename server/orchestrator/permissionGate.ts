@@ -18,6 +18,7 @@ interface PendingApproval {
   botId: string;
   part: ApprovalPart;
   stream: TurnStream;
+  askedAt: number;
   resolve: (d: { allow: boolean; always?: boolean; message?: string; expired?: boolean }) => void;
 }
 
@@ -77,7 +78,7 @@ export function permissionGate(turn: { chat: Chat; bot: Bot; project: Project | 
     const cancelPush = remindLater(who, chat.title || bot.name, desc.title);
     const askedAt = Date.now();
     const decision = await new Promise<{ allow: boolean; always?: boolean; message?: string; expired?: boolean }>((resolve) => {
-      approvals.set(part.id, { chatId: chat.id, botId: bot.id, part, stream, resolve });
+      approvals.set(part.id, { chatId: chat.id, botId: bot.id, part, stream, askedAt, resolve });
       opts.signal?.addEventListener('abort', () => resolve({ allow: false, expired: true }), { once: true });
     });
     cancelPush();
@@ -108,6 +109,13 @@ function slimInput(input: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) out[k] = typeof v === 'string' && v.length > 20_000 ? v.slice(0, 20_000) + '…' : v;
   return out;
+}
+
+/** Approvals waiting for the user right now, oldest first; `logId` is the chat's, or a Worker's log. */
+export function openApprovals(): { id: string; chatId: string; botId: string; logId: string; title: string; askedAt: number }[] {
+  return [...approvals.values()]
+    .map((a) => ({ id: a.part.id, chatId: a.chatId, botId: a.botId, logId: a.stream.msg.chatId, title: a.part.title, askedAt: a.askedAt }))
+    .sort((a, b) => a.askedAt - b.askedAt);
 }
 
 export function resolveApproval(id: string, decision: { allow: boolean; always?: boolean; message?: string }) {

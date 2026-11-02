@@ -29,6 +29,10 @@ import type {
   TriggerList,
   TurnSummary,
   TurnTrace,
+  WatchdogOverview,
+  WatchdogProposal,
+  WatchdogTick,
+  WatchdogWatch,
   Worker,
   WorkspaceMergeResult,
   WorkspaceStatus,
@@ -210,6 +214,15 @@ export const api = {
   unsubscribeWorker: (id: string, threadId: string) => post<Worker>(`/api/workers/${q(id)}/unsubscribe`, { threadId }),
   dismissWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/dismiss`),
   routerLog: (chatId: string) => get<{ messages: ChatMessage[] }>(`/api/chats/${q(chatId)}/router/messages`),
+
+  // The Watchdog.
+  watchdog: () => get<WatchdogOverview>('/api/watchdog'),
+  watchdogLog: () => get<{ messages: ChatMessage[] }>('/api/watchdog/messages'),
+  askWatchdog: (text: string) => post<{ message: ChatMessage }>('/api/watchdog/messages', { text }),
+  watchdogTick: () => post<{ tick: WatchdogTick }>('/api/watchdog/tick'),
+  acceptWatchdogProposal: (id: string) => post<{ proposal: WatchdogProposal }>(`/api/watchdog/proposals/${q(id)}/accept`),
+  rejectWatchdogProposal: (id: string) => post<{ proposal: WatchdogProposal }>(`/api/watchdog/proposals/${q(id)}/reject`),
+  resolveWatchdogWatch: (id: string) => post<{ watch: WatchdogWatch }>(`/api/watchdog/watches/${q(id)}/resolve`),
 };
 
 export function fileToBase64(file: Blob): Promise<string> {

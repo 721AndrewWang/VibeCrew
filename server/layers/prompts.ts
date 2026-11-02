@@ -5,6 +5,8 @@
 // full (they are what the work is for), a Worker's report only its first words with the handle that
 // reads the rest, and environment events their summary, fenced and marked as data.
 
+import { renderWatchdogNote, WATCHDOG_MARK } from '../watchdog/prompts';
+
 export const REPLY_WORDS = 100;
 const REPORT_WORDS = 80;
 const USER_CHARS = 4000;
@@ -242,7 +244,7 @@ export function workerPrompt(o: {
         `You subscribe to these threads; their later events come straight to you, between your steps or with your next turn:\n${o.threads.map((t) => `- ${t.id}: ${attr(t.title)} (${THREAD_KIND_NOTE[t.kind] || 'its events'})`).join('\n')}`,
       );
   }
-  for (const f of o.followUps || []) out.push(`Follow-up from ${o.lead}:\n\n${f.trim()}`);
+  for (const f of o.followUps || []) out.push(f.startsWith(WATCHDOG_MARK) ? renderWatchdogNote(f) : `Follow-up from ${o.lead}:\n\n${f.trim()}`);
   if (o.delivered?.length) out.push(`Events on threads you subscribe to, since your last turn:\n\n${o.delivered.map((d) => renderDelivery(d, o.now)).join('\n\n')}`);
   if (o.conflict)
     out.push(

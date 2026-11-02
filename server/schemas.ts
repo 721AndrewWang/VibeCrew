@@ -169,6 +169,17 @@ export const SettingsPatch = z
         policies: text(10_000),
         maxCandidatesPerHour: z.number().int().min(0).max(1000),
         router: z.object({ enabled: z.boolean(), model: text(200), workerModel: text(200), maxWorkers: z.number().int().min(1).max(8), subscriptions: z.boolean() }).partial(),
+        watchdog: z
+          .object({
+            enabled: z.boolean(),
+            model: text(200),
+            everyMinutes: z.number().int().min(1).max(60),
+            maxTicksPerHour: z.number().int().min(1).max(60),
+            maxActionsPerTick: z.number().int().min(0).max(10),
+            dailyBudgetUsd: z.number().min(0).max(100),
+            stuckMinutes: z.number().int().min(5).max(240),
+          })
+          .partial(),
       })
       .partial(),
     // Shapes only; normalizeGateway drops what does not parse (bad ids, URLs, members).
@@ -242,3 +253,6 @@ function explain(issue: z.core.$ZodIssue): string {
 }
 
 const TYPE_NAMES: Record<string, string> = { string: 'text', number: 'a number', boolean: 'true/false', array: 'a list', object: 'an object', int: 'an integer' };
+
+/** A maintainer's message to the Watchdog. */
+export const WatchdogMessage = z.object({ text: text(4000).min(1) });

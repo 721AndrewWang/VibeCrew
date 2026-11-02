@@ -83,8 +83,8 @@ export interface SessionConfig {
   tools?: string[];
   /** Replaces Claude Code's own system prompt (systemAppend is then unused): for sessions with no built-in tools. */
   systemPrompt?: string;
-  /** Two-layer mode, for the demo agent: a Router calls its tools, a Worker reports instead of handing off. */
-  role?: 'router' | 'worker';
+  /** For the demo agent: a Router or the Watchdog calls its tools, a Worker reports instead of handing off. */
+  role?: 'router' | 'worker' | 'watchdog';
   /** The demo agent's way to call MCP tools by name, without an MCP client. */
   fakeTools?: Record<string, (args: Record<string, unknown>) => Promise<{ text: string; isError?: boolean }>>;
 }
@@ -322,6 +322,8 @@ export class BotSession implements AgentSession {
 // ---------------------------------------------------------------------------
 
 let fakeCounter = 0;
+/** "flaky" Worker tasks that already failed once in this process: the retry succeeds. */
+const flaked = new Set<string>();
 
 export class FakeSession implements AgentSession {
   closed = false;
@@ -430,6 +432,19 @@ export class FakeSession implements AgentSession {
             return r.text;
           }),
         );
+      } else if (this.cfg.role === 'watchdog') {
+        const tools = this.cfg.fakeTools || {};
+        await fakeWatchdog(prompt, streamText, (name, args) =>
+          runTool(`mcp__crew_watchdog__${name}`, args, async () => {
+            const r = await (tools[name]?.(args) ?? Promise.resolve({ text: `No such tool: ${name}`, isError: true }));
+            if (r.isError) throw new Error(r.text);
+            return r.text;
+          }),
+        );
+      } else if (this.cfg.role === 'worker' && /\bflaky\b/i.test(ask) && !flaked.has(this.cfg.cwd)) {
+        // A demo Worker on a "flaky" task fails once with an error that reads as transient.
+        flaked.add(this.cfg.cwd);
+        throw new Error('API Error: 529 Overloaded (demo mode)');
       } else if (prompt.includes('## Changes to review')) {
         // A blind review: a table and the verdict line. REFUTE_ME in the change makes it refute one claim.
         const refute = prompt.includes('REFUTE_ME');
@@ -562,4 +577,40 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
   const text = replies.join(' ').split(/\s+/).slice(0, 90).join(' ');
   if (text) await call('reply', { text });
   await say('Handled this batch (demo mode, no model called).');
+}
+
+/**
+ * The demo Watchdog: reads the snapshot (watchdog/snapshot.ts renders it). A Worker that is flagged
+ * stuck or looping, or whose task mentions "drift", is stopped and redirected; one that failed on
+ * something transient is restarted. A maintainer who asks to "propose" gets a policy proposal.
+ */
+async function fakeWatchdog(prompt: string, say: (text: string) => Promise<void>, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
+  const done: string[] = [];
+  const maintainer = prompt.includes('A maintainer writes to you');
+  for (const m of prompt.matchAll(/<worker ([^>]*)>\n([\s\S]*?)\n<\/worker>/g)) {
+    const a = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((x) => [x[1], x[2]]));
+    const flags = (a.flags || '').split(',');
+    const task = m[2];
+    const running = ['running', 'starting', 'waiting'].includes(a.status);
+    const result = async (p: Promise<string>) => p.catch((e) => `refused: ${(e as Error).message}`);
+    if (!maintainer && running && (flags.includes('stuck') || flags.includes('looping') || /\bdrift\b/i.test(task)))
+      done.push(`${a.id}: ${await result(call('stop_worker', { id: a.id, why: 'It is not making progress on its task.', redirect: 'Refocus on your task and report what is done.' }))}`);
+    else if (!maintainer && a.status === 'error' && flags.includes('failed-transient'))
+      done.push(`${a.id}: ${await result(call('restart_worker', { id: a.id, note: 'The failure looked transient; try again.' }))}`);
+  }
+  if (maintainer) {
+    const failed = [...prompt.matchAll(/<worker id="([^"]+)"[^>]*status="error"/g)].map((x) => x[1]);
+    const asked = (prompt.split('A maintainer writes to you (their words, not data):')[1] || '').split('The current snapshot')[0];
+    if (/propose|policy|policies/i.test(asked))
+      done.push(
+        await call('propose_change', {
+          target: 'policies',
+          after: '- Failed bot turns: act when the error repeats within an hour.\n- When unsure, stay quiet.',
+          why: 'Demo proposal from the Watchdog.',
+        }).catch((e) => `refused: ${(e as Error).message}`),
+      );
+    await say(`Demo Watchdog (no model called): ${failed.length ? `${failed.join(', ')} failed; see its report.` : 'nothing has failed lately.'} ${done.join(' ')}`.trim());
+    return;
+  }
+  await say(done.length ? `Acted: ${done.join(' ')}` : 'Looked at the snapshot; nothing needs me (demo mode, no model called).');
 }

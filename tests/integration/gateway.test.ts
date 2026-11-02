@@ -190,4 +190,24 @@ describe.skipIf(!claudeCli())('a bot turn through the gateway (real Claude Code)
     expect(turn).toMatchObject({ botId: chief.id, provider: 'acct-b', outcome: 'ok' });
     expect(turn.tries[0]).toMatchObject({ member: 'acct-a/model-a', outcome: 'handed-on' });
   });
+
+  it('sends the Watchdog’s turns under its own scope, routed by the gateway’s watchdog route (ADR 006 × 009)', async () => {
+    await crew.api('PATCH', '/settings', { superAgent: { enabled: true, watchdog: { enabled: true } }, gateway: { roles: { watchdog: 'strong' } } });
+    b.requests.length = 0;
+    const r = await crew.api('POST', '/watchdog/tick');
+    expect(r.tick).toMatchObject({ kind: 'manual', outcome: 'ran' });
+    const done = await waitFor(async () => {
+      const o = await crew.api('GET', '/watchdog');
+      const t = o.ticks.find((x: any) => x.id === r.tick.id);
+      return o.state !== 'thinking' && t?.messageId ? t : null;
+    }, 120_000);
+    expect(done.outcome).toBe('ran');
+    const calls = b.requests.filter((x) => x.url.startsWith('/v1/messages') && !x.url.includes('count_tokens'));
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((x) => x.auth === `Bearer ${KEY_B}`)).toBe(true);
+    const g = await crew.api('GET', '/gateway');
+    const call = g.calls.find((c: any) => c.role === 'watchdog');
+    expect(call).toMatchObject({ target: 'strong', provider: 'acct-b', outcome: 'ok' });
+    expect(call.botId).toBeUndefined();
+  });
 });

@@ -66,16 +66,18 @@ import {
   SkillDraftRequest,
   SkillSave,
   Upload,
+  WatchdogMessage,
   WorkerUnsubscribe,
 } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
-import { bots, chats, improvements, messages, projects, routerLogId, routines, type Settings, settings, workers } from './store';
+import { bots, chats, improvements, messages, projects, routerLogId, routines, type Settings, settings, WATCHDOG_LOG, workers } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
 import { listTriggers, publishConsole, threadsOf, triggerDetail } from './triggers';
 import { normalizeSuperAgent } from './triggers/fastPath';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
 import { usageOf } from './usage';
+import { acceptProposal, askWatchdog, dismissWatch, invalidateWatchdog, rejectProposal, syncWatchdog, tick, watchdogOverview } from './watchdog';
 import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
 
 const log = logger('api');
@@ -200,7 +202,13 @@ export function apiRouter() {
       // Partial per source: a patch to one source's mode keeps its allow-list, and the other sources.
       const sources = { ...cur.superAgent.sources };
       for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
-      patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources, router: { ...cur.superAgent.router, ...b.superAgent.router } });
+      patch.superAgent = normalizeSuperAgent({
+        ...cur.superAgent,
+        ...b.superAgent,
+        sources,
+        router: { ...cur.superAgent.router, ...b.superAgent.router },
+        watchdog: { ...cur.superAgent.watchdog, ...b.superAgent.watchdog },
+      });
     }
     if (b.gateway || b.gatewayTokens) {
       patch.gateway = normalizeGateway({ ...cur.gateway, ...b.gateway });
@@ -232,6 +240,7 @@ export function apiRouter() {
       await syncGateway();
       invalidateAllSessions();
       invalidateRouters();
+      invalidateWatchdog();
       void checkAuth(true);
     }
     bus.emit({ t: 'settings', settings: settings.public() });
@@ -241,6 +250,8 @@ export function apiRouter() {
     if (b.superAgent?.router || b.superAgent?.enabled === false) invalidateRouters();
     // A Worker's thread tools, prompt and event hook are fixed when its session starts.
     if (patch.superAgent && subscriptionsOn(patch.superAgent) !== subscriptionsOn(cur.superAgent)) refreshWorkerSessions(() => true);
+    // The Watchdog's timer and limits follow the switches.
+    if (b.superAgent) syncWatchdog();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -276,6 +287,7 @@ export function apiRouter() {
     if (gatewayOn()) {
       invalidateAllSessions();
       invalidateRouters();
+      invalidateWatchdog();
     }
     res.json({ provider, settings: settings.public() });
   });
@@ -335,6 +347,19 @@ export function apiRouter() {
     if (!chats.get(req.params.id)) throw new HttpError(404, 'Chat not found');
     res.json({ messages: messages.list(routerLogId(req.params.id), { limit: 200 }) });
   });
+
+  // ------------------------------------------------------------ the Watchdog (Super-agent)
+  r.get('/watchdog', (_req, res) => res.json(watchdogOverview()));
+  r.get('/watchdog/messages', (_req, res) => res.json({ messages: messages.list(WATCHDOG_LOG, { limit: 200 }) }));
+  r.post('/watchdog/messages', (req, res) => res.json({ message: askWatchdog(body(WatchdogMessage, req.body).text) }));
+  r.post('/watchdog/tick', async (_req, res) => {
+    const t = await tick('manual');
+    if (t.reason === 'off') throw new HttpError(409, 'The Watchdog is off. Turn it on in Settings → Super-agent.');
+    res.json({ tick: t });
+  });
+  r.post('/watchdog/proposals/:id/accept', (req, res) => res.json({ proposal: acceptProposal(req.params.id) }));
+  r.post('/watchdog/proposals/:id/reject', (req, res) => res.json({ proposal: rejectProposal(req.params.id) }));
+  r.post('/watchdog/watches/:id/resolve', (req, res) => res.json({ watch: dismissWatch(req.params.id) }));
 
   // ------------------------------------------------------------ improvements
   r.get('/improvements', (_req, res) => res.json(listImprovements()));

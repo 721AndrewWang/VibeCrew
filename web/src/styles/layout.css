@@ -266,6 +266,14 @@
   font-weight: 500;
 }
 
+.sb-nav-item span {
+  /* Up to eight items share the row (Triggers and Watchdog only while on): a label stays in its column. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sb-nav-item:hover {
   background: var(--bg-hover);
   color: var(--text);
