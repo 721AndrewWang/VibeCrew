@@ -22,6 +22,8 @@ This document covers the parts Crew is made of, how a message becomes an agent's
 │                slow path (cheap model); off unless superAgent.enabled  │
 │  layers/       Two-layer mode: a resident Router per group chat and    │
 │                isolated Workers; off unless superAgent.router.enabled  │
+│  jobs/         Full duplex: background commands and sub-tasks of a     │
+│                bot (start/stop/status); off unless Bot.fullDuplex      │
 │  preview       Preview server (static / reverse proxy + injected       │
 │                script)                                                 │
 │  store         JSON storage under ~/.crew                              │
@@ -98,6 +100,20 @@ The second step (design: [ADR 002](docs/adr/002-two-layer.md)): global continuit
 - **Restarts.** A Worker record is written at once when it is created and on every status change. On start, Workers cut off mid-turn are marked stopped (`Crew restarted`), their worktrees are committed (`reconcileWorkspaces` keeps Worker workspaces whose Worker still exists), and their Routers are told. User messages past `Chat.router.cursor` (written at once when a turn takes them) are handed to the Router again.
 - **Seeing it**: in a router-mode chat, a Workers bar above the composer shows the Router's state and queue, and each Worker's title, member, status and last report or landing. Each row opens that Worker's transcript (the chat's own message rendering, approval cards included); the bar also offers Stop, Dismiss and the Router log. The chat header and the composer's Stop button count the Router and Workers. API: `GET /api/workers?chatId=`, `GET /api/workers/:id/messages`, `POST /api/workers/:id/stop`, `POST /api/workers/:id/dismiss`, `GET /api/chats/:id/router/messages`; `ServerEvent` `worker`, `worker_deleted`, `router`.
 
+## Full duplex: background jobs (Super-agent)
+
+The fourth step (design: [ADR 004](docs/adr/004-full-duplex.md)): a long tool call no longer blocks the turn. Behind `Bot.fullDuplex`, a per-bot switch in the bot editor, off by default; with it off the bot gets none of the tools, its prompt does not mention them, nothing is injected mid-turn and `CREW_HOME/jobs/` is never created. It does not need the Super-agent switch (the Trigger it publishes is simply not recorded while that is off), and Workers and sub-tasks never get the tools.
+
+- **Tools** (`jobs/tools.ts`, served by the `crew` MCP server and, in demo mode, called directly by `FakeSession`): `start` launches a shell command or a sub-task and returns at once with `Started job_…`; `stop` terminates one and returns its output so far; `status` lists the chat's jobs, shows one, or reads a slice of its log (`from`, `lines`).
+- **Gates.** `startRefusal` (pure, `jobs/gates.ts`) refuses read-only bots, more than 4 running jobs per chat and odd timeouts (default 60 min, at most 720). Then the handler asks the **running turn's own** `permissionGate` about a synthetic `Bash` call with the same command, so deny rules, the bot's and the project's must-ask rules, allow rules and the permission level apply exactly as for Bash, approval card included (`review` asks, since Claude Code's classifier never sees an MCP call). A sub-task needs no approval to start; each of its tool calls goes through the bot's gate, with cards in its own transcript.
+- **Running a command** (`jobs/runner.ts`). With the sandbox off or unavailable, Crew runs it itself with the dev server's process handling (`procs.ts`: `bash -c` in its own process group with the cleaned environment, no model credentials; stop is SIGTERM to the group, SIGKILL after 3 s). With the sandbox on, the command runs as a real Bash call in a helper Claude Code session that has only the `Bash` tool, the bot's sandbox options and deny rules, and a two-line system prompt; its `canUseTool` allows one Bash call and rewrites the input to the approved command (timeout capped at Bash's 10 minutes, foreground). Crew never spawns a command unconfined while the bot's own commands would be confined.
+- **A sub-task** is one turn of a new session of the same bot (`sessionConfig(…, { subtask })`: no resume, no full-duplex tools, a "you are a background sub-task" section), run by the same `runLogged` as a Worker's turn and kept under the job's id in `messages/`.
+- **Output, Inline & Spill** (`jobs/spill.ts`, pure). A command's output goes to `CREW_HOME/jobs/<id>.log`, ANSI-free, capped at 5 MB. A result inlines the first 20 lines (1,500 characters) and the last 40 (3,000), with `… N lines omitted (read them with status id=… from=… lines=200) …` between, fenced as `<job_output>` data.
+- **Delivery.** When a job ends (done, failed, stopped, timed out), `deliverJob` in the orchestrator posts the result as a system message (`notice: 'job'`, visible to the bots), publishes a `job` Trigger on the chat's thread (fast path rule `job-result`), and queues a turn for the bot that started it (`MessageTrigger { type: 'job' }`). A job stopped by the bot itself, by the chat's Stop or "Start new topic" is not delivered again.
+- **Mid-turn input.** Each running turn has an inbox (`Running.inbox`). A user message for that bot, or its job's result, that arrives during the turn goes in, and the session's `PostToolUse` hook (`SessionConfig.midTurnNote`) hands it to the model after its current tool call, fenced as `<new_input>`. At the end of the turn, if every message after its start was handed over that way, the bot's cursor moves past them and the turn queued for them is dropped (`settleMidTurn`); otherwise that turn runs as before. Messages with images are never injected.
+- **Lifetime.** Jobs are stopped with the chat's Stop, "Start new topic" and when the chat is deleted; their writes are not reported as outside edits (`projectRunning` counts them); git operations on the chat's workspace wait for them. On shutdown they are killed but left "running" on disk, so the next start marks them stopped (`Crew restarted`) and posts their output without starting a turn. Records and logs are kept for 14 days, at most 200 per chat.
+- **Seeing it**: a Background jobs bar above the composer (title, bot, command, status, elapsed time, line count, Stop), a dialog with the full log page by page (and "Follow in terminal", which opens the Terminal tab on `tail -f` of the log) or a sub-task's transcript, and a compact result card in the chat. API: `GET /api/jobs?chatId=`, `GET /api/jobs/:id/log?from=&lines=`, `POST /api/jobs/:id/stop`; `ServerEvent` `job`, `job_deleted`; `Bootstrap.jobs`.
+
 ## Adversarial review
 
 Builders (Pixel and others), acceptance (Probe) and review (Lens) all look for supporting evidence, and each one sees the previous one's conclusion, so they tend to vouch for each other. Skeptic is the link dedicated to finding counter-evidence. Its design has these points (`server/review.ts`, `blindPrompt`):
@@ -158,6 +174,8 @@ triggers/      Only once the Super-agent is on: triggers.jsonl (append-only, at 
 workers.json   Only once a Router has dispatched a Worker; the Workers' and Routers' turns
                are in messages/ under wk_<id> and rt_<chatId>
 router/        Only once a Router has run: the empty folder its sessions work in
+jobs/          Only once a full-duplex bot started a job: jobs.json and <jobId>.log;
+               a sub-task's turn is in messages/ under its job id
 ```
 
 - All writes in `store.ts` are "write a temp file, then rename", and are batched and deferred; on exit `flushAll()` finishes any pending writes.
