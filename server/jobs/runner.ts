@@ -17,6 +17,8 @@ const log = logger('jobs');
 export interface Run {
   /** Ends the run; it still reports through onExit. */
   stop(): Promise<void>;
+  /** The process group, when Crew spawned the command itself. */
+  pid?: number;
 }
 
 export interface RunHooks {
@@ -56,6 +58,7 @@ export function runDirect(command: string, cwd: string, env: Record<string, stri
   child.on('close', (code, signal) => end({ exitCode: code, signal }));
   child.on('error', (e) => end({ exitCode: null, signal: null, error: e.message }));
   return {
+    pid: child.pid,
     stop: async () => {
       await killGroup(child);
       // killGroup returns on 'exit'; the result is built on 'close', which can trail it. Wait for it

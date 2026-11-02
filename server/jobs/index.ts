@@ -14,6 +14,7 @@ import { runLogged } from '../layers/turn';
 import { logger } from '../log';
 import { jobs, messages, uid } from '../store';
 import { MAX_RUNNING } from './gates';
+import { reapOrphan } from './orphans';
 import { type Run, runDirect, runSandboxed } from './runner';
 import { resultText, sliceLines, splitLines } from './spill';
 
@@ -168,6 +169,15 @@ export function startCommand(base: JobBase, spec: CommandSpec): BackgroundJob {
         hooks,
       )
     : runDirect(spec.command, base.cwd, spec.env, hooks, spec.envOptions);
+  if (l.run.pid) {
+    // On disk at once: a crash right after this must still find the process to stop (ADR 105).
+    const cur = jobs.get(j.id);
+    if (cur && isRunning(cur)) {
+      cur.pid = l.run.pid;
+      jobs.set(cur);
+      jobs.flush();
+    }
+  }
   log.info(`${j.id} started in ${base.cwd}${j.sandboxed ? ' (sandboxed)' : ''}: ${spec.command.slice(0, 200)}`);
   return j;
 }
@@ -327,8 +337,10 @@ export function jobLog(id: string, from?: number, count?: number): JobLog | null
 export function recoverJobs() {
   for (const j of jobs.all()) {
     if (!isRunning(j)) continue;
+    // Its command may outlive Crew (its own process group): stop it, so nothing runs unreported.
+    const reaped = reapOrphan(j);
     j.status = 'stopped';
-    j.detail = 'Crew restarted';
+    j.detail = reaped ? 'Crew restarted; its command was still running and was stopped' : 'Crew restarted';
     j.endedAt = Date.now();
     jobs.set(j);
     try {

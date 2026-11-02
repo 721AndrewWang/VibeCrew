@@ -211,7 +211,8 @@ it('marks jobs a restart cut off as stopped and tells the chat', async () => {
     await waitFor(async () => (await chatJobs(crew, chat.id)).find((j) => j.id === id)?.lines >= 1);
     await crew.kill();
     crew = await startServer({ dir });
-    expect((await chatJobs(crew, chat.id)).find((j) => j.id === id)).toMatchObject({ status: 'stopped', detail: 'Crew restarted' });
+    // Its command outlived the crash (its own process group): the restart stopped it (ADR 105).
+    expect((await chatJobs(crew, chat.id)).find((j) => j.id === id)).toMatchObject({ status: 'stopped', detail: 'Crew restarted; its command was still running and was stopped' });
     const note = (await chatMessages(crew, chat.id)).find((m) => m.notice === 'job' && m.jobId === id);
     expect(note.text).toContain('Crew restarted');
     expect(note.text).toContain('up');

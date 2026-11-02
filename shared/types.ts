@@ -1433,6 +1433,8 @@ export interface BackgroundJob {
   /** Command jobs: the full log on disk. */
   logFile?: string;
   costUsd?: number;
+  /** A command Crew runs itself (not sandboxed): its process group, so a restart stops what is left of it (ADR 105). */
+  pid?: number;
 }
 
 /** A slice of a job's log ("read more"). */
