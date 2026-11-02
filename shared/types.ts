@@ -647,8 +647,11 @@ export interface SafetySettings {
   audit: boolean;
 }
 
-/** The guard's hard rules. */
-export type GuardRule = 'credentials' | 'external' | 'network';
+/**
+ * The guard's hard rules. credentials, external, network: ADR 007. config: files and settings that
+ * decide what runs later; crew-api: Crew's own server; opaque: what would run cannot be read (ADR 104).
+ */
+export type GuardRule = 'credentials' | 'external' | 'network' | 'config' | 'crew-api' | 'opaque';
 
 /** What the guard makes of an action. */
 export type GuardVerdict = { kind: 'deny'; rule: GuardRule; reason: string } | { kind: 'read' } | { kind: 'change'; effects: string[] };

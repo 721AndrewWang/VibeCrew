@@ -10,7 +10,9 @@
 
 import path from 'node:path';
 import type { GuardRule, GuardVerdict } from '../shared/types';
-import { EDIT_TOOLS, harmless, splitCommand } from './agents/permissions';
+import { EDIT_TOOLS, harmless } from './agents/permissions';
+import { cdTarget, hardenedToolVerdict, hardenedVerdict, type Segment, splitSegments } from './hardening/commands';
+import type { PathContext } from './hardening/paths';
 
 export interface GuardContext {
   /** The folder the command runs in. */
@@ -21,6 +23,14 @@ export interface GuardContext {
   allowedHosts: string[];
   /** More files that hold secrets, as absolute paths (Crew's own settings.json). */
   secretFiles?: string[];
+  /** Crew's data folder: agents may not write there (ADR 104), except in `worktrees`. */
+  crewHome?: string;
+  /** Where chat workspaces and Workers' worktrees live (inside crewHome). */
+  worktrees?: string;
+  /** The ports Crew's own server listens on: not a target for agents' network tools (ADR 104). */
+  crewPorts?: number[];
+  /** Follows symbolic links of an absolute path (null: keep it); the guard is pure without it. */
+  realpath?: (abs: string) => string | null;
 }
 
 /** Credential stores, relative to the home directory. A path inside one of them is refused. */
@@ -566,7 +576,7 @@ const READERS = new Set([
 ]);
 
 /** Output written by the shell: `> file`, `>> file`, `&> file` (to /dev/null or another stream is fine). */
-function redirections(seg: string): string[] {
+export function redirections(seg: string): string[] {
   const out: string[] = [];
   const re = /(?:^|[^<>&\d])(?:\d|&)?>{1,2}\|?\s*(&\d|[^\s;&|<>]+)/g;
   let quote: string | null = null;
@@ -777,6 +787,17 @@ function combine(verdicts: GuardVerdict[]): GuardVerdict {
   return { kind: 'change', effects: effects.slice(0, MAX_EFFECTS).concat(effects.length > MAX_EFFECTS ? [`…and ${effects.length - MAX_EFFECTS} more`] : []) };
 }
 
+function pathContext(ctx: GuardContext): PathContext {
+  return { cwd: ctx.cwd, home: ctx.home, secretRoots: secretRoots(ctx), crewHome: ctx.crewHome, worktrees: ctx.worktrees, realpath: ctx.realpath };
+}
+
+/** ADR 104's rules for one simple command, judged where it runs, with nested programs judged in full. */
+function hardened(seg: Segment, ctx: GuardContext, whole: string, depth: number): GuardVerdict | null {
+  const raw = shellWords(seg.text);
+  const info = { words: commandOf(raw), raw, redirects: redirections(seg.text), whole };
+  return hardenedVerdict(seg, info, { ...pathContext(ctx), crewPorts: ctx.crewPorts }, (inner) => verdictOf(inner, ctx, depth + 1));
+}
+
 function verdictOf(cmd: string, ctx: GuardContext, depth: number): GuardVerdict {
   if (depth > MAX_DEPTH) return change(`Runs: ${short(cmd, 90)}`);
   const secret = credentialInText(cmd, ctx);
@@ -784,12 +805,18 @@ function verdictOf(cmd: string, ctx: GuardContext, depth: number): GuardVerdict 
   const verdicts: GuardVerdict[] = substitutions(cmd).map((inner) => verdictOf(inner, ctx, depth + 1));
   // A process or command substitution makes the outer command depend on code the read list never saw.
   if (verdicts.length) verdicts.push(change(`Runs commands inside: ${short(cmd, 80)}`));
-  for (const seg of splitCommand(cmd)) {
-    for (const w of shellWords(seg)) {
-      const hit = credentialPath(w, ctx);
+  // `cd` moves the folder the rest of the line is judged in (ADR 104).
+  let here = ctx;
+  for (const seg of splitSegments(cmd)) {
+    for (const w of shellWords(seg.text)) {
+      const hit = credentialPath(w, here);
       if (hit) return credentialDeny(w);
     }
-    verdicts.push(segmentVerdict(seg, ctx, depth));
+    const extra = hardened(seg, here, cmd, depth);
+    if (extra) verdicts.push(extra);
+    verdicts.push(segmentVerdict(seg.text, here, depth));
+    const to = cdTarget(commandOf(shellWords(seg.text)), here);
+    if (to) here = { ...here, cwd: to };
   }
   return combine(verdicts);
 }
@@ -805,6 +832,10 @@ const PATH_FIELDS = ['file_path', 'notebook_path', 'path'];
 export function guardTool(toolName: string, input: unknown, ctx: GuardContext): GuardVerdict {
   const i = (input || {}) as Record<string, unknown>;
   if (toolName === 'Bash') return guardCommand(String(i.command || ''), ctx);
+  if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob' || toolName === 'LS' || toolName === 'WebFetch' || EDIT_TOOLS.has(toolName)) {
+    const v = hardenedToolVerdict(toolName, i, { ...pathContext(ctx), crewPorts: ctx.crewPorts }, EDIT_TOOLS.has(toolName));
+    if (v) return v;
+  }
   if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob' || toolName === 'LS' || EDIT_TOOLS.has(toolName)) {
     // Glob's pattern is a path; Grep's is a regular expression.
     for (const f of toolName === 'Glob' ? [...PATH_FIELDS, 'pattern'] : PATH_FIELDS) {

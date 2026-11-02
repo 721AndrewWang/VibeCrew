@@ -3,7 +3,7 @@
 
 import { FlaskConical, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { AuditEntry, GuardVerdict, SafetySettings } from '../../../../../shared/types';
+import type { AuditEntry, GuardRule, GuardVerdict, SafetySettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, toast, useStore } from '../../../store';
 import { cx, fmtRelative } from '../../../utils';
@@ -20,7 +20,14 @@ const EVENT: Record<AuditEntry['event'], { label: string; cls: string }> = {
   blocked: { label: 'Blocked', cls: 'orange' },
 };
 
-const RULE: Record<string, string> = { credentials: 'credentials', external: 'acts in your name', network: 'network' };
+const RULE: Record<GuardRule, string> = {
+  credentials: 'credentials',
+  external: 'acts in your name',
+  network: 'network',
+  config: 'changes what runs later',
+  'crew-api': "Crew's own API",
+  opaque: "can't tell what runs",
+};
 
 function VerdictLine({ v }: { v: GuardVerdict }) {
   if (v.kind === 'read') return <div className="guard-verdict">Read: runs without asking, at any permission level.</div>;

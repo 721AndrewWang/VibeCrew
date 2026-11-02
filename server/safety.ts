@@ -2,11 +2,13 @@
 // (ADR 007): the guard's context for a folder, its refusals (audited), its read/change verdict
 // for the approval gate, and the environment options for an agent session.
 
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import type { GuardVerdict, Project } from '../shared/types';
 import { describeAction } from './agents/permissions';
 import { audit } from './audit';
-import { type CleanEnvOptions, DATA } from './config';
+import { type CleanEnvOptions, DATA, HOME_DIR } from './config';
 import { type GuardContext, guardTool } from './guard';
 import { configOf } from './projects';
 import { ALWAYS_ALLOWED, cleanDomains } from './sandbox';
@@ -31,7 +33,27 @@ export function guardContext(cwd: string, project: Project | null): GuardContext
     home: os.homedir(),
     allowedHosts: [...ALWAYS_ALLOWED, ...cleanDomains(s.sandbox?.allowedDomains || []), ...cleanDomains(conf?.allowedDomains || [])],
     secretFiles: [DATA.settings],
+    // ADR 104: Crew's own data, its server's port, and where symbolic links lead.
+    crewHome: HOME_DIR,
+    worktrees: DATA.worktrees,
+    crewPorts: s.port ? [s.port] : [],
+    realpath,
   };
+}
+
+/** Where a path really leads: its deepest existing folder resolved, the rest appended. */
+function realpath(abs: string): string | null {
+  let dir = abs;
+  const rest: string[] = [];
+  for (let i = 0; i < 64 && dir !== path.dirname(dir); i++) {
+    try {
+      return path.join(fs.realpathSync.native(dir), ...rest.reverse());
+    } catch {
+      rest.push(path.basename(dir));
+      dir = path.dirname(dir);
+    }
+  }
+  return null;
 }
 
 /** What the guard makes of a call, or null while it is off. */
