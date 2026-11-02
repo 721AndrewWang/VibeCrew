@@ -1,4 +1,4 @@
-import { Bot as BotIcon, Clock, FilePen, MessageCircle, Radio, RefreshCw, TerminalSquare } from 'lucide-react';
+import { Bot as BotIcon, Clock, FilePen, MessageCircle, Radio, RefreshCw, TerminalSquare, Timer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Thread, Trigger, TriggerDetail, TriggerList, TriggerSource } from '../../../../shared/types';
 import { api } from '../../api';
@@ -13,6 +13,7 @@ export const SOURCE_LABEL: Record<TriggerSource, string> = {
   turn: 'Turn result',
   'outside-edit': 'Outside edit',
   'preview-console': 'Console error',
+  job: 'Job result',
 };
 
 const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
@@ -21,6 +22,7 @@ const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
   turn: BotIcon,
   'outside-edit': FilePen,
   'preview-console': TerminalSquare,
+  job: Timer,
 };
 
 const VERDICT: Record<Trigger['filter']['verdict'], { label: string; cls: string }> = {

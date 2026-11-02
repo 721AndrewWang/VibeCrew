@@ -1,6 +1,7 @@
 import type {
   Attachment,
   AuthStatus,
+  BackgroundJob,
   Bootstrap,
   Bot,
   Chat,
@@ -11,6 +12,7 @@ import type {
   FrictionReport,
   Improvement,
   ImprovementEffect,
+  JobLog,
   PermissionLevel,
   PreviewInfo,
   Project,
@@ -199,6 +201,10 @@ export const api = {
   stopWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/stop`),
   dismissWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/dismiss`),
   routerLog: (chatId: string) => get<{ messages: ChatMessage[] }>(`/api/chats/${q(chatId)}/router/messages`),
+
+  // Full duplex: background jobs.
+  jobLog: (id: string, from?: number, lines?: number) => get<JobLog & { messages?: ChatMessage[] }>(`/api/jobs/${q(id)}/log${from !== undefined ? `?from=${from}&lines=${lines ?? 400}` : ''}`),
+  stopJob: (id: string) => post<BackgroundJob>(`/api/jobs/${q(id)}/stop`),
 };
 
 export function fileToBase64(file: Blob): Promise<string> {

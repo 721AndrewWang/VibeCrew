@@ -23,6 +23,7 @@ import { cx, fmtDay, isSameDay, statusLabel } from '../utils';
 import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { Composer } from './Composer';
 import { ComputerPane } from './computer/ComputerPane';
+import { JobsBar } from './JobsBar';
 import { BotMessage, SystemMessage, UserMessage } from './Message';
 import { chatMenuItems } from './Sidebar';
 import { Avatar, confirmDialog, Glyph, GroupAvatar, MenuButton, type MenuItem } from './ui';
@@ -392,6 +393,7 @@ export function ChatView() {
         <AuthBanner />
         <MessageList chat={chat} />
         <WorkersBar chat={chat} />
+        <JobsBar chatId={chat.id} />
         <Composer chat={chat} />
       </section>
       {computer.open && <Resizer />}
