@@ -14,6 +14,7 @@ import { familyInfo } from '../../shared/families';
 import type { Bot, Chat, ChatMessage, RouterInfo } from '../../shared/types';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
+import { NO_TOOL_SEARCH } from '../agents/toolSearch';
 import { findSkeptic } from '../autoChallenge';
 import { bus, notify } from '../bus';
 import { botModel } from '../claudeAuth';
@@ -175,7 +176,7 @@ class ChatRouter {
       mcpServers: { crew_router: routerMcpServer(this.tools, { subscriptions: subscribed, recall: !!this.recall }) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],
-      env: agentEnv({ role: 'router', botId: lead.id }, rs.model || settings.get().defaultModel || undefined),
+      env: { ...agentEnv({ role: 'router', botId: lead.id }, rs.model || settings.get().defaultModel || undefined), ...NO_TOOL_SEARCH },
       role: 'router',
       fakeTools: this.tools,
     };

@@ -292,6 +292,8 @@ export function watchdogMcpServer(h: Record<string, Handler>) {
   return createSdkMcpServer({
     name: 'crew_watchdog',
     version: '1.0.0',
+    // Crew's own tools are few and its prompts name them: never deferred behind Claude Code's tool search.
+    alwaysLoad: true,
     tools: [
       tool(
         'nudge_worker',

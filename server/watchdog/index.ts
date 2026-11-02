@@ -15,6 +15,7 @@ import { Cron } from 'croner';
 import type { ChatMessage, WatchdogAction, WatchdogActionKind, WatchdogInfo, WatchdogOverview, WatchdogProposal, WatchdogTick, WatchdogWatch, Worker } from '../../shared/types';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
+import { NO_TOOL_SEARCH } from '../agents/toolSearch';
 import { bus, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { DATA, FAKE_AGENT } from '../config';
@@ -316,7 +317,7 @@ export function watchdogSessionConfig(tools: ReturnType<typeof watchdogTools>): 
     deniedReason: (toolName, input) => deniedReason(toolName, input, DATA.watchdog, { actor: WATCHDOG_ACTOR }),
     mcpServers: { crew_watchdog: watchdogMcpServer(tools) as McpServerConfig },
     settingSources: [],
-    env: agentEnv(WATCHDOG_SCOPE, wd.model || settings.get().defaultModel || undefined),
+    env: { ...agentEnv(WATCHDOG_SCOPE, wd.model || settings.get().defaultModel || undefined), ...NO_TOOL_SEARCH },
     role: 'watchdog',
     fakeTools: tools,
   };
