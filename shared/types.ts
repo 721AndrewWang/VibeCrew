@@ -100,7 +100,8 @@ export interface Chat {
    * it was given. With subscriptions on (ADR 003): how many events its Router decided on, and how
    * many went straight to subscribed Workers instead (Router decisions avoided).
    */
-  router?: { sessionId?: string; cursor?: number; decided?: number; direct?: number };
+  /** stoppedAt: the user last stopped the chat (its Router's inbox was dropped then; a restart does not hand it over again, ADR 105). */
+  router?: { sessionId?: string; cursor?: number; decided?: number; direct?: number; stoppedAt?: number };
 }
 
 /** A bot's context window use, as Claude Code's /context reports it. */
@@ -936,7 +937,8 @@ export interface Worker {
   base?: string;
   landedHead?: string;
   /** Its last turn's report to the Router. */
-  report?: { at: number; status: 'done' | 'error' | 'stopped'; text: string };
+  /** quiet: the user stopped the whole chat, so the Router was not told (nor is it after a restart, ADR 105). */
+  report?: { at: number; status: 'done' | 'error' | 'stopped'; text: string; quiet?: boolean };
   /** What Crew did with its changes after its last turn. */
   landing?: { at: number; files: string[]; commit?: string; conflicts?: string[]; error?: string };
   turns: number;
