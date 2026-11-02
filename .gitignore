@@ -43,3 +43,6 @@ CLAUDE.local.md
 *~
 .DS_Store
 Thumbs.db
+
+# Ablation bench output (npm run bench)
+/bench-results
