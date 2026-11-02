@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import type { Bot, Chat, Effort, PermissionLevel } from '../../../shared/types';
 import { api } from '../api';
 import { toast, useStore } from '../store';
-import { cx, EFFORT_OPTIONS, modelLabel, PERMISSION_INFO } from '../utils';
+import { cx, EFFORT_OPTIONS, gatewayOptions, modelLabel, PERMISSION_INFO } from '../utils';
 import { confirmDialog, MenuButton, type MenuItem } from './ui';
 
 // Claude Code-style switches under the message box: permission mode, model and thinking effort for
@@ -83,14 +83,16 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
   const claudeModels = useStore((s) => s.models);
   const settings = useStore((s) => s.settings);
   const providers = useStore((s) => s.providers);
-  const viaProvider = settings.authMode === 'provider';
+  const gateway = settings.gateway.enabled ? settings.gateway : null;
+  const viaProvider = !gateway && settings.authMode === 'provider';
   const models = useMemo(() => {
+    if (gateway) return [{ id: '', label: 'Default model' }, ...gatewayOptions(gateway).map((o) => ({ id: o.id, label: o.id }))];
     if (!viaProvider) return claudeModels.map((m) => ({ id: m.id, label: m.id ? m.label.replace(/^Claude\s+/, '') : 'Default model' }));
     const p = settings.provider;
     const preset = providers.find((x) => x.id === p.preset);
     const ids = [...new Set([p.model, ...(preset?.models || []), p.fastModel].filter(Boolean))];
     return [{ id: '', label: 'Default model' }, ...ids.map((id) => ({ id, label: id }))];
-  }, [viaProvider, claudeModels, settings.provider, providers]);
+  }, [gateway, viaProvider, claudeModels, settings.provider, providers]);
   const raw = chat.model !== undefined ? chat.model : shared(list, (b) => b.model || '');
   // Another provider ignores a Claude model name and uses its own default.
   const value = raw !== undefined && viaProvider && CLAUDE_MODEL.test(raw) ? '' : raw;
@@ -106,7 +108,13 @@ export function ModelSwitch({ chat }: { chat: Chat }) {
     ...models.map((m) =>
       item(
         m.label,
-        m.id ? undefined : viaProvider ? `${settings.provider.model || 'Model'} from connection settings` : `Follow Claude Code's default${actual && value === '' ? ` (now ${actual})` : ''}`,
+        m.id
+          ? undefined
+          : gateway
+            ? `Each bot's own model, else the gateway default (${gateway.defaultTarget || 'not set'})`
+            : viaProvider
+              ? `${settings.provider.model || 'Model'} from connection settings`
+              : `Follow Claude Code's default${actual && value === '' ? ` (now ${actual})` : ''}`,
         value === m.id,
         () => void save(chat, { model: m.id }),
       ),

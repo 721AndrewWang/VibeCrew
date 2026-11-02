@@ -169,3 +169,28 @@ test('the bot card shows the cache hit rate and the average re-read per turn', a
   await expect(badge).toContainText('Cache hit 91% · 20k reread/turn');
   await expect(badge).toHaveAttribute('title', /Biggest reread in one turn: 23k/);
 });
+
+test('the model gateway: a provider and a group are saved, and it starts', async ({ page, crew }) => {
+  await page.goto(crew.base);
+  await page.locator('.sb-nav-item[title="Settings"]').click();
+  const card = page.locator('.card', { has: page.locator('h2', { hasText: /^Model gateway/ }) });
+  await card.getByTestId('gateway-providers').getByRole('button', { name: 'Add' }).click();
+  const provider = card.locator('.gateway-provider').first();
+  await provider.getByPlaceholder('id, e.g. deepseek').fill('acct');
+  await provider.getByPlaceholder('https://api.example.com/anthropic').fill('http://127.0.0.1:9/anthropic');
+  await provider.getByPlaceholder('Key').fill('secret-key-123');
+  await provider.getByPlaceholder('Models, comma separated').fill('m1, m2');
+  await card.getByTestId('gateway-groups').getByRole('button', { name: 'Add' }).click();
+  await card.getByPlaceholder('name, e.g. strong').fill('strong');
+  await card.locator('.gateway-group textarea').fill('acct/m1\nacct/m2');
+  await card.locator('.field[data-role="worker"] select').selectOption('strong');
+  await card.getByRole('button', { name: 'Save' }).click();
+  await expect(provider.getByPlaceholder('Key saved')).toBeVisible();
+
+  await card.locator('.setting-row', { hasText: 'Route every agent' }).locator('.toggle').click();
+  await expect(card.locator('.badge', { hasText: 'Running' })).toBeVisible();
+  const saved = JSON.parse(fs.readFileSync(path.join(crew.home, 'settings.json'), 'utf8'));
+  expect(saved.gateway).toMatchObject({ enabled: true, groups: [{ id: 'strong', members: ['acct/m1', 'acct/m2'] }], roles: { worker: 'strong' } });
+  expect(saved.gatewayTokens).toEqual({ acct: 'secret-key-123' });
+  expect(await page.content()).not.toContain('secret-key-123');
+});

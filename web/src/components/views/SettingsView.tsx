@@ -4,6 +4,7 @@ import { AppearanceSection } from './settings/AppearanceSection';
 import { ConnectionSection } from './settings/ConnectionSection';
 import { DefaultsSection } from './settings/DefaultsSection';
 import { DesktopSection } from './settings/DesktopSection';
+import { GatewaySection } from './settings/GatewaySection';
 import { LanSection } from './settings/LanSection';
 import { NotificationSection } from './settings/NotificationSection';
 import { RoutingSection } from './settings/RoutingSection';
@@ -16,6 +17,7 @@ export function SettingsView() {
       <div className="page-inner settings-inner">
         <PageHead title="Settings" sub="Claude connection, defaults, sandbox, phone access and appearance" />
         <ConnectionSection />
+        <GatewaySection />
         <DefaultsSection />
         <SandboxSection />
         <RoutingSection />

@@ -2263,3 +2263,63 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Model gateway (Settings) */
+.gateway-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gateway-provider,
+.gateway-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.gateway-provider .input {
+  width: 130px;
+}
+.gateway-provider .input.wide {
+  flex: 1 1 220px;
+}
+.gateway-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.gateway-group input {
+  width: 150px;
+}
+.gateway-group textarea {
+  flex: 1;
+}
+.gateway-window .input {
+  width: auto;
+  max-width: 140px;
+}
+.gateway-window .num-input {
+  width: 72px;
+}
+.gateway-block > .row select.input {
+  width: auto;
+  max-width: 260px;
+}
+.gateway-window .inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.gateway-calls {
+  width: 100%;
+}
+.gateway-calls td {
+  text-align: left;
+}
+.gateway-calls tr.err td {
+  color: var(--text-3);
+}

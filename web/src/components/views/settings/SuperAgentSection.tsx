@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { FilteredSource, RouterSettings, SourceMode, SuperAgentSettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
-import { cx } from '../../../utils';
+import { cx, gatewayOptions } from '../../../utils';
 import { Toggle } from '../../ui';
 import { Section } from './Section';
 
@@ -188,7 +188,10 @@ export function SuperAgentSection() {
 
 /** Two-layer mode: a Router per group chat that talks to the user and dispatches Workers. */
 function RouterSettingsBlock({ saved, save, saving }: { saved: RouterSettings; save: (patch: Partial<SuperAgentSettings>, done?: string) => Promise<void>; saving: boolean }) {
-  const models = useStore((s) => s.models);
+  const claudeModels = useStore((s) => s.models);
+  const gateway = useStore((s) => s.settings.gateway);
+  // Through the gateway, its groups and provider/model addresses (Settings → Model gateway).
+  const models = gateway.enabled ? [{ id: '', label: '' }, ...gatewayOptions(gateway)] : claudeModels;
   const [form, setForm] = useState({ model: saved.model, workerModel: saved.workerModel, maxWorkers: saved.maxWorkers });
   const dirty = form.model !== saved.model || form.workerModel !== saved.workerModel || form.maxWorkers !== saved.maxWorkers;
   const options = (current: string, empty: string) => {

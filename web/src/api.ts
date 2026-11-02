@@ -9,6 +9,9 @@ import type {
   DevServerState,
   Effort,
   FrictionReport,
+  GatewayProvider,
+  GatewayReport,
+  GatewayTry,
   Improvement,
   ImprovementEffect,
   PermissionLevel,
@@ -112,6 +115,11 @@ export const api = {
   updateSettings: (p: Record<string, unknown>) => patch<{ settings: PublicSettings; lanUrl?: string }>('/api/settings', p),
   /** One tiny prompt through Claude Code with these (unsaved) connection settings. */
   testConnection: (p: Record<string, unknown>) => post<{ ok: boolean; text: string; models?: string[]; ms: number }>('/api/settings/test-connection', p),
+  /** The model gateway: running state, recent calls, totals and windows. */
+  gateway: (limit = 100) => get<GatewayReport>(`/api/gateway?limit=${limit}`),
+  testGateway: (target: string) => post<{ ok: boolean; text: string; status: number; provider?: string; model?: string; tries: GatewayTry[]; ms: number }>('/api/gateway/test', { target }),
+  /** Adds the current model connection (key included, server side) as a gateway provider. */
+  importConnection: () => post<{ provider: GatewayProvider; settings: PublicSettings }>('/api/gateway/import-connection'),
   friction: (days = 7) => get<FrictionReport>(`/api/friction?days=${days}`),
   /** Sends a test push to the saved Bark address. */
   testPush: () => post<{ ok: boolean }>('/api/settings/push-test'),

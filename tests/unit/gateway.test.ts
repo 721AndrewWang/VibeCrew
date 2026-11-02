@@ -251,7 +251,8 @@ async function fakeUpstream(behave: Behaviour): Promise<Fake> {
   return fake;
 }
 
-const json = (status: number, data: unknown) => (_b: any, _q: http.IncomingMessage, res: http.ServerResponse) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
+const json = (status: number, data: unknown) => (_b: any, _q: http.IncomingMessage, res: http.ServerResponse) =>
+  res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
 const answer = (text: string) => json(200, { id: 'msg_1', type: 'message', role: 'assistant', content: [{ type: 'text', text }], usage: { input_tokens: 10, output_tokens: 5 } });
 
 /** A streamed answer, written in small pieces so events straddle chunks. */
@@ -334,7 +335,11 @@ describe('the gateway handler', () => {
   };
 
   const post = (body: unknown, role = 'worker', bot = 'b1') =>
-    fetch(`${base}/s/${role}/${bot}/v1/messages?beta=true`, { method: 'POST', headers: { authorization: `Bearer tok-${role}`, 'content-type': 'application/json', 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body) });
+    fetch(`${base}/s/${role}/${bot}/v1/messages?beta=true`, {
+      method: 'POST',
+      headers: { authorization: `Bearer tok-${role}`, 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify(body),
+    });
 
   it('refuses a credential made for another scope', async () => {
     setup();
@@ -371,7 +376,10 @@ describe('the gateway handler', () => {
   });
 
   it('hands on a provider that cannot be reached', async () => {
-    setup({ providers: [{ id: 'dead', baseUrl: 'http://127.0.0.1:1', models: [], auth: 'bearer' }, ...normalizeGateway({ providers: [{ id: 'b', baseUrl: b.url }] }).providers], groups: [{ id: 'g', members: ['dead/x', 'b/mb'] }] });
+    setup({
+      providers: [{ id: 'dead', name: 'dead', baseUrl: 'http://127.0.0.1:1', models: [], auth: 'bearer' }, ...normalizeGateway({ providers: [{ id: 'b', baseUrl: b.url }] }).providers],
+      groups: [{ id: 'g', members: ['dead/x', 'b/mb'] }],
+    });
     const r = await post({ model: 'g', messages: [] });
     expect((await r.json()).content[0].text).toBe('from b');
     expect(log[0].tries[0]).toMatchObject({ member: 'dead/x', outcome: 'handed-on' });
@@ -434,7 +442,15 @@ describe('the gateway handler', () => {
     const secret = 'my key is sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFF and mail ana@example.org';
     a.behave = (body, _q, res) => {
       const text = body.messages[0].content as string;
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ content: [{ type: 'text', text: `echo: ${text}` }, { type: 'tool_use', id: 't', name: 'Bash', input: { command: text } }], usage: { input_tokens: 1, output_tokens: 1 } }));
+      res.writeHead(200, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          content: [
+            { type: 'text', text: `echo: ${text}` },
+            { type: 'tool_use', id: 't', name: 'Bash', input: { command: text } },
+          ],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+      );
     };
     const r = await post({ model: 'g', messages: [{ role: 'user', content: secret }] });
     const j = await r.json();
