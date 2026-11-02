@@ -3,7 +3,7 @@ import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
 import { chatProjectId, focusTurn, openFileInEditor, openModal, setView, toast, useStore } from '../store';
-import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo } from '../utils';
+import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo, withoutUntrustedTags } from '../utils';
 import { Markdown } from './Markdown';
 import { Avatar, confirmDialog, Glyph } from './ui';
 
@@ -593,7 +593,8 @@ export function SystemMessage({ msg }: { msg: ChatMessage }) {
   if (msg.notice === 'job') return <JobResult msg={msg} />;
   return (
     <div className="msg-system">
-      <span>{msg.text}</span>
+      {/* An outside-edit note carries the agents' <untrusted> label (ADR 104); people read it without. */}
+      <span>{msg.notice === 'outside-edit' ? withoutUntrustedTags(msg.text) : msg.text}</span>
     </div>
   );
 }
