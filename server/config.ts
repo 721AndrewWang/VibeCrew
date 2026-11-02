@@ -36,6 +36,10 @@ export const DATA = {
   routing: path.join(HOME_DIR, 'routing.json'),
   /** Moments Crew got in the way, one JSON line each (server/friction.ts). */
   friction: path.join(HOME_DIR, 'friction.jsonl'),
+  /** The Trigger bus (server/triggers): created on its first write, so only once the feature is on. */
+  triggers: path.join(HOME_DIR, 'triggers', 'triggers.jsonl'),
+  threads: path.join(HOME_DIR, 'triggers', 'threads.json'),
+  triggerPayloads: path.join(HOME_DIR, 'triggers', 'payloads'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {

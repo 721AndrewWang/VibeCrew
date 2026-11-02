@@ -137,6 +137,8 @@ export const SkillSave = z.object({
   previousName: text(40).optional(),
 });
 
+const sourceRule = z.object({ mode: z.enum(['explicit', 'candidate', 'ignore']), allow: z.array(text(300)).max(50) }).partial();
+
 // Connection fields (authMode, apiKey, provider…) are read by connectionPatch; anything else here
 // is checked, and unknown keys are ignored as before.
 export const SettingsPatch = z
@@ -159,8 +161,28 @@ export const SettingsPatch = z
     baseUrl: text(500),
     providerToken: text(500),
     provider: z.object({ preset: text(64).optional(), baseUrl: text(500).optional(), model: text(200).optional(), fastModel: text(200).optional() }),
+    superAgent: z
+      .object({
+        enabled: z.boolean(),
+        sources: z.object({ turn: sourceRule, 'outside-edit': sourceRule, 'preview-console': sourceRule }).partial(),
+        projects: z.array(id).max(200),
+        policies: text(10_000),
+        maxCandidatesPerHour: z.number().int().min(0).max(1000),
+      })
+      .partial(),
   })
   .partial();
+
+/** Console output the preview reported, forwarded by the UI while the Super-agent is on. */
+export const PreviewConsole = z.object({
+  projectId: id,
+  chatId: id.nullable().optional(),
+  page: text(2000).default('/'),
+  entries: z
+    .array(z.object({ level: z.enum(['error', 'warn', 'info', 'log']), text: text(20_000), ts: z.number(), source: text(2000).optional() }))
+    .min(1)
+    .max(100),
+});
 
 export const ImprovementReject = z.object({ note: text(500).optional() });
 

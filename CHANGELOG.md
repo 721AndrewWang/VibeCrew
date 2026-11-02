@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Super-agent, milestone 1: triggers, threads and two-stage filtering** (Settings → Super-agent, off by default; off, Crew behaves as before). User messages, routine runs, turn results, outside edits and preview console errors become triggers in threads; per-source rules in code settle most of them and a cheap model decides the rest from your written policies. An "act" decision is a short note only you see. A new Triggers page lists the events live and opens each one with its full content and related events. See `docs/adr/001-triggers.md`.
 - **REA reverse engineering plugin** in the plugin library: see how a feature on a website or in a JavaScript/Electron app works without its source. A new `browser_debug_target` tool gives the bot the DevTools endpoint and target id of its `browser_act` page, so REA's web tools can inspect that page. Crew's headless Chrome now listens on a loopback-only debugging port for this.
 
 ### Changed

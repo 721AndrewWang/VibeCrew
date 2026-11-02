@@ -21,13 +21,15 @@ import type {
   SandboxStatus,
   ServerEvent,
   Skill,
+  Thread,
+  Trigger,
   TurnSummary,
   UsageSummary,
 } from '../../shared/types';
 import { api } from './api';
 import { desktop } from './desktop';
 
-export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'settings';
+export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'triggers' | 'settings';
 export type ComputerTab = 'browser' | 'files' | 'terminal' | 'changes';
 export type Device = 'fill' | 'desktop' | 'tablet' | 'mobile';
 
@@ -90,6 +92,8 @@ export interface AppState {
   devLogs: Record<string, string>;
   msgs: Record<string, MsgState>;
   turns: Record<string, TurnSummary[]>;
+  /** The Trigger bus's recent events, newest first; loaded by the Triggers view, then kept live. */
+  triggers: { list: Trigger[]; threads: Record<string, Thread>; loaded: boolean };
   /** Bumped when files change on disk, per project. */
   filesVersion: Record<string, number>;
   lastChanged: Record<string, string[]>;
@@ -160,6 +164,13 @@ export const useStore = create<AppState>(() => ({
     rotateAtTokens: 60_000,
     wrapUpAtTokens: 120_000,
     push: { configured: false, afterMinutes: 10 },
+    superAgent: {
+      enabled: false,
+      sources: { turn: { mode: 'candidate', allow: [] }, 'outside-edit': { mode: 'candidate', allow: [] }, 'preview-console': { mode: 'candidate', allow: [] } },
+      projects: [],
+      policies: '',
+      maxCandidatesPerHour: 30,
+    },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },
@@ -179,6 +190,7 @@ export const useStore = create<AppState>(() => ({
   devLogs: {},
   msgs: {},
   turns: {},
+  triggers: { list: [], threads: {}, loaded: false },
   filesVersion: {},
   lastChanged: {},
   view: 'chat',
@@ -242,8 +254,9 @@ export async function boot() {
       devServers: Object.fromEntries(b.devServers.map((d) => [d.projectId, d])),
       previews: Object.fromEntries(b.previews.map((p) => [p.projectId, p])),
       activeChatId: active,
-      // Messages may have moved on while disconnected.
+      // Messages (and triggers) may have moved on while disconnected.
       msgs: {},
+      triggers: { list: [], threads: {}, loaded: false },
       mobilePane: cur.booted ? cur.mobilePane : active && window.innerWidth > 760 ? 'chat' : 'list',
     });
     if (active) {
@@ -406,6 +419,15 @@ export function applyEvent(ev: ServerEvent) {
     case 'settings':
       set({ settings: ev.settings });
       break;
+    case 'trigger': {
+      const cur = s.triggers;
+      if (!cur.loaded) break;
+      // A decision arrives as a new snapshot of a trigger already listed: it keeps its place.
+      const i = cur.list.findIndex((t) => t.id === ev.trigger.id);
+      const list = i >= 0 ? cur.list.map((t, j) => (j === i ? ev.trigger : t)) : [ev.trigger, ...cur.list].slice(0, TRIGGERS_KEPT);
+      set({ triggers: { list, threads: { ...cur.threads, [ev.thread.id]: ev.thread }, loaded: true } });
+      break;
+    }
     case 'auth':
       set({ auth: ev.auth });
       break;
@@ -475,6 +497,20 @@ export async function loadMessages(chatId: string, older = false) {
   } catch (e) {
     set({ msgs: { ...get().msgs, [chatId]: { list: st?.list || [], loaded: false, hasMore: false, loading: false } } });
     toast("Couldn't load messages", (e as Error).message, 'error');
+  }
+}
+
+const TRIGGERS_KEPT = 300;
+
+/** Loads the recent triggers; after that the view stays current from the server's events. */
+export async function loadTriggers() {
+  try {
+    const r = await api.triggers(TRIGGERS_KEPT);
+    set({ triggers: { list: r.triggers, threads: r.threads, loaded: true } });
+    return r;
+  } catch (e) {
+    toast("Couldn't load triggers", (e as Error).message, 'error');
+    return null;
   }
 }
 

@@ -4,7 +4,7 @@ import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
 import { isLogoId } from '../shared/logos';
-import type { Attachment, Bootstrap, RecordedStep } from '../shared/types';
+import type { Attachment, Bootstrap, FilteredSource, RecordedStep, SourceRule } from '../shared/types';
 import { memoryFile, readMemory } from './agents/prompts';
 import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
 import { hasBrowser, screenshot } from './browser';
@@ -52,6 +52,7 @@ import {
   GroupCreate,
   ImprovementReject,
   MessageSend,
+  PreviewConsole,
   ProjectOpen,
   ProjectPatch,
   RoutineSave,
@@ -65,6 +66,8 @@ import { recordingToSkillBody, skills } from './skills';
 import { bots, chats, improvements, messages, projects, routines, type Settings, settings } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
+import { listTriggers, publishConsole, triggerDetail } from './triggers';
+import { normalizeSuperAgent } from './triggers/fastPath';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
 import { usageOf } from './usage';
 import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
@@ -182,6 +185,12 @@ export function apiRouter() {
       if (barkUrl && !barkUrlOk(barkUrl)) throw new HttpError(400, "That Bark URL doesn't look right; it should look like https://api.day.app/your-key");
       patch.push = { barkUrl, afterMinutes: b.push.afterMinutes ?? prev.afterMinutes };
     }
+    if (b.superAgent) {
+      // Partial per source: a patch to one source's mode keeps its allow-list, and the other sources.
+      const sources = { ...cur.superAgent.sources };
+      for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
+      patch.superAgent = normalizeSuperAgent({ ...cur.superAgent, ...b.superAgent, sources });
+    }
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }
@@ -219,6 +228,28 @@ export function apiRouter() {
 
   r.get('/usage', (_req, res) => res.json(usageOf()));
   r.get('/routing', (_req, res) => res.json(routingReport()));
+
+  // ------------------------------------------------------------ triggers (Super-agent)
+  r.get('/triggers', (req, res) =>
+    res.json(
+      listTriggers({
+        source: str(req.query.source),
+        verdict: str(req.query.verdict),
+        threadId: str(req.query.thread),
+        limit: Number(req.query.limit) || undefined,
+        before: Number(req.query.before) || undefined,
+      }),
+    ),
+  );
+  r.get('/triggers/:id', (req, res) => {
+    const d = triggerDetail(req.params.id);
+    if (!d) throw new HttpError(404, 'Trigger not found (it may have aged out of the log)');
+    res.json(d);
+  });
+  r.post('/triggers/preview-console', (req, res) => {
+    const b = body(PreviewConsole, req.body);
+    res.json({ trigger: publishConsole({ project: getProject(b.projectId), chatId: b.chatId, page: b.page, entries: b.entries }) });
+  });
 
   // ------------------------------------------------------------ improvements
   r.get('/improvements', (_req, res) => res.json(listImprovements()));

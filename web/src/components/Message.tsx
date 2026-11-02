@@ -1,8 +1,8 @@
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Radio, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
 import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
-import { chatProjectId, focusTurn, openFileInEditor, openModal, toast, useStore } from '../store';
+import { chatProjectId, focusTurn, openFileInEditor, openModal, setView, toast, useStore } from '../store';
 import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo } from '../utils';
 import { Markdown } from './Markdown';
 import { Avatar, confirmDialog, Glyph } from './ui';
@@ -536,6 +536,19 @@ export const UserMessage = memo(function UserMessage({ msg, chat, names, showTim
 });
 
 export function SystemMessage({ msg }: { msg: ChatMessage }) {
+  // A note from the Super-agent's event filter: only the user sees it; the event is in Triggers.
+  if (msg.notice === 'trigger') {
+    return (
+      <div className="msg-system trigger-notice">
+        <span>
+          <Radio size={12} /> {msg.text}{' '}
+          <button className="link-btn" onClick={() => setView('triggers')}>
+            Triggers
+          </button>
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="msg-system">
       <span>{msg.text}</span>

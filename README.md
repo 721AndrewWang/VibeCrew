@@ -31,6 +31,7 @@ The difference: in Crew, an agent's "computer" is your project folder. The right
   - In the project's "Settings" you can configure: a **workspace setup command** (e.g. installing dependencies; agents start only after it finishes), **commit message requirements** (agents follow them; merge messages must follow them, and can be "Generated" in one click), **no AI attribution in commits**, and **actions that always need confirmation** (applies to every agent in this project).
 - **Dev server management**: detects `npm run dev` and similar commands, installs missing dependencies automatically, and wires hot reload into the preview; static sites refresh on save.
 - **Screenshots / pasted images / voice input**: paste a design and have an agent rebuild it (`/clone-ui`), or just talk.
+- **Super-agent (preview, off by default)**: turn it on in Settings → Super-agent, and Crew records every event it reacts to (your messages, routine runs, turn results, files changed outside the chat, preview console errors) as a trigger in a thread. Rules settle most of them; the rest go to a cheap model that decides from policies you write whether the event is worth your attention, and if so you get a short note in the chat. Nothing runs on its own. The Triggers page shows every event and what was decided. Design: [ADR 001](docs/adr/001-triggers.md).
 
 ## Requirements
 
@@ -170,6 +171,7 @@ server/            Node server (Express + WebSocket)
   devserver.ts     Dev server management
   routines.ts      Routines and event triggers
   workspaces/      Isolated workspaces: git worktree, auto-commit, merge, sync
+  triggers/        Super-agent trigger bus: threads, fast path (rules), slow path (cheap model)
   browser.ts       Headless Chrome (screenshots, console, page actions)
   log.ts           Server logging
 web/               React UI (Vite)
