@@ -423,6 +423,18 @@ describe('the gateway handler', () => {
     expect(c.hits).toHaveLength(0);
   });
 
+  it('passes on a stream that arrives whole in one write (Node 24 ends it while the gateway holds it back)', async () => {
+    setup();
+    const whole = sseEvents('All of it at once.');
+    a.behave = (_b, _q, res) => void res.writeHead(200, { 'content-type': 'text/event-stream' }).end(whole);
+    const r = await Promise.race([
+      post({ model: 'g', stream: true, messages: [] }).then((x) => x.text()),
+      new Promise((_, no) => setTimeout(() => no(new Error('the gateway never ended the stream')), 5000)),
+    ]);
+    expect(r).toBe(whole);
+    expect(log[0]).toMatchObject({ provider: 'a', stream: true, outcome: 'ok' });
+  });
+
   it('answers a spent window with 429 and Retry-After before any provider is asked', async () => {
     setup({ windows: [{ id: 'workers-5h', role: 'worker', hours: 5, maxUsd: 1, maxTokens: 0 }] });
     log.push(call(Date.now() - H, { costUsd: 1.2 }));

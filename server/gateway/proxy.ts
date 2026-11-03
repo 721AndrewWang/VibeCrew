@@ -291,6 +291,10 @@ export async function handleGateway(req: http.IncomingMessage, res: http.ServerR
     emit(first);
     if (!rewriter) for (const c of held) res.write(c);
     await new Promise<void>((resolve) => {
+      // The whole answer may have come in the first chunk: then the stream can end while it is
+      // paused above (Node 24 emits 'end' there), before these listeners exist. 'close' covers it too.
+      if (up.readableEnded || up.destroyed) return resolve();
+      up.once('close', () => resolve());
       up.on('data', (c: Buffer) => {
         const evs = parser.push(c.toString('utf8'));
         if (rewriter) emit(evs);
