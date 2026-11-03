@@ -1,19 +1,9 @@
 // Two-layer mode's settings (settings.superAgent.router): defaults, and cleaning up what is stored.
 // Pure, so the trigger settings can normalise it without pulling in the Router.
 
+import { DEFAULT_ROUTER } from '../../shared/defaults';
 import type { RouterSettings } from '../../shared/types';
 import { bounded, fields, modelName } from '../normalize';
-
-export const DEFAULT_ROUTER: RouterSettings = {
-  enabled: false,
-  // Routing, batching events and short replies: a lighter model is enough.
-  model: 'claude-sonnet-5',
-  // Empty: the chat's model switch, else the default model, which is Claude Code's strongest unless changed.
-  workerModel: '',
-  maxWorkers: 3,
-  // ADR 003: off keeps every event going through the Router, as in ADR 002.
-  subscriptions: false,
-};
 
 export const MAX_WORKERS_LIMIT = 8;
 

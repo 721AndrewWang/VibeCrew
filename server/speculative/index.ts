@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_PROJECT_SPECULATIVE } from '../../shared/speculative';
+import { DEFAULT_PROJECT_SPECULATIVE } from '../../shared/defaults';
 import { SPECULATION_IN_FLIGHT } from '../../shared/status';
 import type { Chat, Project, Speculation, SpeculativeSignal, Trigger, Worker } from '../../shared/types';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';

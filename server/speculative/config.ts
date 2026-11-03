@@ -2,7 +2,7 @@
 // and a project's switch (Project.speculative). Defaults, cleaning up what is stored, and the check
 // command a project has when it set none. Pure, so the trigger settings can normalise it.
 
-import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
+import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/defaults';
 import type { ProjectSpeculative, SpeculativeSettings } from '../../shared/types';
 import { bounded, fields, flag, modelName } from '../normalize';
 

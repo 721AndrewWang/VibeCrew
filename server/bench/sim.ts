@@ -4,11 +4,10 @@
 // between steps, landing and reporting when a Worker's turn ends) follows RouterSession,
 // layers/workers.ts and the orchestrator, without the store, git or Claude Code.
 
-import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
+import { DEFAULT_GITHUB, DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/defaults';
 import { WORKER_ACTIVE } from '../../shared/status';
 import type { SuperAgentSettings, Thread, Trigger, Worker, WorkerDelivery } from '../../shared/types';
 import { REPLY_WORDS } from '../channels/profiles';
-import { DEFAULT_GITHUB } from '../github/config';
 import type { GhEvent } from '../github/events';
 import { screenGithub } from '../github/filter';
 import { MAX_RUNNING, startRefusal } from '../jobs/gates';

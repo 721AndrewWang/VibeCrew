@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_SAFETY, DEFAULT_SUPER_AGENT } from '../../shared/defaults';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
 import { WORKER_ACTIVE } from '../../shared/status';
 import type {
@@ -190,18 +191,9 @@ export const useStore = create<AppState>(() => ({
     wrapUpAtTokens: 120_000,
     push: { configured: false, afterMinutes: 10 },
     gateway: { enabled: false, port: 0, providers: [], groups: [], defaultTarget: '', fastTarget: '', roles: {}, windows: [], masking: false },
-    safety: { guard: true, stripCredentials: true, audit: false },
-    superAgent: {
-      enabled: false,
-      sources: { turn: { mode: 'candidate', allow: [] }, 'outside-edit': { mode: 'candidate', allow: [] }, 'preview-console': { mode: 'candidate', allow: [] } },
-      projects: [],
-      policies: '',
-      maxCandidatesPerHour: 30,
-      router: { enabled: false, model: 'claude-sonnet-5', workerModel: '', maxWorkers: 3, subscriptions: false },
-      recall: { enabled: false, inlineWords: 50 },
-      watchdog: { enabled: false, model: 'claude-sonnet-5', everyMinutes: 15, maxTicksPerHour: 4, maxActionsPerTick: 3, dailyBudgetUsd: 1, stuckMinutes: 20 },
-      speculative: { model: '', dailyBudgetUsd: 2, maxConcurrent: 2, maxMinutes: 20 },
-    },
+    safety: DEFAULT_SAFETY,
+    // The policy box stays empty until the server sends the real settings.
+    superAgent: { ...DEFAULT_SUPER_AGENT, policies: '' },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },

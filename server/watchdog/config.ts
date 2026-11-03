@@ -1,19 +1,12 @@
 // The Watchdog's settings (settings.superAgent.watchdog): defaults, and cleaning up what is stored.
 // Pure, so the trigger settings can normalise it without pulling in the Watchdog.
 
+import { DEFAULT_WATCHDOG } from '../../shared/defaults';
 import type { WatchdogSettings } from '../../shared/types';
 import { bounded, fields, modelName } from '../normalize';
 
-export const DEFAULT_WATCHDOG: WatchdogSettings = {
-  enabled: false,
-  // Judging progress from a compact snapshot: a lighter model is enough.
-  model: 'claude-sonnet-5',
-  everyMinutes: 15,
-  maxTicksPerHour: 4,
-  maxActionsPerTick: 3,
-  dailyBudgetUsd: 1,
-  stuckMinutes: 20,
-};
+/** Defined in shared/ for the settings forms; re-exported where the tests read it. */
+export { DEFAULT_WATCHDOG };
 
 export const WATCHDOG_BOUNDS = {
   everyMinutes: [1, 60],

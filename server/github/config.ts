@@ -1,8 +1,12 @@
 // A project's GitHub channel settings (ADR 102): defaults, normalization and the checks the API and
 // the poller share. Pure.
 
+import { DEFAULT_GITHUB } from '../../shared/defaults';
 import type { GithubChannel, Project, SuperAgentSettings } from '../../shared/types';
 import { bounded, fields, flag } from '../normalize';
+
+/** Defined in shared/ for the settings forms; re-exported where the tests read it. */
+export { DEFAULT_GITHUB };
 
 export const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 /** GitHub logins: letters, digits and single hyphens; apps end in [bot]. */
@@ -10,15 +14,6 @@ export const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/;
 
 export const MAX_REPOS = 10;
 export const MAX_AUTHORS = 100;
-
-export const DEFAULT_GITHUB: GithubChannel = {
-  enabled: false,
-  repos: [],
-  everyMinutes: 5,
-  authors: [],
-  events: { issues: true, comments: true, reviewComments: true, checks: true },
-  candidates: true,
-};
 
 const list = (v: unknown, re: RegExp, max: number): string[] => {
   if (!Array.isArray(v)) return [];

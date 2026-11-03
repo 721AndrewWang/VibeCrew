@@ -9,15 +9,6 @@ import { toast, useStore } from '../../store';
 import { fmtRelative } from '../../utils';
 import { Toggle } from '../ui';
 
-export const DEFAULT_GITHUB_CHANNEL: GithubChannel = {
-  enabled: false,
-  repos: [],
-  everyMinutes: 5,
-  authors: [],
-  events: { issues: true, comments: true, reviewComments: true, checks: true },
-  candidates: true,
-};
-
 const EVENT_LABELS: [keyof GithubChannel['events'], string][] = [
   ['issues', 'New issues'],
   ['comments', 'Comments'],

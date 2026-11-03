@@ -1,11 +1,12 @@
 // The safety settings (settings.safety, ADR 007): defaults, and cleaning up what is stored. Pure,
 // so the settings store can use it without pulling in the guard or the audit log.
 
+import { DEFAULT_SAFETY } from '../shared/defaults';
 import type { SafetySettings } from '../shared/types';
 import { fields, flag } from './normalize';
 
-/** The guard and the stripped environment are on by default (ADR 007 says why); the audit log is opt-in. */
-export const DEFAULT_SAFETY: SafetySettings = { guard: true, stripCredentials: true, audit: false };
+/** Defined in shared/ for the settings forms; re-exported where the tests read it. */
+export { DEFAULT_SAFETY };
 
 export function normalizeSafety(raw: unknown): SafetySettings {
   const r = fields<SafetySettings>(raw);

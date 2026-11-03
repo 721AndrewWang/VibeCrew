@@ -1,10 +1,9 @@
 // The chain of recall's settings (settings.superAgent.recall): defaults, and cleaning up what is
 // stored. Pure, so the trigger settings can normalise it without pulling in the graph.
 
+import { DEFAULT_RECALL } from '../../shared/defaults';
 import type { RecallSettings } from '../../shared/types';
 import { bounded, fields } from '../normalize';
-
-export const DEFAULT_RECALL: RecallSettings = { enabled: false, inlineWords: 50 };
 
 export const INLINE_WORDS_RANGE = { min: 20, max: 200 } as const;
 

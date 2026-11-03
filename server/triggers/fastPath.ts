@@ -4,40 +4,19 @@
 // Pure: everything it needs comes in as arguments, so it is cheap to run and easy to test.
 
 import crypto from 'node:crypto';
-import { DEFAULT_SPECULATIVE } from '../../shared/speculative';
+import { DEFAULT_POLICIES, DEFAULT_SUPER_AGENT } from '../../shared/defaults';
 import type { FilteredSource, SourceRule, SuperAgentSettings, Thread, Trigger, TriggerFilter, TriggerSource } from '../../shared/types';
 import { glob } from '../agents/permissions';
-import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
+import { normalizeRouter } from '../layers/config';
 import { bounded, fields } from '../normalize';
-import { DEFAULT_RECALL, normalizeRecall } from '../recall/config';
+import { normalizeRecall } from '../recall/config';
 import { normalizeSpeculative } from '../speculative/config';
-import { DEFAULT_WATCHDOG, normalizeWatchdog } from '../watchdog/config';
+import { normalizeWatchdog } from '../watchdog/config';
+
+/** Defined in shared/ for the settings forms; re-exported where the tests read them. */
+export { DEFAULT_POLICIES, DEFAULT_SUPER_AGENT };
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];
-
-export const DEFAULT_POLICIES = [
-  "- Preview console errors: act when the error comes from the app's own code (an uncaught exception, a module that fails to load, a failed request to the app's own server). Stay quiet about third-party scripts, browser extensions, ads and analytics.",
-  '- Failed bot turns: act when the cause is something the user has to fix (login, budget, a missing tool, a broken setup command). Stay quiet about a one-off network blip that a retry would fix.',
-  '- Files changed outside the chat: act only when the change can break what the bots are working on, e.g. dependency manifests, build or framework config, or files a bot changed moments ago. Stay quiet about ordinary edits.',
-  '- GitHub: act on a new issue that reports a bug or asks for a change, a review comment that asks for a change, and a failing check on an open pull request. Stay quiet about thanks, chatter and questions already answered.',
-  '- When unsure, stay quiet.',
-].join('\n');
-
-export const DEFAULT_SUPER_AGENT: SuperAgentSettings = {
-  enabled: false,
-  sources: {
-    turn: { mode: 'candidate', allow: [] },
-    'outside-edit': { mode: 'candidate', allow: [] },
-    'preview-console': { mode: 'candidate', allow: [] },
-  },
-  projects: [],
-  policies: DEFAULT_POLICIES,
-  maxCandidatesPerHour: 30,
-  router: DEFAULT_ROUTER,
-  recall: DEFAULT_RECALL,
-  watchdog: DEFAULT_WATCHDOG,
-  speculative: DEFAULT_SPECULATIVE,
-};
 
 const MODES = new Set(['explicit', 'candidate', 'ignore']);
 
