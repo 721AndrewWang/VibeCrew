@@ -116,7 +116,19 @@ function SpeculationCard({ sp, compact }: { sp: Speculation; compact?: boolean }
                 A comment for pull request #{sp.github.number} in {sp.github.repo} is drafted too; it is posted only if you approve that draft.
               </li>
             )}
-            <li>Discard instead: the fix and its throwaway worktree are deleted{sp.draftId ? ', with its drafted comment' : ''}, and nothing else changes.</li>
+            {sp.github?.push &&
+              ('draftId' in sp.github.push ? (
+                <li data-testid="speculation-push">
+                  Or push it to the pull request: a draft runs <code>{`git push ${sp.github.push.remote} HEAD:refs/heads/${sp.github.push.branch}`}</code> from the fix's worktree, moving branch{' '}
+                  {sp.github.push.branch} on {sp.github.push.remote}. Nothing is pushed unless you approve that draft.
+                </li>
+              ) : (
+                <li data-testid="speculation-push">Pushing it to the pull request is not offered: {sp.github.push.refused}.</li>
+              ))}
+            <li>
+              Discard instead: the fix and its throwaway worktree are deleted
+              {sp.draftId || (sp.github?.push && 'draftId' in sp.github.push) ? ', with its drafts' : ''}, and nothing else changes.
+            </li>
           </ul>
         </div>
       )}

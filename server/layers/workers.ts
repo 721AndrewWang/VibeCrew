@@ -115,6 +115,8 @@ export interface SpeculativeHost {
   source(w: Worker): Project | undefined;
   /** The commit to start from instead of the folder's current state: a GitHub check's head (ADR 011). */
   baseCommit?(w: Worker): string | undefined;
+  /** Makes that commit local when it is not: a read-only fetch of the pull request's head (ADR 110). Throws why it could not. */
+  fetchBase?(w: Worker, source: Project): Promise<void>;
   checkCommand(w: Worker): string;
   model(w: Worker, chat: Chat): string;
   /** The run's prompt, built in its throwaway workspace. */
@@ -286,6 +288,10 @@ async function prepare(w: Worker, ws: Workspace, l: Live) {
 async function launchSpeculative(w: Worker, l: Live) {
   const source = host?.source(w);
   if (!host || !source) throw new Error('The folder the problem was seen in is gone');
+  if (host.fetchBase) {
+    save(w, { detail: "Fetching the pull request's head" });
+    await host.fetchBase(w, source);
+  }
   save(w, { detail: 'Creating its throwaway workspace' });
   const { ws, base } = await createSpeculativeWorkspace(source, w, host.baseCommit?.(w));
   projects.flush();

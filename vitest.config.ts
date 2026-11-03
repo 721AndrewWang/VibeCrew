@@ -3,12 +3,15 @@ import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 /**
- * Test files run in parallel, three per CPU: an integration file spends most of its time waiting on
- * its own server, the demo agent's pacing or Claude Code, not on the CPU. Each worker holds a server
- * and sometimes Claude Code sessions (about 1 GB at most), so memory bounds it too. `--maxWorkers`
- * on the command line overrides it.
+ * Test files run in parallel, two per CPU: an integration file spends most of its time waiting on
+ * its own server, the demo agent's pacing or Claude Code, not on the CPU; but the files that drive
+ * the real Claude Code start a CLI process per session, and three per CPU starved a 4-CPU CI runner
+ * until real-CLI turns hit the 120 s timeout. Each worker holds a server and sometimes Claude Code
+ * sessions (up to about 1.5 GB together), so memory bounds it too: 8 workers on a 4-CPU, 16 GB
+ * runner. `--maxWorkers` on the command line overrides it.
  */
-const workers = Math.max(2, Math.min(16, os.availableParallelism() * 3, Math.floor(os.totalmem() / 2 ** 30)));
+const GB = 2 ** 30;
+const workers = Math.max(2, Math.min(16, os.availableParallelism() * 2, Math.floor(os.totalmem() / (1.5 * GB))));
 
 export default defineConfig({
   test: {

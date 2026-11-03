@@ -65,14 +65,14 @@ The demo agent learned what the tests need: the demo Router answers a speculativ
 ## Deferred
 
 - **Speculation from other GitHub events.** Only failing check runs are signals; an issue that describes a bug is not (its author is outside, and the bug-report signal is meant for the user's own words).
-- **Fetching a pull request's head.** When the head commit is not local, the run is skipped with that reason; Crew does not fetch for it (a fetch is a network action on the user's behalf).
-- **Pushing a speculative fix to the pull request.** The fix merges into the local folder; the drafted comment says it is not pushed. A push draft for the pull request's branch could follow.
-- **Recall of `sp_…` ids** (ADR 008 left it out): the Router's event names the `speculative` Trigger, and the Watchdog reads a run through its Worker.
+- ~~**Fetching a pull request's head.**~~ Done in [ADR 110](110-finish-deferred.md): a read-only fetch of the pull request ref through a local remote that reaches its repository; skipped as before when none does.
+- ~~**Pushing a speculative fix to the pull request.**~~ Done in [ADR 110](110-finish-deferred.md): a `git-push` draft to the pull request's branch, refused for a fork the user cannot push to.
+- ~~**Recall of `sp_…` ids**~~ (ADR 008 left it out). Done in [ADR 110](110-finish-deferred.md): `sp_…` in the compact form, `sp_…/diff` for the full diff.
 - **The Watchdog's view of speculative checks.** It sees the run's session, not the verification commands (those have their own 10-minute limit).
 - **Sandboxed speculative checks across a crash.** With the sandbox on, the check runs inside a helper Claude Code session; as for sandboxed background jobs (ADR 105), whether that process survives is Claude Code's, and Crew has no process id to stop.
 - **Speculative spend in the gateway's windows.** The run's model calls count in the gateway's `speculative` windows; its daily budget is still Crew's own estimate from its sessions' cost.
 - **The bench's channel arm** measures shape (reply words, Details, refusals) with a scripted Router that writes short replies anyway; how much a real model's replies grow without the norms is not something a scripted model can show.
-- **Browser tests** of the Speculative fixes bar with a GitHub draft and of the Watchdog page's second meter; the integration tests drive the same APIs.
+- **Browser tests** of the Speculative fixes bar with a GitHub draft and of the Watchdog page's second meter. The second meter, the Background jobs bar and the Activity page's jobs and speculative runs are covered since [ADR 110](110-finish-deferred.md) (`tests/e2e/super-agent-bars.spec.ts`); the bar with GitHub drafts (comment and push) is still covered only by the integration tests.
 
 ## Risks
 
