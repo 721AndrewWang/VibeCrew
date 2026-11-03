@@ -59,7 +59,7 @@ const MAX_LIST = 10;
 
 type Job = { kind: 'tick' | 'manual'; tick: WatchdogTick; reason: string; since: number } | { kind: 'maintainer'; tick: WatchdogTick; messageId: string; text: string };
 
-export function watchdogOn(): boolean {
+function watchdogOn(): boolean {
   const sa = settings.get().superAgent;
   return sa.enabled && sa.watchdog.enabled;
 }
@@ -124,7 +124,7 @@ function resolveWatch(id: string, why: string): boolean {
  * Before each tick, in code: open watches for Workers that failed on something transient, close
  * the ones whose subject is healthy again, and give up on those checked too often.
  */
-export function housekeepWatches(now = Date.now()) {
+function housekeepWatches(now = Date.now()) {
   const open = openWatches();
   for (const w of workers.all()) {
     if (w.dismissedAt || w.speculation || w.status !== 'error' || !isTransient(w.detail || w.report?.text)) continue;
@@ -187,7 +187,7 @@ function workerSnap(w: Worker, now: number): WorkerSnap {
 }
 
 /** `since`: the window's start; by default the last tick that looked (the tick being run is already recorded, so it passes its own). */
-export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().superAgent.watchdog.maxActionsPerTick, since = lastLook(now)): Snapshot {
+function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().superAgent.watchdog.maxActionsPerTick, since = lastLook(now)): Snapshot {
   const ws = workers
     .all()
     // Speculative runs (ADR 008) are in it too, marked: stuck or looping, the Watchdog may stop one (ADR 011).
@@ -622,10 +622,6 @@ export function dismissWatch(id: string): WatchdogWatch {
 }
 
 // ---------------------------------------------------------------- reading, lifecycle
-
-export function watchdogInfo(): WatchdogInfo {
-  return loop.info();
-}
 
 export function watchdogOverview(): WatchdogOverview {
   return {

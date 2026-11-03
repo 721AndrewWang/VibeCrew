@@ -21,7 +21,7 @@ const log = logger('gateway');
 /** Signs each scope's credential; new on every start, as the sessions are. */
 const SECRET = crypto.randomBytes(32);
 
-export function scopeToken(scope: Scope): string {
+function scopeToken(scope: Scope): string {
   return `crew-gw-${crypto
     .createHmac('sha256', SECRET)
     .update(`${scope.role}/${scope.botId || '_'}`)
@@ -46,10 +46,6 @@ let listening: { url: string; port: number } | null = null;
 let lastError: string | undefined;
 
 export const gatewayOn = (s: Settings = settings.get()) => s.gateway.enabled;
-
-export function gatewayUrl(): string | undefined {
-  return listening?.url;
-}
 
 const deps = {
   settings: () => settings.get().gateway,

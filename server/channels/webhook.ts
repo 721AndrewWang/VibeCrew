@@ -139,7 +139,7 @@ export async function testWebhook(projectId: string): Promise<WebhookDelivery> {
 }
 
 /** What a Router reply would send, or null when it would send nothing (off, kind not approved, nothing left). */
-export function plannedNotification(chat: Chat, msg: ChatMessage): { projectId: string; config: WebhookConfig; text: string } | null {
+function plannedNotification(chat: Chat, msg: ChatMessage): { projectId: string; config: WebhookConfig; text: string } | null {
   const kind = msg.channel?.kind;
   if (!msg.router || !kind) return null;
   const project = rootProject(chat.projectId);

@@ -97,7 +97,7 @@ function folderOf(chat: Chat | undefined, t: Pick<Trigger, 'projectId'>): Projec
 }
 
 /** A project's check command: its own, else `npm test` when package.json has a real test script. */
-export function checkCommandOf(root: Project): string {
+function checkCommandOf(root: Project): string {
   const own = normalizeProjectSpeculative(root.speculative).checkCommand;
   if (own) return own;
   let pkg: string | null = null;
@@ -515,7 +515,7 @@ export async function mergeSpeculation(id: string): Promise<Speculation> {
 // ---------------------------------------------------------------- lifetime
 
 /** Hourly: ready fixes nobody merged expire, and runs whose Worker or chat is gone are let go. */
-export async function sweepSpeculations(now = Date.now()) {
+async function sweepSpeculations(now = Date.now()) {
   speculationLog.prune(now);
   for (const sp of speculationLog.all()) {
     if (sp.status === 'ready' && now - sp.updatedAt > READY_MS) await discard(sp, 'Not merged within a day');

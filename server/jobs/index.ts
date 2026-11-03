@@ -354,7 +354,7 @@ export function recoverJobs() {
   setInterval(() => sweepJobs(), 3600_000).unref();
 }
 
-export function sweepJobs(now = Date.now()) {
+function sweepJobs(now = Date.now()) {
   const byChat = new Map<string, BackgroundJob[]>();
   for (const j of jobs.all()) {
     if (isJobRunning(j)) continue;

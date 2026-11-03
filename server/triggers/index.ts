@@ -601,7 +601,7 @@ export function triggerDetail(id: string): TriggerDetail | null {
 // ---------------------------------------------------------------- retention
 
 /** Drops triggers past the limits, and threads none of the remaining triggers belong to and no Worker subscribes to. */
-export function pruneTriggers(now = Date.now()) {
+function pruneTriggers(now = Date.now()) {
   triggerLog.prune(now);
   const live = new Set(triggerLog.all().map((t) => t.threadId));
   for (const w of workers.all()) if (!w.dismissedAt) for (const id of w.threads || []) live.add(id);
