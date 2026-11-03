@@ -4,20 +4,14 @@
 
 import { ChevronDown, ChevronRight, ListTree, ScrollText, Square, TerminalSquare, Timer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { BackgroundJob, JobStatus } from '../../../shared/types';
+import type { BackgroundJob } from '../../../shared/types';
 import { api } from '../api';
 import { loadLog, openModal, requestTerminal, toast, useStore } from '../store';
+import { fmtCost, JOB_STATUS } from '../superagent';
 import { cx, fmtRelative } from '../utils';
 import { BotMessage } from './Message';
+import { EmptyState, LoadingState, StatusBadge } from './SuperAgentUi';
 import { Avatar, Modal, useNow } from './ui';
-
-const STATUS: Record<JobStatus, { label: string; cls: string }> = {
-  running: { label: 'Running', cls: 'accent' },
-  waiting: { label: 'Needs you', cls: 'orange' },
-  done: { label: 'Done', cls: 'green' },
-  failed: { label: 'Failed', cls: 'red' },
-  stopped: { label: 'Stopped', cls: '' },
-};
 
 /** Finished jobs the bar keeps showing. */
 const RECENT = 4;
@@ -52,11 +46,15 @@ async function stop(j: BackgroundJob) {
 
 function JobRow({ j, now }: { j: BackgroundJob; now: number }) {
   const bot = useStore((s) => s.bots[j.botId]);
-  const st = STATUS[j.status];
   return (
     <div className={cx('worker-row', j.status)} data-job={j.id}>
       <Avatar bot={bot} size={22} />
-      <button className="wr-main" onClick={() => openModal({ kind: 'jobLog', jobId: j.id })} title={j.kind === 'command' ? 'Open its log' : 'Open its transcript'}>
+      <button
+        className="wr-main"
+        onClick={() => openModal({ kind: 'jobLog', jobId: j.id })}
+        title={j.kind === 'command' ? 'Open its log' : 'Open its transcript'}
+        aria-label={`Job ${j.title}: ${j.kind === 'command' ? 'open its log' : 'open its transcript'}`}
+      >
         <span className="wr-title">
           <b>{j.title}</b> <span className="muted">· {bot?.name || 'deleted bot'}</span>
         </span>
@@ -64,10 +62,10 @@ function JobRow({ j, now }: { j: BackgroundJob; now: number }) {
           {j.kind === 'command' ? <code>{j.command}</code> : null} {jobNote(j, now)}
         </span>
       </button>
-      <span className={cx('badge', st.cls)}>{st.label}</span>
+      <StatusBadge status={JOB_STATUS[j.status]} />
       {jobActive(j) && (
-        <button className="icon-btn sm" title="Stop this job" onClick={() => void stop(j)}>
-          <Square size={13} />
+        <button className="icon-btn sm" title="Stop this job" aria-label={`Stop job ${j.title}`} onClick={() => void stop(j)}>
+          <Square size={13} aria-hidden />
         </button>
       )}
     </div>
@@ -93,10 +91,10 @@ export function JobsBar({ chatId }: { chatId: string }) {
   return (
     <div className="workers-bar jobs-bar">
       <div className="wb-head">
-        <button className="wb-toggle" onClick={() => setOpen(!open)}>
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <Timer size={13} />
-          <span>
+        <button className="wb-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+          <Timer size={13} aria-hidden />
+          <span aria-live="polite">
             Background jobs <span className={cx('muted', active.length > 0 && 'busy')}>{active.length ? `${active.length} running` : 'none running'}</span>
           </span>
         </button>
@@ -160,12 +158,12 @@ export function JobLogDialog({ jobId, onClose }: { jobId: string; onClose: () =>
           <>
             {follow && (
               <button className="btn sm" title="Open a terminal that follows this log as it grows" onClick={() => requestTerminal(`tail -n +1 -f '${j.logFile!.replace(/'/g, `'\\''`)}'`)}>
-                <TerminalSquare size={13} /> Follow in terminal
+                <TerminalSquare size={13} aria-hidden /> Follow in terminal
               </button>
             )}
             {jobActive(j) && (
               <button className="btn danger sm" onClick={() => void stop(j)}>
-                <Square size={13} /> Stop
+                <Square size={13} aria-hidden /> Stop
               </button>
             )}
           </>
@@ -175,8 +173,8 @@ export function JobLogDialog({ jobId, onClose }: { jobId: string; onClose: () =>
       {j && (
         <div className="agent-meta">
           <div>
-            <b>{bot?.name || 'deleted bot'}</b> · <span className={cx('badge', STATUS[j.status].cls)}>{STATUS[j.status].label}</span> · {j.id} · started {fmtRelative(j.startedAt)} · {jobNote(j, now)}
-            {j.costUsd ? ` · $${j.costUsd.toFixed(3)}` : ''}
+            <b>{bot?.name || 'deleted bot'}</b> · <StatusBadge status={JOB_STATUS[j.status]} /> · {j.id} · started {fmtRelative(j.startedAt)} · {jobNote(j, now)}
+            {j.kind === 'task' ? ` · ${fmtCost(j.costUsd)} so far` : ''}
           </div>
           <pre className="agent-task">{j.kind === 'command' ? `$ ${j.command}` : j.task}</pre>
           {j.sandboxed && <div className="muted">Ran as a Bash call inside the sandbox: its output arrives when it ends.</div>}
@@ -184,14 +182,14 @@ export function JobLogDialog({ jobId, onClose }: { jobId: string; onClose: () =>
       )}
       {j?.kind === 'task' ? (
         <div className="agent-log msg-list">
-          {!transcript?.loaded && <div className="spinner" />}
-          {transcript?.loaded && !transcript.list.length && <div className="muted">Nothing yet.</div>}
+          {!transcript?.loaded && <LoadingState label="Loading the transcript…" />}
+          {transcript?.loaded && !transcript.list.length && <EmptyState compact title="No turn yet: the sub-task is starting." />}
           {chat && transcript?.list.map((m) => <BotMessage key={m.id} msg={m} chat={chat} bot={bots[m.botId || '']} showHead names={names} />)}
         </div>
       ) : (
         <div className="job-log">
-          {!lines && <div className="spinner" />}
-          {lines && !lines.length && <div className="muted">No output yet.</div>}
+          {!lines && <LoadingState label="Loading the log…" />}
+          {lines && !lines.length && <EmptyState compact title="No output yet." />}
           {lines && lines.length > 0 && <pre>{lines.join('\n')}</pre>}
           {lines && lines.length < total && (
             <button className="link-btn" onClick={() => void more()}>

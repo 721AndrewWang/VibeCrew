@@ -14,12 +14,10 @@ import { fmtElapsed, jobActive } from '../JobsBar';
 import { SIGNAL_LABEL } from '../SpeculativeBar';
 import { Cost, EmptyState, goToPart, StatusBadge, SuperAgentPrimer, TriggerLink } from '../SuperAgentUi';
 import { confirmDialog, useNow } from '../ui';
+import { triggerOf } from '../WorkersBar';
 import { PageHead } from './BotsView';
 
 const SPEC_ACTIVE = new Set(['running', 'verifying']);
-
-/** The Trigger that started a Worker: the first Trigger id in the batch the Router dispatched it from. */
-const triggerOf = (w: Worker) => w.related.find((id) => id.startsWith('tg_'));
 
 async function act(fn: () => Promise<unknown>, what: string, done?: string) {
   try {
