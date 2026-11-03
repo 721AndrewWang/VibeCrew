@@ -10,6 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_PROJECT_SPECULATIVE } from '../../shared/speculative';
 import { SPECULATION_IN_FLIGHT } from '../../shared/status';
 import type { Chat, Project, Speculation, SpeculativeSignal, Trigger, Worker } from '../../shared/types';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
@@ -37,7 +38,7 @@ import { bots, chats, drafts, messages, projects, settings, speculationLog, uid,
 import { chatThread, detailText, onTrigger, publishTrigger, superAgentOn, targetChat } from '../triggers';
 import { monthSpend } from '../usage';
 import { checkGit, disposeWorkspace, type Workspace } from '../workspaces';
-import { DEFAULT_PROJECT_SPECULATIVE, detectCheckCommand, normalizeProjectSpeculative } from './config';
+import { detectCheckCommand, normalizeProjectSpeculative } from './config';
 import { speculativePrompt } from './prompts';
 import { botRefusal, gateRefusal, judgeClaim, repoPath, SAME_SIGNAL_MS, type SignalInput, signalOf } from './rules';
 import { spentToday } from './spend';

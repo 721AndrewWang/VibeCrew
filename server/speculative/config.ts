@@ -6,6 +6,7 @@ import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/s
 import type { ProjectSpeculative, SpeculativeSettings } from '../../shared/types';
 import { bounded, fields, flag, modelName } from '../normalize';
 
+/** Defined in shared/ for the settings forms; re-exported where the tests read them. */
 export { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE };
 
 export const MAX_CONCURRENT_LIMIT = 4;

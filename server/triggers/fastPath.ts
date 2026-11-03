@@ -4,12 +4,13 @@
 // Pure: everything it needs comes in as arguments, so it is cheap to run and easy to test.
 
 import crypto from 'node:crypto';
+import { DEFAULT_SPECULATIVE } from '../../shared/speculative';
 import type { FilteredSource, SourceRule, SuperAgentSettings, Thread, Trigger, TriggerFilter, TriggerSource } from '../../shared/types';
 import { glob } from '../agents/permissions';
 import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
 import { bounded, fields } from '../normalize';
 import { DEFAULT_RECALL, normalizeRecall } from '../recall/config';
-import { DEFAULT_SPECULATIVE, normalizeSpeculative } from '../speculative/config';
+import { normalizeSpeculative } from '../speculative/config';
 import { DEFAULT_WATCHDOG, normalizeWatchdog } from '../watchdog/config';
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];

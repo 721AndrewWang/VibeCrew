@@ -8,8 +8,7 @@ import { settings } from '../store';
 import { type RecallScope, resolve } from './graph';
 import { type Budget, budgetOf, estimateTokens, renderNode } from './spill';
 
-export { type RecallResolver, type RecallScope, registerRecall } from './graph';
-export { type Budget, budgetOf, estimateTokens, RECALL_PROMPT_LINE, RECALL_RESUME_NOTE, RECALL_TOOL } from './spill';
+export { type Budget, RECALL_RESUME_NOTE, RECALL_TOOL } from './spill';
 
 const log = logger('recall');
 

@@ -256,7 +256,7 @@ export function asyncGuide(): string {
 
 // ---------------------------------------------------------------- the webhook's text
 
-export const WEBHOOK_WORDS = REPLY_WORDS;
+const WEBHOOK_WORDS = REPLY_WORDS;
 
 /**
  * A Router reply as it may leave the machine: code blocks dropped, long inline code elided, any line

@@ -5,7 +5,6 @@ import { WORKER_ACTIVE } from '../../shared/status';
 import { wordCount } from '../text';
 import { NOTE_WORDS } from './prompts';
 
-export { NOTE_WORDS };
 export const NUDGES_PER_WORKER_PER_DAY = 2;
 export const RESTARTS_PER_WORKER_PER_DAY = 3;
 export const NOTICES_PER_CHAT_PER_DAY = 4;

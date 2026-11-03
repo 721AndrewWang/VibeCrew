@@ -41,9 +41,9 @@ import { deniedReason, denyApprovals, expireApprovals, permissionGate } from './
 import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previewPageOf } from './turnContext';
 
 export { botStatuses } from './botStatus';
-export { parseMentions, systemMessage } from './chatLog';
+export { systemMessage } from './chatLog';
 export { resolveApproval } from './permissionGate';
-export { effectiveBot, setPreviewPage } from './turnContext';
+export { setPreviewPage } from './turnContext';
 
 const log = logger('orchestrator');
 
