@@ -189,7 +189,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
               <div className="sr-title">No AI attribution in commits</div>
               <div className="hint">Bot commits and PRs carry no Co-Authored-By or similar lines, and merge commits don't mention Crew.</div>
             </div>
-            <Toggle on={noAttribution} onChange={setNoAttribution} />
+            <Toggle label="No AI attribution in commits" on={noAttribution} onChange={setNoAttribution} />
           </div>
           <div className="setting-row">
             <div>
@@ -198,7 +198,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
                 Before an isolated workspace merges, Skeptic reviews the latest commit, and it can only merge if nothing is overturned (/challenge). Costs about $0.3–0.6 each time.
               </div>
             </div>
-            <Toggle on={requireChallenge} onChange={setRequireChallenge} />
+            <Toggle label="Require adversarial review before merge" on={requireChallenge} onChange={setRequireChallenge} />
           </div>
           <div className="setting-row">
             <div>
@@ -208,7 +208,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
                 the same changes are never reviewed twice. The rules are fixed; the model doesn't decide what is "risky".
               </div>
             </div>
-            <Toggle on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
+            <Toggle label="Auto adversarial review by rules" on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
           </div>
           {auto.enabled && (
             <div className="form-grid">
@@ -225,14 +225,14 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           )}
           <div className="setting-row" data-testid="project-speculative">
             <div>
-              <div className="sr-title">Speculative fixes (silent reproduce-and-fix)</div>
+              <div className="sr-title">Speculative fixes</div>
               <div className="hint">
                 When a check fails, the preview logs an error, or someone describes a problem without asking for the fix yet, Crew may start a background run in a throwaway worktree that tries to
                 reproduce it and find a small fix. You only hear about it when the check command below fails without the fix and passes with it; then the chat shows the diff with a one-click merge.
-                Anything else is thrown away quietly. Needs the Super-agent on; budget and limits are in Settings → Super-agent.
+                Anything else is thrown away quietly. Needs Triggers on; the budget and limits all projects share are in Settings → Super-agent → Speculative fixes.
               </div>
             </div>
-            <Toggle on={spec.enabled} onChange={(enabled) => setSpec({ ...spec, enabled })} />
+            <Toggle label="Speculative fixes" on={spec.enabled} onChange={(enabled) => setSpec({ ...spec, enabled })} />
           </div>
           {spec.enabled && (
             <div className="form-grid">

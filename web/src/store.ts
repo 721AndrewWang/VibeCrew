@@ -36,7 +36,7 @@ import type {
 import { api } from './api';
 import { desktop } from './desktop';
 
-export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'triggers' | 'watchdog' | 'settings';
+export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'triggers' | 'activity' | 'watchdog' | 'settings';
 export type ComputerTab = 'browser' | 'files' | 'terminal' | 'changes';
 export type Device = 'fill' | 'desktop' | 'tablet' | 'mobile';
 
@@ -141,7 +141,9 @@ export interface AppState {
     /** A Worker's transcript, or (no workerId) the chat's Router log. */
     | { kind: 'agentLog'; chatId: string; workerId?: string }
     /** A background job's full log (a command) or transcript (a sub-task). */
-    | { kind: 'jobLog'; jobId: string };
+    | { kind: 'jobLog'; jobId: string }
+    /** A Trigger with its Thread and neighbours, opened from wherever its id is shown. */
+    | { kind: 'trigger'; triggerId: string };
 }
 
 const LS_UI = 'vc-ui';

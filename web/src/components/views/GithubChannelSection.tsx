@@ -6,7 +6,9 @@ import { useEffect, useState } from 'react';
 import type { GithubChannel, GithubStatus } from '../../../../shared/types';
 import { api } from '../../api';
 import { toast, useStore } from '../../store';
+import { PART } from '../../superagent';
 import { fmtRelative } from '../../utils';
+import { Field, OffNotice } from '../SuperAgentUi';
 import { Toggle } from '../ui';
 
 export const DEFAULT_GITHUB_CHANNEL: GithubChannel = {
@@ -32,7 +34,8 @@ const lines = (s: string) =>
     .filter(Boolean);
 
 export function GithubChannelSection({ projectId, value, onChange }: { projectId: string; value: GithubChannel; onChange: (v: GithubChannel) => void }) {
-  const superAgent = useStore((s) => s.settings.superAgent.enabled);
+  const settings = useStore((s) => s.settings);
+  const superAgent = settings.superAgent.enabled;
   const [repos, setRepos] = useState(value.repos.join('\n'));
   const [authors, setAuthors] = useState(value.authors.join('\n'));
   const [status, setStatus] = useState<GithubStatus | undefined>();
@@ -62,18 +65,17 @@ export function GithubChannelSection({ projectId, value, onChange }: { projectId
     <div className="field span-all" data-testid="github-channel">
       <div className="setting-row">
         <div>
-          <div className="sr-title">GitHub channel</div>
+          <div className="sr-title">{PART.github.name}</div>
           <div className="hint">
-            Crew polls these repositories with your gh CLI and turns new issues, comments, review comments and check results into events for the Super-agent. Their text is treated as data, never as
-            instructions. Nothing is posted to GitHub until you approve a draft.{superAgent ? '' : ' Needs the Super-agent (Settings → Super-agent).'}
+            {PART.github.does} New issues, comments, review comments and check results become Triggers; their text is treated as data, never as instructions. Costs: {PART.github.cost(settings)}
           </div>
         </div>
-        <Toggle on={value.enabled} onChange={(enabled) => onChange({ ...value, enabled })} />
+        <Toggle label={PART.github.name} on={value.enabled} onChange={(enabled) => onChange({ ...value, enabled })} />
       </div>
+      {value.enabled && !superAgent && <OffNotice part="triggers">The GitHub channel polls only while Triggers are on.</OffNotice>}
       {value.enabled && (
         <div className="form-grid">
-          <div className="field">
-            <label>Repositories (owner/name, one per line)</label>
+          <Field label="Repositories (owner/name, one per line)">
             <textarea
               className="input mono"
               rows={2}
@@ -84,9 +86,8 @@ export function GithubChannelSection({ projectId, value, onChange }: { projectId
                 onChange({ ...value, repos: lines(e.target.value) });
               }}
             />
-          </div>
-          <div className="field">
-            <label>Only these authors (logins, one per line)</label>
+          </Field>
+          <Field label="Only these authors (logins, one per line)">
             <textarea
               className="input mono"
               rows={2}
@@ -97,9 +98,8 @@ export function GithubChannelSection({ projectId, value, onChange }: { projectId
                 onChange({ ...value, authors: lines(e.target.value) });
               }}
             />
-          </div>
-          <div className="field">
-            <label>Poll every (minutes)</label>
+          </Field>
+          <Field label="Poll every (minutes)" hint="Each poll is a few read-only gh calls per repository.">
             <input
               className="input num-input"
               type="number"
@@ -108,9 +108,9 @@ export function GithubChannelSection({ projectId, value, onChange }: { projectId
               value={value.everyMinutes}
               onChange={(e) => onChange({ ...value, everyMinutes: Math.max(1, Math.min(1440, Math.round(Number(e.target.value) || 1))) })}
             />
-          </div>
+          </Field>
           <div className="field">
-            <label>Events</label>
+            <span className="field-label">Events</span>
             <div className="family-chips">
               {EVENT_LABELS.map(([k, label]) => (
                 <label key={k} className="check-row">
@@ -128,13 +128,13 @@ export function GithubChannelSection({ projectId, value, onChange }: { projectId
           </div>
           <div className="field span-all">
             <div className="row">
-              <span className="hint">
+              <span className="hint" role="status">
                 {status?.lastPollAt ? `Last polled ${fmtRelative(status.lastPollAt)}` : 'Not polled yet'}
                 {status?.lastError ? ` · ${status.lastError}` : ''}
               </span>
               <span className="spacer" />
               <button className="btn sm" disabled={polling || !status?.active} onClick={pollNow} title={status?.active ? 'Poll now' : 'Save the settings first'}>
-                <RefreshCw size={14} /> Poll now
+                <RefreshCw size={14} aria-hidden /> Poll now
               </button>
             </div>
           </div>

@@ -5,6 +5,7 @@ import { JobLogDialog } from './components/JobsBar';
 import { Sidebar } from './components/Sidebar';
 import { TraceDialog } from './components/TraceDialog';
 import { Logo, Toasts } from './components/ui';
+import { ActivityView } from './components/views/ActivityView';
 import { BotEditorDialog } from './components/views/BotEditor';
 import { BotsView } from './components/views/BotsView';
 import { NewBotDialog } from './components/views/bot-editor/NewBotDialog';
@@ -13,7 +14,7 @@ import { NewProjectDialog, ProjectsView } from './components/views/ProjectsView'
 import { RoutinesView } from './components/views/RoutinesView';
 import { SettingsView } from './components/views/SettingsView';
 import { SkillsView } from './components/views/SkillsView';
-import { TriggersView } from './components/views/TriggersView';
+import { TriggerDialog, TriggersView } from './components/views/TriggersView';
 import { WatchdogView } from './components/views/WatchdogView';
 import { AgentLogDialog } from './components/WorkersBar';
 import { closeModal, useStore } from './store';
@@ -41,6 +42,8 @@ function Modals() {
       return <AgentLogDialog chatId={modal.chatId} workerId={modal.workerId} onClose={closeModal} />;
     case 'jobLog':
       return <JobLogDialog jobId={modal.jobId} onClose={closeModal} />;
+    case 'trigger':
+      return <TriggerDialog id={modal.triggerId} onClose={closeModal} />;
     default:
       return null;
   }
@@ -98,6 +101,7 @@ export function App() {
         {view === 'routines' && <RoutinesView />}
         {view === 'projects' && <ProjectsView />}
         {view === 'triggers' && <TriggersView />}
+        {view === 'activity' && <ActivityView />}
         {view === 'watchdog' && <WatchdogView />}
         {view === 'settings' && <SettingsView />}
       </main>

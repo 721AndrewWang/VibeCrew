@@ -7,7 +7,9 @@ import { useMemo, useState } from 'react';
 import type { Chat, DraftKind, ExternalDraft } from '../../../shared/types';
 import { api } from '../api';
 import { toast, useStore } from '../store';
+import { DRAFT_STATUS } from '../superagent';
 import { copyText, cx, fmtRelative } from '../utils';
+import { StatusBadge } from './SuperAgentUi';
 
 export const DRAFT_KIND: Record<DraftKind, string> = {
   'git-push': 'Push',
@@ -19,13 +21,30 @@ export const DRAFT_KIND: Record<DraftKind, string> = {
   message: 'Message',
 };
 
-const STATUS: Record<ExternalDraft['status'], { label: string; cls: string }> = {
-  pending: { label: 'Waiting for you', cls: 'orange' },
-  running: { label: 'Running', cls: 'accent' },
-  done: { label: 'Done', cls: 'green' },
-  failed: { label: 'Failed', cls: 'red' },
-  discarded: { label: 'Discarded', cls: '' },
-};
+/** What approving a draft does, in words, before the exact command: the card says it before the user clicks. */
+export function draftEffect(d: ExternalDraft): string[] {
+  const titled = d.title ? `, titled “${d.title}”` : '';
+  const as = 'with your own gh login';
+  switch (d.kind) {
+    case 'git-push': {
+      const moves = d.before === '' ? ' The remote branch does not exist yet and is created.' : d.before ? ` The remote branch moves on from ${d.before.slice(0, 8)}.` : '';
+      return [
+        `Pushes the branch's commits to ${d.target}${d.remoteUrl ? ` (${d.remoteUrl})` : ''}.${moves}`,
+        "The repository's git hooks do not run, and Crew refuses to run it if the remote changed or the repository's config would run a program.",
+      ];
+    }
+    case 'pr-open':
+      return [`Opens a pull request on GitHub: ${d.target}${titled}, with the text below, ${as}.`];
+    case 'issue-open':
+      return [`Opens an issue on GitHub: ${d.target}${titled}, with the text below, ${as}.`];
+    case 'pr-comment':
+    case 'issue-comment':
+    case 'review-reply':
+      return [`Posts the text below on GitHub (${d.target}), ${as}. Everyone who can see it will read it as yours.`];
+    case 'message':
+      return [`Crew sends nothing: you copy the text below, post it to ${d.target} yourself, then mark it posted.`];
+  }
+}
 
 /** The command as a shell would read it: what the user sees is what runs. */
 export function shellLine(argv: string[] | null): string {
@@ -47,7 +66,6 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
   const chat = useStore((s) => (d.chatId ? s.chats[d.chatId] : undefined));
   const [busy, setBusy] = useState(false);
   const pending = d.status === 'pending';
-  const st = STATUS[d.status];
   const run = async (fn: () => Promise<unknown>, what: string) => {
     setBusy(true);
     try {
@@ -66,7 +84,7 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
         <b>{DRAFT_KIND[d.kind]}</b>
         <span className="draft-target">{d.target}</span>
         <span className="spacer" />
-        <span className={cx('badge', st.cls)}>{st.label}</span>
+        <StatusBadge status={DRAFT_STATUS[d.status]} />
       </div>
       <div className="muted draft-by">
         Drafted by {bot?.name || (d.botId ? 'a deleted bot' : 'you')}
@@ -74,8 +92,19 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
         {d.why ? ` · ${d.why}` : ''}
       </div>
       {d.title && <div className="draft-title">{d.title}</div>}
+      {pending && (
+        <div className="sa-effect" data-testid="draft-effect">
+          <div className="sa-effect-title">{d.command ? 'When you approve' : 'What to do'}</div>
+          <ul>
+            {draftEffect(d).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+            <li>Discard instead: nothing leaves this machine, and {bot ? bot.name : 'the bot'} is told you discarded it.</li>
+          </ul>
+        </div>
+      )}
       {d.body && (
-        <details open={!compact && d.kind !== 'git-push'}>
+        <details open={pending ? d.kind !== 'git-push' : !compact && d.kind !== 'git-push'}>
           <summary>{d.kind === 'message' ? 'Message' : 'Text'}</summary>
           <pre className="draft-body">{d.body}</pre>
         </details>
@@ -86,10 +115,9 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
             {pending ? 'Runs exactly, in' : 'Ran, in'} <code>{d.cwd}</code>:
           </span>
           <pre>{command}</pre>
-          {d.kind === 'git-push' && (
+          {d.kind === 'git-push' && !pending && (
             <span className="muted draft-push-url">
-              Pushes to <code>{d.remoteUrl || '(the remote has no URL)'}</code>. The repository's git hooks do not run for a drafted push; Crew refuses to run it if the remote changed or the
-              repository's own config runs a program.
+              Pushed to <code>{d.remoteUrl || '(the remote has no URL)'}</code>.
             </span>
           )}
         </div>
@@ -111,17 +139,22 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
       )}
       {d.reverse && (
         <div className="draft-reverse">
-          <Undo2 size={13} /> To undo: <code>{d.reverse}</code>
-          <button className="icon-btn sm" title="Copy" onClick={() => void copy(d.reverse || '')}>
-            <Copy size={12} />
+          <Undo2 size={13} aria-hidden /> To undo: <code>{d.reverse}</code>
+          <button className="icon-btn sm" title="Copy" aria-label="Copy the undo command" onClick={() => void copy(d.reverse || '')}>
+            <Copy size={12} aria-hidden />
           </button>
         </div>
       )}
       {pending && (
         <div className="approval-actions">
           {d.command ? (
-            <button className="btn primary sm" disabled={busy} onClick={() => void run(() => api.approveDraft(d.id), "Couldn't run it")}>
-              <Check size={13} /> Approve and run
+            <button
+              className="btn primary sm"
+              disabled={busy}
+              aria-label={`Approve and run: ${DRAFT_KIND[d.kind]}, ${d.target}`}
+              onClick={() => void run(() => api.approveDraft(d.id), "Couldn't run it")}
+            >
+              <Check size={13} aria-hidden /> Approve and run
             </button>
           ) : (
             <>
@@ -133,8 +166,8 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
               </button>
             </>
           )}
-          <button className="btn sm danger" disabled={busy} onClick={() => void run(() => api.discardDraft(d.id), "Couldn't discard it")}>
-            <Trash2 size={13} /> Discard
+          <button className="btn sm danger" disabled={busy} aria-label={`Discard: ${DRAFT_KIND[d.kind]}, ${d.target}`} onClick={() => void run(() => api.discardDraft(d.id), "Couldn't discard it")}>
+            <Trash2 size={13} aria-hidden /> Discard
           </button>
         </div>
       )}
@@ -156,8 +189,8 @@ export function DraftsBar({ chat }: { chat: Chat }) {
   return (
     <div className="drafts-bar">
       <div className="wb-head">
-        <Send size={14} />
-        <span>
+        <Send size={14} aria-hidden />
+        <span aria-live="polite">
           {pending.length} drafted action{pending.length === 1 ? '' : 's'} waiting for you <span className="muted">· nothing leaves this machine until you approve</span>
         </span>
       </div>

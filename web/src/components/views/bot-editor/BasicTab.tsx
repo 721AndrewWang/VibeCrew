@@ -73,7 +73,7 @@ export function BasicTab({ draft, patch, nameOk }: { draft: Bot; patch: (p: Part
             messages. Messages you send while it works reach it after its current step instead of after the whole turn.
           </div>
         </div>
-        <Toggle on={!!draft.fullDuplex} onChange={(fullDuplex) => patch({ fullDuplex })} />
+        <Toggle label="Full duplex (background jobs)" on={!!draft.fullDuplex} onChange={(fullDuplex) => patch({ fullDuplex })} />
       </div>
       <div className="setting-row">
         <div>

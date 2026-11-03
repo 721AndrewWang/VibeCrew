@@ -4,13 +4,15 @@
 
 import { Check, RefreshCw, Send, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { Chat, WatchdogAction, WatchdogOverview, WatchdogProposal, WatchdogTick } from '../../../../shared/types';
+import type { Chat, WatchdogAction, WatchdogOverview, WatchdogProposal } from '../../../../shared/types';
 import { api } from '../../api';
-import { loadLog, openChat, setView, toast, useStore } from '../../store';
+import { loadLog, openChat, toast, useStore } from '../../store';
+import { fmtCost, TICK_OUTCOME, WATCHDOG_STATE } from '../../superagent';
 import { cx, fmtRelative, fmtShort } from '../../utils';
 import { BotMessage, UserMessage } from '../Message';
+import { EmptyState, ErrorState, LoadingState, OffNotice, StatusBadge } from '../SuperAgentUi';
 import { useNow } from '../ui';
-import { fmtUsd, PageHead } from './BotsView';
+import { PageHead } from './BotsView';
 
 const LOG_ID = 'watchdog';
 /** The Watchdog's log is not a chat; message rendering only needs these fields. */
@@ -26,12 +28,6 @@ const ACTION_LABEL: Record<WatchdogAction['kind'], string> = {
   propose: 'Proposed',
 };
 
-const OUTCOME: Record<WatchdogTick['outcome'], { label: string; cls: string }> = {
-  ran: { label: 'Looked', cls: 'accent' },
-  skipped: { label: 'Skipped', cls: '' },
-  error: { label: 'Failed', cls: 'red' },
-};
-
 async function run(fn: () => Promise<unknown>, what: string, done?: string) {
   try {
     await fn();
@@ -44,7 +40,16 @@ async function run(fn: () => Promise<unknown>, what: string, done?: string) {
 function Meter({ label, used, max, fmt = String }: { label: string; used: number; max: number; fmt?: (n: number) => string }) {
   const pct = max > 0 ? Math.min(100, Math.round((used / max) * 100)) : 100;
   return (
-    <div className="wd-meter" title={`${fmt(used)} of ${fmt(max)}`}>
+    <div
+      className="wd-meter"
+      title={`${fmt(used)} of ${fmt(max)}`}
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={used}
+      aria-valuetext={`${fmt(used)} of ${fmt(max)}`}
+    >
       <div className="wd-meter-head">
         <span>{label}</span>
         <b>
@@ -71,7 +76,9 @@ function ProposalCard({ p, onDone }: { p: WatchdogProposal; onDone: () => void }
       <div className="wd-card-head">
         <b>{p.target === 'bot' ? `${p.botName || 'A bot'}: role description` : 'Trigger policies'}</b>
         <span className="muted">{fmtRelative(p.at)}</span>
-        {p.status !== 'pending' && <span className="badge">{p.status}</span>}
+        {p.status !== 'pending' && (
+          <StatusBadge status={{ label: p.status === 'accepted' ? 'Accepted' : p.status === 'rejected' ? 'Rejected' : 'Out of date', tone: p.status === 'accepted' ? 'ok' : 'neutral' }} />
+        )}
       </div>
       <div className="hint">{p.rationale}</div>
       <details>
@@ -85,10 +92,10 @@ function ProposalCard({ p, onDone }: { p: WatchdogProposal; onDone: () => void }
         <div className="row">
           <span className="spacer" />
           <button className="btn sm" disabled={busy} onClick={() => void decide(false)}>
-            <X size={13} /> Reject
+            <X size={13} aria-hidden /> Reject
           </button>
           <button className="btn primary sm" disabled={busy} onClick={() => void decide(true)}>
-            <Check size={13} /> Accept
+            <Check size={13} aria-hidden /> Accept
           </button>
         </div>
       )}
@@ -122,8 +129,12 @@ function WatchdogChat({ enabled }: { enabled: boolean }) {
   return (
     <div className="wd-chat">
       <div className="agent-log msg-list" data-testid="watchdog-log">
-        {!st?.loaded && <div className="spinner" />}
-        {st?.loaded && !list.length && <div className="muted">Nothing yet. Ticks that find nothing flagged do not call the model, so they do not show here.</div>}
+        {!st?.loaded && <LoadingState label="Loading the Watchdog's log…" />}
+        {st?.loaded && !list.length && (
+          <EmptyState compact title="Nothing yet.">
+            Ticks that find nothing flagged do not call the model, so they do not show here.
+          </EmptyState>
+        )}
         {list.map((m) =>
           m.role === 'user' ? (
             <UserMessage key={m.id} msg={m} chat={LOG_CHAT} names={names} showTime />
@@ -140,6 +151,7 @@ function WatchdogChat({ enabled }: { enabled: boolean }) {
           className="input"
           rows={2}
           value={text}
+          aria-label="Ask the Watchdog"
           disabled={!enabled}
           placeholder={enabled ? 'Ask why something failed, or what it did…' : 'The Watchdog is off'}
           onChange={(e) => setText(e.target.value)}
@@ -150,8 +162,8 @@ function WatchdogChat({ enabled }: { enabled: boolean }) {
             }
           }}
         />
-        <button className="btn primary" disabled={!enabled || sending || !text.trim()} onClick={() => void send()} title="Send">
-          {sending ? <span className="spinner" /> : <Send size={14} />}
+        <button className="btn primary" disabled={!enabled || sending || !text.trim()} onClick={() => void send()} title="Send" aria-label="Send the question">
+          {sending ? <span className="spinner" /> : <Send size={14} aria-hidden />}
         </button>
       </div>
     </div>
@@ -162,12 +174,16 @@ export function WatchdogView() {
   const live = useStore((s) => s.watchdog);
   const settingsOn = useStore((s) => s.settings.superAgent.enabled && s.settings.superAgent.watchdog.enabled);
   const [o, setO] = useState<WatchdogOverview | null>(null);
+  const [error, setError] = useState('');
   useNow(30_000);
   const refresh = () =>
     void api
       .watchdog()
-      .then(setO)
-      .catch((e) => toast("Couldn't load the Watchdog", (e as Error).message, 'error'));
+      .then((x) => {
+        setO(x);
+        setError('');
+      })
+      .catch((e) => setError((e as Error).message));
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload the lists whenever the live state moves on
   useEffect(() => {
     refresh();
@@ -182,41 +198,36 @@ export function WatchdogView() {
       <div className="page-inner">
         <PageHead title="Watchdog" sub="An external control loop: it checks Workers and errors on a timer, and steps in within hard limits">
           <button className="btn" onClick={refresh}>
-            <RefreshCw size={14} /> Refresh
+            <RefreshCw size={14} aria-hidden /> Refresh
           </button>
           <button className="btn primary" disabled={!settingsOn || info?.state === 'thinking'} onClick={() => void run(() => api.watchdogTick(), "Couldn't tick")}>
-            <ShieldCheck size={14} /> Tick now
+            <ShieldCheck size={14} aria-hidden /> Tick now
           </button>
         </PageHead>
-        {!settingsOn && (
-          <div className="notice">
-            The Watchdog is off: no timer runs and nothing is checked.{' '}
-            <button className="btn ghost sm" onClick={() => setView('settings')}>
-              Open Settings
-            </button>
-          </div>
-        )}
+        {!settingsOn && <OffNotice part="watchdog">No timer runs and nothing is checked; what it did before is below.</OffNotice>}
+        {error && <ErrorState message={`Couldn't load the Watchdog: ${error}`} onRetry={refresh} />}
+        {!o && !error && <LoadingState label="Loading the Watchdog…" />}
         {info && o && (
           <div className="wd-status" data-testid="watchdog-status">
             <div className="wd-state">
-              <span className={cx('badge', info.state === 'thinking' ? 'accent' : info.state === 'error' ? 'red' : '')}>{info.state === 'thinking' ? 'Looking' : info.state}</span>
+              <StatusBadge status={WATCHDOG_STATE[info.state]} />
               {info.detail && <span className="muted">{info.detail}</span>}
               {info.nextTickAt && <span className="muted">Next tick {fmtRelative(info.nextTickAt)}</span>}
               {info.lastTick && (
                 <span className="muted">
-                  Last: {OUTCOME[info.lastTick.outcome].label.toLowerCase()} {fmtRelative(info.lastTick.at)} ({info.lastTick.reason})
+                  Last: {TICK_OUTCOME[info.lastTick.outcome].label.toLowerCase()} {fmtRelative(info.lastTick.at)} ({info.lastTick.reason})
                 </span>
               )}
             </div>
             <div className="wd-meters">
               <Meter label="Ticks this hour" used={info.ticksLastHour} max={o.settings.maxTicksPerHour} />
-              <Meter label="Spent today" used={info.spentTodayUsd} max={o.settings.dailyBudgetUsd} fmt={fmtUsd} />
+              <Meter label="Spent today" used={info.spentTodayUsd} max={o.settings.dailyBudgetUsd} fmt={fmtCost} />
               {info.speculative && (
                 <Meter
                   label={`Speculative runs today${info.speculative.running ? ` (${info.speculative.running} running)` : ''}`}
                   used={info.speculative.spentTodayUsd}
                   max={info.speculative.dailyBudgetUsd}
-                  fmt={fmtUsd}
+                  fmt={fmtCost}
                 />
               )}
               <div className="wd-meter">
@@ -231,16 +242,20 @@ export function WatchdogView() {
         )}
         <div className="wd-grid">
           <div className="wd-col">
-            <h3>Proposed changes</h3>
-            {!pending.length && <div className="muted">None waiting. Ask the Watchdog in the chat, and it may propose a change to the trigger policies or a bot's role.</div>}
+            <h2 className="sa-section-title">Proposed changes</h2>
+            {!pending.length && (
+              <EmptyState compact title="None waiting.">
+                Ask the Watchdog, and it may propose a change to the Trigger policies or a bot's role.
+              </EmptyState>
+            )}
             {pending.map((p) => (
               <ProposalCard key={p.id} p={p} onDone={refresh} />
             ))}
             {decided.map((p) => (
               <ProposalCard key={p.id} p={p} onDone={refresh} />
             ))}
-            <h3>Watching</h3>
-            {!watches.length && <div className="muted">No failures being re-checked.</div>}
+            <h2 className="sa-section-title">Watching</h2>
+            {!watches.length && <EmptyState compact title="No failures being re-checked." />}
             {watches.map((w) => (
               <div key={w.id} className="wd-row" data-watch={w.id}>
                 <span className="mono">{w.subject}</span>
@@ -251,13 +266,13 @@ export function WatchdogView() {
                     · {w.checks} check{w.checks === 1 ? '' : 's'} · next {fmtRelative(w.nextAt)} · {w.by === 'code' ? 'opened by Crew' : 'opened by the Watchdog'}
                   </span>
                 </span>
-                <button className="btn ghost sm" onClick={() => void run(() => api.resolveWatchdogWatch(w.id), "Couldn't resolve").then(refresh)}>
+                <button className="btn ghost sm" aria-label={`Resolve the watch on ${w.subject}`} onClick={() => void run(() => api.resolveWatchdogWatch(w.id), "Couldn't resolve").then(refresh)}>
                   Resolve
                 </button>
               </div>
             ))}
-            <h3>What it did</h3>
-            {!o?.actions.length && <div className="muted">Nothing yet.</div>}
+            <h2 className="sa-section-title">What it did</h2>
+            {o && !o.actions.length && <EmptyState compact title="Nothing yet." />}
             {o?.actions.map((a) => (
               <div key={a.id} className={cx('wd-row', a.refused && 'refused')} data-action={a.kind}>
                 <span className="tr-time muted" title={new Date(a.at).toLocaleString()}>
@@ -274,23 +289,24 @@ export function WatchdogView() {
                 )}
               </div>
             ))}
-            <h3>Ticks</h3>
+            <h2 className="sa-section-title">Ticks</h2>
+            {o && !o.ticks.length && <EmptyState compact title="No tick yet." />}
             {o?.ticks.map((t) => (
               <div key={t.id} className="wd-row" data-tick={t.id}>
                 <span className="tr-time muted" title={new Date(t.at).toLocaleString()}>
                   {fmtShort(t.at)}
                 </span>
-                <span className={cx('badge', OUTCOME[t.outcome].cls)}>{t.kind === 'maintainer' ? 'Question' : OUTCOME[t.outcome].label}</span>
+                <StatusBadge status={t.kind === 'maintainer' ? { label: 'Question', tone: 'neutral' } : TICK_OUTCOME[t.outcome]} />
                 <span className="wd-row-main muted">
                   {t.reason}
                   {t.actions ? ` · ${t.actions} action${t.actions === 1 ? '' : 's'}` : ''}
-                  {t.costUsd ? ` · ${fmtUsd(t.costUsd)}` : ''}
+                  {t.costUsd ? ` · ${fmtCost(t.costUsd)}` : ''}
                 </span>
               </div>
             ))}
           </div>
           <div className="wd-col">
-            <h3>Ask the Watchdog</h3>
+            <h2 className="sa-section-title">Ask the Watchdog</h2>
             <WatchdogChat enabled={settingsOn} />
           </div>
         </div>

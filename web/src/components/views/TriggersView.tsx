@@ -2,10 +2,12 @@ import { Bot as BotIcon, Clock, FilePen, GitMerge, GitPullRequest, MessageCircle
 import { useEffect, useMemo, useState } from 'react';
 import type { Thread, Trigger, TriggerDetail, TriggerList, TriggerSource } from '../../../../shared/types';
 import { api } from '../../api';
-import { loadTriggers, openChat, setView, useStore } from '../../store';
+import { loadTriggers, openChat, useStore } from '../../store';
+import { fmtCost, TRIGGER_VERDICT } from '../../superagent';
 import { cx, fmtRelative, fmtShort } from '../../utils';
+import { EmptyState, ErrorState, LoadingState, OffNotice, StatusBadge } from '../SuperAgentUi';
 import { Modal, useNow } from '../ui';
-import { fmtUsd, PageHead } from './BotsView';
+import { PageHead } from './BotsView';
 
 export const SOURCE_LABEL: Record<TriggerSource, string> = {
   user: 'User message',
@@ -31,26 +33,16 @@ const SOURCE_ICON: Record<TriggerSource, typeof Radio> = {
   github: GitPullRequest,
 };
 
-const VERDICT: Record<Trigger['filter']['verdict'], { label: string; cls: string }> = {
-  act: { label: 'Act', cls: 'green' },
-  candidate: { label: 'Deciding', cls: 'orange' },
-  drop: { label: 'Dropped', cls: '' },
-};
-
 function VerdictBadge({ t }: { t: Trigger }) {
-  const v = VERDICT[t.filter.verdict];
-  return (
-    <span className={cx('badge', v.cls)} title={`${t.filter.stage === 'fast' ? 'Fast path (rules)' : 'Slow path (cheap model)'}: ${t.filter.rule}`}>
-      {v.label} · {t.filter.stage}
-    </span>
-  );
+  const v = TRIGGER_VERDICT[t.filter.verdict];
+  return <StatusBadge status={{ ...v, label: `${v.label} · ${t.filter.stage}` }} title={`${t.filter.stage === 'fast' ? 'Fast path (rules)' : 'Slow path (cheap model)'}: ${t.filter.rule}`} />;
 }
 
 function SourceTag({ source }: { source: TriggerSource }) {
   const Icon = SOURCE_ICON[source];
   return (
     <span className="trigger-source">
-      <Icon size={13} /> {SOURCE_LABEL[source]}
+      <Icon size={13} aria-hidden /> {SOURCE_LABEL[source]}
     </span>
   );
 }
@@ -75,10 +67,12 @@ function TriggerRow({ t, thread, onOpen }: { t: Trigger; thread?: Thread; onOpen
 }
 
 /** One trigger, its full payload and its neighbours; ids are links, so the graph can be walked hop by hop. */
-function TriggerDialog({ id, onClose }: { id: string; onClose: () => void }) {
+export function TriggerDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const [cur, setCur] = useState(id);
   const [d, setD] = useState<TriggerDetail | null>(null);
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is the retry button's way to load again
   useEffect(() => {
     setD(null);
     setError('');
@@ -86,7 +80,7 @@ function TriggerDialog({ id, onClose }: { id: string; onClose: () => void }) {
       .trigger(cur)
       .then(setD)
       .catch((e) => setError((e as Error).message));
-  }, [cur]);
+  }, [cur, attempt]);
   const t = d?.trigger;
   const link = (x: Trigger) => (
     <button key={x.id} className="trigger-link" onClick={() => setCur(x.id)} disabled={x.id === cur}>
@@ -95,8 +89,8 @@ function TriggerDialog({ id, onClose }: { id: string; onClose: () => void }) {
   );
   return (
     <Modal title={t ? SOURCE_LABEL[t.source] : 'Trigger'} icon={<Radio size={20} className="modal-icon" />} onClose={onClose} wide>
-      {error && <div className="notice warn">{error}</div>}
-      {!d && !error && <div className="spinner" />}
+      {error && <ErrorState message={`Couldn't load this Trigger: ${error}`} onRetry={() => setAttempt(attempt + 1)} />}
+      {!d && !error && <LoadingState label="Loading the Trigger…" />}
       {t && d && (
         <div className="trigger-detail">
           <div className="trigger-facts">
@@ -107,7 +101,7 @@ function TriggerDialog({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <div className="tr-summary">{t.summary}</div>
           <div className="hint">
-            {t.filter.stage === 'fast' ? 'Rules' : `Cheap model (${t.filter.slow?.backend}, batch of ${t.filter.slow?.batch}, ${fmtUsd(t.filter.slow?.costUsd || 0)})`}: {t.filter.reason}
+            {t.filter.stage === 'fast' ? 'Rules' : `Cheap model (${t.filter.slow?.backend}, batch of ${t.filter.slow?.batch}, ${fmtCost(t.filter.slow?.costUsd)})`}: {t.filter.reason}
             {t.action ? `. ${t.action}.` : ''}
           </div>
           <div className="trigger-facts">
@@ -123,7 +117,7 @@ function TriggerDialog({ id, onClose }: { id: string; onClose: () => void }) {
                   openChat(t.chatId!);
                 }}
               >
-                <MessageCircle size={13} /> Open chat
+                <MessageCircle size={13} aria-hidden /> Open chat
               </button>
             )}
           </div>
@@ -153,9 +147,19 @@ export function TriggersView() {
   const [source, setSource] = useState<TriggerSource | ''>('');
   const [verdict, setVerdict] = useState<Trigger['filter']['verdict'] | ''>('');
   const [open, setOpen] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [failed, setFailed] = useState(false);
   useNow(30_000);
 
-  const refresh = () => void loadTriggers().then((r) => r && setStats(r.stats));
+  const refresh = () => {
+    setRefreshing(true);
+    void loadTriggers()
+      .then((r) => {
+        setFailed(!r);
+        if (r) setStats(r.stats);
+      })
+      .finally(() => setRefreshing(false));
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: load once, and again after a reconnect resets the list
   useEffect(() => {
     if (!loaded) refresh();
@@ -167,18 +171,11 @@ export function TriggersView() {
     <div className="page">
       <div className="page-inner">
         <PageHead title="Triggers" sub="Events Crew saw, the thread each one joined, and what the two-stage filter decided">
-          <button className="btn" onClick={refresh}>
-            <RefreshCw size={14} /> Refresh
+          <button className="btn" onClick={refresh} disabled={refreshing}>
+            {refreshing ? <span className="spinner" aria-hidden /> : <RefreshCw size={14} aria-hidden />} Refresh
           </button>
         </PageHead>
-        {!enabled && (
-          <div className="notice">
-            The Super-agent is off, so no new events are recorded.{' '}
-            <button className="btn ghost sm" onClick={() => setView('settings')}>
-              Open Settings
-            </button>
-          </div>
-        )}
+        {!enabled && <OffNotice part="triggers">No new events are recorded; the ones below are from before.</OffNotice>}
         {stats && (
           <div className="routing-totals trigger-stats">
             <span>
@@ -189,35 +186,58 @@ export function TriggersView() {
             <span>Dropped {stats.drop}</span>
             {stats.candidate > 0 && <span>Deciding {stats.candidate}</span>}
             <span>
-              Model calls {stats.slowCalls} ({fmtUsd(stats.slowCostUsd)})
+              Model calls {stats.slowCalls} ({fmtCost(stats.slowCostUsd)})
             </span>
           </div>
         )}
         <div className="trigger-filters">
-          <span className="segmented wrap">
-            <button className={cx(!source && 'on')} onClick={() => setSource('')}>
+          <span className="segmented wrap" role="group" aria-label="Filter by source">
+            <button className={cx(!source && 'on')} aria-pressed={!source} onClick={() => setSource('')}>
               All
             </button>
             {(Object.keys(SOURCE_LABEL) as TriggerSource[]).map((s) => (
-              <button key={s} className={cx(source === s && 'on')} onClick={() => setSource(s)}>
+              <button key={s} className={cx(source === s && 'on')} aria-pressed={source === s} onClick={() => setSource(s)}>
                 {SOURCE_LABEL[s]}
               </button>
             ))}
           </span>
-          <span className="segmented">
-            <button className={cx(!verdict && 'on')} onClick={() => setVerdict('')}>
+          <span className="segmented" role="group" aria-label="Filter by verdict">
+            <button className={cx(!verdict && 'on')} aria-pressed={!verdict} onClick={() => setVerdict('')}>
               Any
             </button>
-            {(Object.keys(VERDICT) as Trigger['filter']['verdict'][]).map((v) => (
-              <button key={v} className={cx(verdict === v && 'on')} onClick={() => setVerdict(v)}>
-                {VERDICT[v].label}
+            {(Object.keys(TRIGGER_VERDICT) as Trigger['filter']['verdict'][]).map((v) => (
+              <button key={v} className={cx(verdict === v && 'on')} aria-pressed={verdict === v} onClick={() => setVerdict(v)}>
+                {TRIGGER_VERDICT[v].label}
               </button>
             ))}
           </span>
         </div>
-        {loaded && !shown.length ? (
-          <div className="card empty">
-            <div>{list.length ? 'No triggers match these filters.' : 'No triggers yet. Send a message, run a routine, or edit a file, and the events show up here.'}</div>
+        {!loaded ? (
+          <div className="card">{failed && !refreshing ? <ErrorState message="Couldn't load the Triggers." onRetry={refresh} /> : <LoadingState label="Loading Triggers…" />}</div>
+        ) : !shown.length ? (
+          <div className="card">
+            {list.length ? (
+              <EmptyState
+                title="No Triggers match these filters"
+                action={
+                  <button
+                    className="btn sm"
+                    onClick={() => {
+                      setSource('');
+                      setVerdict('');
+                    }}
+                  >
+                    Show all
+                  </button>
+                }
+              />
+            ) : (
+              <EmptyState icon={<Radio size={18} />} title="No Triggers yet">
+                {enabled
+                  ? 'Send a message, run a routine or edit a file: each event shows up here with the Thread it joined and what the filter decided.'
+                  : 'Turn on Triggers in Settings → Super-agent and events start showing up here.'}
+              </EmptyState>
+            )}
           </div>
         ) : (
           <div className="card trigger-list">

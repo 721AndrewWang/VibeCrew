@@ -4,21 +4,17 @@
 
 import { ChevronDown, ChevronRight, GitBranch, Network, ScrollText, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { Chat, Thread, Worker, WorkerStatus } from '../../../shared/types';
+import type { Chat, Thread, Worker } from '../../../shared/types';
 import { api } from '../api';
 import { loadLog, openModal, routerModeOf, toast, useStore, WORKER_ACTIVE } from '../store';
+import { fmtCost, WORKER_STATUS } from '../superagent';
 import { cx, fmtRelative } from '../utils';
 import { BotMessage } from './Message';
+import { Cost, EmptyState, LoadingState, StatusBadge, TriggerLink } from './SuperAgentUi';
 import { Avatar, Modal } from './ui';
 
-const STATUS: Record<WorkerStatus, { label: string; cls: string }> = {
-  starting: { label: 'Starting', cls: '' },
-  running: { label: 'Working', cls: 'accent' },
-  waiting: { label: 'Needs you', cls: 'orange' },
-  done: { label: 'Done', cls: 'green' },
-  error: { label: 'Failed', cls: 'red' },
-  stopped: { label: 'Stopped', cls: '' },
-};
+/** The Trigger a Worker was dispatched for: the first Trigger id in its Router's batch. */
+export const triggerOf = (w: Worker) => w.related.find((id) => id.startsWith('tg_'));
 
 /** One line about a Worker: what it is doing, or how its last turn ended and where its changes went. */
 function workerNote(w: Worker): string {
@@ -46,11 +42,10 @@ async function act(fn: () => Promise<unknown>, what: string) {
 function WorkerRow({ w, chat }: { w: Worker; chat: Chat }) {
   const bot = useStore((s) => s.bots[w.botId]);
   const active = WORKER_ACTIVE.has(w.status);
-  const st = STATUS[w.status];
   return (
     <div className={cx('worker-row', w.status)} data-worker={w.id}>
       <Avatar bot={bot} size={22} />
-      <button className="wr-main" onClick={() => openModal({ kind: 'agentLog', chatId: chat.id, workerId: w.id })} title="Open its transcript">
+      <button className="wr-main" onClick={() => openModal({ kind: 'agentLog', chatId: chat.id, workerId: w.id })} title="Open its transcript" aria-label={`Worker ${w.title}: open its transcript`}>
         <span className="wr-title">
           <b>{w.title}</b> <span className="muted">· {bot?.name || 'deleted bot'}</span>
           {w.threads?.length ? (
@@ -64,14 +59,20 @@ function WorkerRow({ w, chat }: { w: Worker; chat: Chat }) {
         </span>
         <span className="wr-note muted">{workerNote(w)}</span>
       </button>
-      <span className={cx('badge', st.cls)}>{st.label}</span>
+      {w.costUsd > 0 && <Cost usd={w.costUsd} />}
+      <StatusBadge status={WORKER_STATUS[w.status]} />
       {active ? (
-        <button className="icon-btn sm" title="Stop this Worker" onClick={() => void act(() => api.stopWorker(w.id), "Couldn't stop it")}>
-          <Square size={13} />
+        <button className="icon-btn sm" title="Stop this Worker" aria-label={`Stop Worker ${w.title}`} onClick={() => void act(() => api.stopWorker(w.id), "Couldn't stop it")}>
+          <Square size={13} aria-hidden />
         </button>
       ) : (
-        <button className="icon-btn sm" title="Dismiss (removes its workspace; unmerged work stays on its branch)" onClick={() => void act(() => api.dismissWorker(w.id), "Couldn't dismiss it")}>
-          <X size={14} />
+        <button
+          className="icon-btn sm"
+          title="Dismiss (removes its workspace; unmerged work stays on its branch)"
+          aria-label={`Dismiss Worker ${w.title}`}
+          onClick={() => void act(() => api.dismissWorker(w.id), "Couldn't dismiss it")}
+        >
+          <X size={14} aria-hidden />
         </button>
       )}
     </div>
@@ -107,9 +108,9 @@ export function WorkersBar({ chat }: { chat: Chat }) {
   return (
     <div className="workers-bar">
       <div className="wb-head">
-        <button className="wb-toggle" onClick={() => setOpen(!open)} disabled={!workers.length}>
+        <button className="wb-toggle" onClick={() => setOpen(!open)} disabled={!workers.length} aria-expanded={workers.length ? open : undefined}>
           {workers.length ? open ? <ChevronDown size={14} /> : <ChevronRight size={14} /> : <Network size={14} />}
-          <span>
+          <span aria-live="polite">
             Router <span className={cx('muted', router?.state === 'thinking' && 'busy')}>{routerText}</span>
           </span>
           {workers.length > 0 && (
@@ -130,7 +131,7 @@ export function WorkersBar({ chat }: { chat: Chat }) {
           </span>
         )}
         <button className="link-btn" onClick={() => openModal({ kind: 'agentLog', chatId: chat.id })} title="Every Router turn, with the events it handled">
-          <ScrollText size={12} /> Router log
+          <ScrollText size={12} aria-hidden /> Router log
         </button>
       </div>
       {open && workers.map((w) => <WorkerRow key={w.id} w={w} chat={chat} />)}
@@ -152,7 +153,12 @@ function WorkerThreads({ w, known }: { w: Worker; known: Thread[] }) {
         <div key={id} className="agent-thread" data-thread={id}>
           <span>{known.find((t) => t.id === id)?.title || 'Thread'}</span> <span className="mono muted">{id}</span>
           <span className="spacer" />
-          <button className="btn ghost sm" title="Its later events go to the Router again" onClick={() => void act(() => api.unsubscribeWorker(w.id, id), "Couldn't unsubscribe it")}>
+          <button
+            className="btn ghost sm"
+            title="Its later events go to the Router again"
+            aria-label={`Unsubscribe from ${known.find((t) => t.id === id)?.title || id}`}
+            onClick={() => void act(() => api.unsubscribeWorker(w.id, id), "Couldn't unsubscribe it")}
+          >
             Unsubscribe
           </button>
         </div>
@@ -199,7 +205,7 @@ export function AgentLogDialog({ chatId, workerId, onClose }: { chatId: string; 
       footer={
         w && WORKER_ACTIVE.has(w.status) ? (
           <button className="btn danger sm" onClick={() => void act(() => api.stopWorker(w.id), "Couldn't stop it")}>
-            <Square size={13} /> Stop
+            <Square size={13} aria-hidden /> Stop
           </button>
         ) : undefined
       }
@@ -207,9 +213,14 @@ export function AgentLogDialog({ chatId, workerId, onClose }: { chatId: string; 
       {w ? (
         <div className="agent-meta">
           <div>
-            <b>{bot?.name || 'deleted bot'}</b> · <span className={cx('badge', STATUS[w.status].cls)}>{STATUS[w.status].label}</span>
-            {w.detail ? ` · ${w.detail}` : ''} · started {fmtRelative(w.createdAt)} · {w.turns} turn{w.turns === 1 ? '' : 's'}
-            {w.costUsd ? ` · $${w.costUsd.toFixed(3)}` : ''}
+            <b>{bot?.name || 'deleted bot'}</b> · <StatusBadge status={WORKER_STATUS[w.status]} />
+            {w.detail ? ` · ${w.detail}` : ''} · started {fmtRelative(w.createdAt)} · {w.turns} turn{w.turns === 1 ? '' : 's'} · {fmtCost(w.costUsd)} so far
+            {triggerOf(w) && (
+              <>
+                {' '}
+                · dispatched for <TriggerLink id={triggerOf(w) as string} />
+              </>
+            )}
           </div>
           <div className="muted">
             {ws ? (
@@ -231,8 +242,8 @@ export function AgentLogDialog({ chatId, workerId, onClose }: { chatId: string; 
         <p className="hint">Each turn is one batch of events (messages, Worker reports, things Crew noticed). Only what the Router sends with reply reaches the chat.</p>
       )}
       <div className="agent-log msg-list">
-        {!st?.loaded && <div className="spinner" />}
-        {st?.loaded && !list.length && <div className="muted">Nothing yet.</div>}
+        {!st?.loaded && <LoadingState label="Loading the transcript…" />}
+        {st?.loaded && !list.length && <EmptyState compact title={workerId ? 'No turn yet: the Worker is starting.' : 'No Router turn yet.'} />}
         {list.map((m) => (
           <div key={m.id}>
             {!workerId && m.batch?.length ? (
