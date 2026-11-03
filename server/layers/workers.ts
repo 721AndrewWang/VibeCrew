@@ -33,7 +33,7 @@ import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
 import { chatThread, deliveriesRead, deliveriesUnread, ensureThread, handBackTrigger, publishTrigger, type ThreadSpec, threadsOf, workspaceThread } from '../triggers';
-import { monthSpend } from '../usage';
+import { overMonthlyBudget } from '../usage';
 import { ensureWatch } from '../watcher';
 import { checkGit, createSpeculativeWorkspace, createWorkerWorkspace, retireWorkerWorkspace, runSetup, type Workspace, workspaceOf } from '../workspaces';
 import { doCreate } from '../workspaces/create';
@@ -575,7 +575,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
   const chat = chats.get(w.chatId);
   const bot = bots.get(w.botId);
   if (!chat || !bot) return finish(w, 'error', 'The chat or its member no longer exists');
-  if (bot.monthlyBudgetUsd && monthSpend(bot.id) >= bot.monthlyBudgetUsd) return finish(w, 'error', `${bot.name} has used up this month's budget`);
+  if (overMonthlyBudget(bot)) return finish(w, 'error', `${bot.name} has used up this month's budget`);
   const project = projects.get(w.projectId) ?? null;
   // Never fall back to another folder (home) with full tools: no workspace, no turn.
   if (!project && !(w.shared && !w.projectId)) return finish(w, 'error', 'Its workspace is gone (or was never made); dispatch a new Worker');

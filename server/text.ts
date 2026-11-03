@@ -26,3 +26,12 @@ export function clip(s: string, max: number): string {
   const t = s.replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
+
+/** The JSON object a cheap model was asked to answer with, out of a fence or prose around it; throws when there is none. The caller checks its shape. */
+export function modelJson(text: string) {
+  const body = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('Not JSON');
+  return JSON.parse(body.slice(start, end + 1));
+}

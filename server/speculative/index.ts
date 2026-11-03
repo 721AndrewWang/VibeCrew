@@ -36,7 +36,7 @@ import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, drafts, messages, projects, settings, speculationLog, uid, workers } from '../store';
 import { chatThread, detailText, onTrigger, publishTrigger, superAgentOn, targetChat } from '../triggers';
-import { monthSpend } from '../usage';
+import { overMonthlyBudget } from '../usage';
 import { checkGit, disposeWorkspace, type Workspace } from '../workspaces';
 import { detectCheckCommand, normalizeProjectSpeculative } from './config';
 import { speculativePrompt } from './prompts';
@@ -192,7 +192,7 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
     checkCommand,
     subscribed: t.filter.rule === 'subscribed',
     chat: !!chat,
-    bot: botRefusal(lead && { name: lead.name, blindReview: lead.blindReview, level, overBudget: !!lead.monthlyBudgetUsd && monthSpend(lead.id) >= lead.monthlyBudgetUsd }),
+    bot: botRefusal(lead && { name: lead.name, blindReview: lead.blindReview, level, overBudget: overMonthlyBudget(lead) }),
     git,
     head,
     duplicateOf: twin?.id,

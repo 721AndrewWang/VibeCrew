@@ -30,7 +30,7 @@ import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '
 import { projectFamilies } from '../skills';
 import { bots, chats, messages, projects, routerLogId, settings, workers } from '../store';
 import { directRuns, handBackTrigger } from '../triggers';
-import { monthSpend } from '../usage';
+import { overMonthlyBudget } from '../usage';
 import { BatchQueue } from './batch';
 import { type DirectLine, explicitEvent, type FamilyLine, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type TeamMember } from './prompts';
 import { routerRedo } from './recovery';
@@ -228,7 +228,7 @@ class ChatRouter {
       // At once: a cursor lost in a crash would hand these messages over a second time.
       chats.flush();
     }
-    if (lead.monthlyBudgetUsd && monthSpend(lead.id) >= lead.monthlyBudgetUsd) {
+    if (overMonthlyBudget(lead)) {
       systemMessage(
         chat,
         `${lead.name} speaks for this chat's Router and has used up this month's budget ($${lead.monthlyBudgetUsd.toFixed(2)}), so the Router can't take events for now. Raise the budget or remove the limit in its settings.`,

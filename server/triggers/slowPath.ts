@@ -11,7 +11,7 @@
 import type { Trigger } from '../../shared/types';
 import { logger } from '../log';
 import { oneShot } from '../oneShot';
-import { firstWords } from '../text';
+import { firstWords, modelJson } from '../text';
 import { ago } from '../time';
 import { attr, tagDefuser, UNTRUSTED_RULE, untrusted } from '../untrusted';
 
@@ -75,11 +75,7 @@ export function slowPrompt(items: SlowItem[], policies: string, now = Date.now()
 
 /** Reads the model's decisions; ids it was not asked about and malformed entries are skipped. */
 export function parseDecisions(text: string, ids: string[]): Map<string, SlowVerdict> {
-  const body = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start < 0 || end < start) throw new Error('Not JSON');
-  const raw = JSON.parse(body.slice(start, end + 1));
+  const raw = modelJson(text);
   if (!Array.isArray(raw?.decisions)) throw new Error('No decisions list');
   const out = new Map<string, SlowVerdict>();
   for (const d of raw.decisions) {
