@@ -794,6 +794,11 @@ kbd {
   animation: pop-in 0.16s ease-out;
 }
 
+/* The dialog takes focus when it opens (ui.tsx Modal) so the keyboard starts inside it; the ring belongs on its controls. */
+.modal:focus {
+  outline: none;
+}
+
 .modal.wide {
   max-width: 820px;
 }
