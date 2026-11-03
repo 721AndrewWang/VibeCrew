@@ -2397,7 +2397,9 @@
   font-size: 13px;
 }
 .wd-card:not(.pending) {
-  opacity: 0.7;
+  /* Decided proposals recede by colour, not opacity, so their text keeps its contrast. */
+  background: var(--bg-sunken);
+  color: var(--text-2);
 }
 .wd-card-head {
   display: flex;
