@@ -5,8 +5,8 @@
 // layers/workers.ts and the orchestrator, without the store, git or Claude Code.
 
 import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { SuperAgentSettings, Thread, Trigger, Worker, WorkerDelivery } from '../../shared/types';
-import { WORKER_ACTIVE } from '../../shared/workers';
 import { REPLY_WORDS } from '../channels/profiles';
 import { DEFAULT_GITHUB } from '../github/config';
 import type { GhEvent } from '../github/events';

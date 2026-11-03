@@ -1,7 +1,7 @@
 // The Watchdog's output is probabilistic; these checks are not. Each returns why a tick or an
 // action is refused (the model reads it as the tool's error), or null. Pure.
 
-import { WORKER_ACTIVE } from '../../shared/workers';
+import { WORKER_ACTIVE } from '../../shared/status';
 import { wordCount } from '../text';
 import { NOTE_WORDS } from './prompts';
 

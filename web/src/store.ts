@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type {
   Attachment,
   AuditEntry,
@@ -33,7 +34,6 @@ import type {
   WatchdogInfo,
   Worker,
 } from '../../shared/types';
-import { WORKER_ACTIVE } from '../../shared/workers';
 import { api } from './api';
 import { desktop } from './desktop';
 

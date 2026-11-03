@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { isJobRunning } from '../../shared/status';
 import type { BackgroundJob, JobLog } from '../../shared/types';
 import type { AgentSession, TurnHooks } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
@@ -25,8 +26,6 @@ const log = logger('jobs');
 export const LOG_CAP = 5 * 1024 * 1024;
 const KEEP_PER_CHAT = 200;
 const KEEP_MS = 14 * 86_400_000;
-
-export const isRunning = (j: BackgroundJob) => j.status === 'running' || j.status === 'waiting';
 
 /** What only this process knows about a running job. */
 interface Live {
@@ -76,12 +75,12 @@ export function listJobs(chatId?: string): BackgroundJob[] {
 }
 
 export function runningJobs(chatId: string): BackgroundJob[] {
-  return listJobs(chatId).filter(isRunning);
+  return listJobs(chatId).filter(isJobRunning);
 }
 
 /** A job is running in this project (or workspace): its writes are not edits from outside. */
 export function jobsRunningIn(projectId: string): boolean {
-  return jobs.all().some((j) => j.projectId === projectId && isRunning(j));
+  return jobs.all().some((j) => j.projectId === projectId && isJobRunning(j));
 }
 
 export interface JobBase {
@@ -150,7 +149,7 @@ export function startCommand(base: JobBase, spec: CommandSpec): BackgroundJob {
         setTimeout(() => {
           pending = false;
           const now = jobs.get(j.id);
-          if (now && isRunning(now)) emit(now);
+          if (now && isJobRunning(now)) emit(now);
         }, 500).unref();
       }
     },
@@ -174,7 +173,7 @@ export function startCommand(base: JobBase, spec: CommandSpec): BackgroundJob {
   if (l.run.pid) {
     // On disk at once: a crash right after this must still find the process to stop (ADR 105).
     const cur = jobs.get(j.id);
-    if (cur && isRunning(cur)) {
+    if (cur && isJobRunning(cur)) {
       cur.pid = l.run.pid;
       jobs.set(cur);
       jobs.flush();
@@ -199,7 +198,7 @@ export function startTask(base: JobBase, spec: TaskSpec): BackgroundJob {
   const l = live.get(j.id)!;
   const status = (waiting: string | null) => {
     const cur = jobs.get(j.id);
-    if (!cur || !isRunning(cur)) return;
+    if (!cur || !isJobRunning(cur)) return;
     cur.status = waiting ? 'waiting' : 'running';
     cur.detail = waiting ? `Needs your approval: ${waiting}` : undefined;
     emit(cur);
@@ -256,7 +255,7 @@ export function outputOf(j: BackgroundJob): string[] {
 let shuttingDown = false;
 
 function finish(j: BackgroundJob, status: BackgroundJob['status'], detail?: string) {
-  if (!isRunning(j) || shuttingDown) return;
+  if (!isJobRunning(j) || shuttingDown) return;
   const l = live.get(j.id);
   if (l?.timer) clearTimeout(l.timer);
   live.delete(j.id);
@@ -278,7 +277,7 @@ function finish(j: BackgroundJob, status: BackgroundJob['status'], detail?: stri
 export async function stopJob(id: string, why: string, opts: { quiet?: boolean } = {}): Promise<BackgroundJob | undefined> {
   const j = jobs.get(id);
   const l = live.get(id);
-  if (!j || !isRunning(j) || !l) return j;
+  if (!j || !isJobRunning(j) || !l) return j;
   l.stopping ??= why;
   if (opts.quiet) l.quiet = true;
   if (l.run) await l.run.stop();
@@ -318,7 +317,7 @@ export async function stopAllJobs() {
   await Promise.all(
     jobs
       .all()
-      .filter(isRunning)
+      .filter(isJobRunning)
       .map((j) => stopJob(j.id, 'Crew is shutting down', { quiet: true })),
   );
 }
@@ -338,7 +337,7 @@ export function jobLog(id: string, from?: number, count?: number): JobLog | null
  */
 export function recoverJobs() {
   for (const j of jobs.all()) {
-    if (!isRunning(j)) continue;
+    if (!isJobRunning(j)) continue;
     // Its command may outlive Crew (its own process group): stop it, so nothing runs unreported.
     const reaped = reapOrphan(j);
     j.status = 'stopped';
@@ -358,7 +357,7 @@ export function recoverJobs() {
 export function sweepJobs(now = Date.now()) {
   const byChat = new Map<string, BackgroundJob[]>();
   for (const j of jobs.all()) {
-    if (isRunning(j)) continue;
+    if (isJobRunning(j)) continue;
     const list = byChat.get(j.chatId) ?? [];
     list.push(j);
     byChat.set(j.chatId, list);

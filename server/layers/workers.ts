@@ -7,8 +7,8 @@
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { familyInfo } from '../../shared/families';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
-import { WORKER_ACTIVE } from '../../shared/workers';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';

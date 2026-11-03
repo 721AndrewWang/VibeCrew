@@ -4,8 +4,8 @@
 
 import { ChevronDown, ChevronRight, GitBranch, Network, ScrollText, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { WORKER_ACTIVE } from '../../../shared/status';
 import type { Chat, Thread, Worker, WorkerStatus } from '../../../shared/types';
-import { WORKER_ACTIVE } from '../../../shared/workers';
 import { api } from '../api';
 import { loadLog, openModal, routerModeOf, toast, useStore } from '../store';
 import { cx, fmtRelative } from '../utils';

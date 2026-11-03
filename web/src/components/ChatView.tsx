@@ -16,8 +16,8 @@ import {
   Users,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { WORKER_ACTIVE } from '../../../shared/status';
 import type { Chat } from '../../../shared/types';
-import { WORKER_ACTIVE } from '../../../shared/workers';
 import { api } from '../api';
 import { chatProjectId, listProjects, loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore } from '../store';
 import { cx, fmtDay, isSameDay, statusLabel } from '../utils';

@@ -12,8 +12,8 @@
 import fs from 'node:fs';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { Cron } from 'croner';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { ChatMessage, WatchdogAction, WatchdogActionKind, WatchdogInfo, WatchdogOverview, WatchdogProposal, WatchdogTick, WatchdogWatch, Worker } from '../../shared/types';
-import { WORKER_ACTIVE } from '../../shared/workers';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
 import { NO_TOOL_SEARCH } from '../agents/toolSearch';

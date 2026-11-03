@@ -6,7 +6,7 @@
 // It is deliberately plain: it measures scheduling, not judgement. Each agent's choices are
 // listed in ADR 101.
 
-import { WORKER_ACTIVE } from '../../shared/workers';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { Block, Message, ModelRequest, Policy, Reply } from './model';
 import { DELEGATE_MARK, FILTER_MARK, LEAD_MARK, SPECULATIVE_MARK, SUBTASK_MARK, WORKER_MARK } from './prompts';
 

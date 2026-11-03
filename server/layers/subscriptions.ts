@@ -1,8 +1,8 @@
 // Thread subscriptions (ADR 003): which Workers a Trigger goes straight to, and the bound on what
 // waits in a Worker's inbox. Pure, so the rules are easy to test.
 
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { SuperAgentSettings, Worker, WorkerDelivery } from '../../shared/types';
-import { WORKER_ACTIVE } from '../../shared/workers';
 
 /** At most this many delivered Triggers wait in a Worker's inbox; the oldest go first. */
 export const INBOX_MAX = 20;

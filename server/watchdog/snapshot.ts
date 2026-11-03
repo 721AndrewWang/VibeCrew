@@ -6,8 +6,8 @@
 // reads the rest. Text from Workers, pages, errors, friction and the audit log is in the same
 // <untrusted> wrapper as everywhere else in Crew (ADR 007), so it reads as data, never instructions.
 
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { AuditEntry } from '../../shared/types';
-import { WORKER_ACTIVE } from '../../shared/workers';
 import { defuse } from '../layers/prompts';
 import { firstWords } from '../text';
 import { ago } from '../time';
