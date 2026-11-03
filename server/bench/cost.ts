@@ -298,6 +298,15 @@ export async function runCost(i: CostInputs, opts: Partial<BenchOptions> = {}, c
   return { result, runs };
 }
 
+/**
+ * What a role's tokens cost, in input-token equivalents at Anthropic's price ratios: a token written
+ * to the prompt cache 1.25, a cached token re-read 0.1, an output token 5. Injected text is new in
+ * the call that adds it and cached after that; the rest of every call's context is a cached read.
+ */
+export function costUnits(c: Pick<RoleCost, 'injected' | 'contextRead' | 'output'>): number {
+  return Math.round(c.injected * 1.25 + Math.max(0, c.contextRead - c.injected) * 0.1 + c.output * 5);
+}
+
 // ---------------------------------------------------------------- printing
 
 const pct = (x: number, base: number) => (base ? `${x >= base ? '+' : ''}${Math.round(((x - base) / base) * 1000) / 10}%` : '–');
@@ -317,7 +326,7 @@ export function costTable(r: CostResult, before?: CostResult): string {
     for (const [role, c] of Object.entries(s.roles) as [Role, RoleCost][]) {
       const p = b?.roles[role];
       lines.push(
-        `  ${role.padEnd(12)} calls ${cmp(c.calls, p?.calls).padEnd(14)} static ${cmp(c.staticTokens, p?.staticTokens).padEnd(16)} mean prompt ${cmp(c.meanPromptTokens, p?.meanPromptTokens).padEnd(16)} context read ${cmp(c.contextRead, p?.contextRead).padEnd(20)} model ${cmp(c.modelSec, p?.modelSec)} s`,
+        `  ${role.padEnd(12)} calls ${cmp(c.calls, p?.calls).padEnd(14)} static ${cmp(c.staticTokens, p?.staticTokens).padEnd(16)} injected ${cmp(c.injected, p?.injected).padEnd(18)} mean prompt ${cmp(c.meanPromptTokens, p?.meanPromptTokens).padEnd(16)} context read ${cmp(c.contextRead, p?.contextRead).padEnd(20)} cost ${cmp(costUnits(c), p && costUnits(p)).padEnd(18)} model ${cmp(c.modelSec, p?.modelSec)} s`,
       );
     }
     const w = s.watchdog;

@@ -272,9 +272,18 @@ function handedBackLine(h: HandedBack | undefined): string[] {
   return h ? [`${h.by} received this directly and handed it back to you${h.note ? `: ${defuse(firstWords(h.note, 60).text)}` : ''}`] : [];
 }
 
-function workerLine(w: WorkerLine): string {
+const ENDED = new Set(['done', 'error', 'stopped']);
+
+/**
+ * One Worker as the Router sees it. An ended Worker is listed by id, member, status and title only
+ * (`brief`): the Router read its report when it arrived, and list_workers reads it again. The list is
+ * re-sent every turn, so a note repeated for every finished Worker is most of a batch.
+ */
+function workerLine(w: WorkerLine, brief = false): string {
+  const head = `${w.id} · ${w.bot} · ${w.status} · "${attr(w.title)}"`;
+  if (brief) return head;
   const threads = w.threads?.length ? ` · subscribed: ${w.threads.map((t) => `${t.id} "${attr(t.title)}"`).join(', ')}` : '';
-  return `${w.id} · ${w.bot} · ${w.status} · "${attr(w.title)}"${w.note ? ` · ${defuse(w.note)}` : ''}${threads}`;
+  return `${head}${w.note ? ` · ${defuse(w.note)}` : ''}${threads}`;
 }
 
 /** What went straight to Workers since the Router's last turn: observed, not decided. */
@@ -299,7 +308,10 @@ function renderDirect(direct: DirectLine[]): string[] {
 export function renderBatch(events: RouterEvent[], workers: WorkerLine[], now = Date.now(), recap?: string, direct: DirectLine[] = [], recall?: Budget): string {
   const out: string[] = [];
   if (recap) out.push(recap, '');
-  out.push('<workers>', ...(workers.length ? workers.map(workerLine) : ['(none)']), '</workers>', '');
+  // In full: active Workers, the ones whose report is in this batch, and everyone on a new session's first turn.
+  const reported = new Set(events.flatMap((e) => (e.kind === 'worker' ? [e.id] : [])));
+  const brief = (w: WorkerLine) => !recap && ENDED.has(w.status) && !reported.has(w.id);
+  out.push('<workers>', ...(workers.length ? workers.map((w) => workerLine(w, brief(w))) : ['(none)']), '</workers>', '');
   out.push(...renderDirect(direct));
   out.push(`${events.length} new event${events.length === 1 ? '' : 's'}, oldest first:`, '');
   for (const e of events) out.push(...renderEvent(e, now, recall), '');
