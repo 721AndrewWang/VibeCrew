@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { WORKER_ACTIVE } from '../../../shared/status';
 import type { Chat } from '../../../shared/types';
 import { api } from '../api';
 import { chatProjectId, listProjects, loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore } from '../store';
@@ -23,9 +24,13 @@ import { cx, fmtDay, isSameDay, statusLabel } from '../utils';
 import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { Composer } from './Composer';
 import { ComputerPane } from './computer/ComputerPane';
+import { DraftsBar } from './DraftsBar';
+import { JobsBar } from './JobsBar';
 import { BotMessage, SystemMessage, UserMessage } from './Message';
 import { chatMenuItems } from './Sidebar';
+import { SpeculativeBar } from './SpeculativeBar';
 import { Avatar, confirmDialog, Glyph, GroupAvatar, MenuButton, type MenuItem } from './ui';
+import { WorkersBar } from './WorkersBar';
 
 /** Switching the project closes the chat's workspace (a branch with unmerged work is kept). */
 async function switchProject(chat: Chat, projectId: string | null) {
@@ -86,6 +91,14 @@ function ChatHeader({ chat }: { chat: Chat }) {
   const dm = chat.kind === 'dm' ? members[0] : null;
   const st = dm ? statuses[dm.id] : undefined;
   const busy = members.filter((b) => statuses[b.id]?.chatId === chat.id && statuses[b.id]?.state !== 'idle' && statuses[b.id]?.state !== 'error');
+  // Two-layer mode: the Router and its Workers, not the bots' own statuses.
+  const layers = useStore((s) => {
+    const thinking = s.routers[chat.id]?.state === 'thinking';
+    const ws = Object.values(s.workers).filter((w) => w.chatId === chat.id && WORKER_ACTIVE.has(w.status));
+    if (!thinking && !ws.length) return '';
+    const waiting = ws.some((w) => w.status === 'waiting');
+    return [thinking ? 'Router thinking…' : '', ws.length ? `${ws.length} Worker${ws.length === 1 ? '' : 's'} ${waiting ? 'waiting for you' : 'working'}` : ''].filter(Boolean).join(' · ');
+  });
   return (
     <header className="chat-head">
       <button className="icon-btn mobile-back" onClick={() => useStore.setState({ mobilePane: 'list' })} aria-label="Back">
@@ -102,6 +115,8 @@ function ChatHeader({ chat }: { chat: Chat }) {
               ) : (
                 dm.title
               )
+            ) : layers ? (
+              <span className="ch-status busy">{layers}</span>
             ) : busy.length ? (
               <span className="ch-status busy">
                 {busy.map((b) => b.name).join(', ')} {busy.some((b) => statuses[b.id]?.state === 'waiting') ? 'waiting for you' : 'working…'}
@@ -380,6 +395,10 @@ export function ChatView() {
         <ChatHeader chat={chat} />
         <AuthBanner />
         <MessageList chat={chat} />
+        <WorkersBar chat={chat} />
+        <JobsBar chatId={chat.id} />
+        <DraftsBar chat={chat} />
+        <SpeculativeBar chatId={chat.id} />
         <Composer chat={chat} />
       </section>
       {computer.open && <Resizer />}

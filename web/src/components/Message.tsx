@@ -1,10 +1,12 @@
-import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Route, ShieldCheck, Undo2, X, Zap } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock, FileCode2, Film, MousePointerClick, Network, Radio, Route, ShieldCheck, Timer, Undo2, X, Zap } from 'lucide-react';
 import { type CSSProperties, memo, type ReactNode, useState } from 'react';
 import type { ApprovalPart, Attachment, Bot, Chat, ChatMessage, MessagePart, ToolPart } from '../../../shared/types';
 import { api } from '../api';
-import { chatProjectId, focusTurn, openFileInEditor, openModal, toast, useStore } from '../store';
-import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo } from '../utils';
+import { chatProjectId, focusTurn, openFileInEditor, openModal, setView, toast, useStore } from '../store';
+import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo, withoutUntrustedTags } from '../utils';
 import { Markdown } from './Markdown';
+import { ReplyKindLabel, ReportDetails } from './ReportDetails';
+import { SpeculationNotice } from './SpeculativeBar';
 import { Avatar, confirmDialog, Glyph } from './ui';
 
 // ---------------------------------------------------------------- attachments
@@ -275,6 +277,13 @@ function ApprovalCard({ part }: { part: ApprovalPart }) {
           </span>
         )}
       </div>
+      {part.effects?.length ? (
+        <ul className="approval-effects" title="What this changes, as Crew's command guard reads it">
+          {part.effects.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      ) : null}
       {part.detail && <pre className="approval-detail">{part.detail}</pre>}
       {part.because && <div className="approval-reason">Why approval is needed: {part.because}</div>}
       {part.reason && pending && <div className="approval-reason">{part.reason}</div>}
@@ -398,7 +407,24 @@ function ChangesBar({ msg, chat }: { msg: ChatMessage; chat: Chat }) {
   );
 }
 
-export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, names, root }: { msg: ChatMessage; chat: Chat; bot?: Bot; showHead: boolean; names: string[]; root?: string }) {
+export const BotMessage = memo(function BotMessage({
+  msg,
+  chat,
+  bot,
+  showHead,
+  names,
+  root,
+  label,
+}: {
+  msg: ChatMessage;
+  chat: Chat;
+  bot?: Bot;
+  showHead: boolean;
+  names: string[];
+  root?: string;
+  /** Who speaks when it is not a bot (the Watchdog). */
+  label?: string;
+}) {
   const live = msg.status === 'streaming';
   const workProjectId = useStore((s) => chatProjectId(chat, s.projects));
   const blocks = groupParts(msg.parts || []);
@@ -411,9 +437,15 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
         {showHead && (
           <div className="msg-head">
             <span className="msg-name" style={{ '--bot-color': bot?.color } as CSSProperties}>
-              {bot?.name || 'Deleted bot'}
+              {bot?.name || label || 'Deleted bot'}
             </span>
             {by && <span className="msg-meta">replying to @{by}</span>}
+            {msg.router && (
+              <span className="msg-meta" title="Posted by the chat's Router, which dispatches Workers and reports what they did">
+                <Network size={11} /> Router
+              </span>
+            )}
+            <ReplyKindLabel channel={msg.channel} />
             {msg.trigger?.type === 'routine' && (
               <span className="msg-meta">
                 <Clock size={11} /> Routine
@@ -464,6 +496,7 @@ export const BotMessage = memo(function BotMessage({ msg, chat, bot, showHead, n
             </span>
           </div>
         )}
+        <ReportDetails channel={msg.channel} chat={chat} />
         {msg.status === 'error' && (
           <div className="msg-error">
             <AlertTriangle size={14} />
@@ -536,9 +569,59 @@ export const UserMessage = memo(function UserMessage({ msg, chat, names, showTim
 });
 
 export function SystemMessage({ msg }: { msg: ChatMessage }) {
+  // A note from the Super-agent's event filter: only the user sees it; the event is in Triggers.
+  if (msg.notice === 'watchdog') {
+    return (
+      <div className="msg-system trigger-notice">
+        <span>
+          <ShieldCheck size={12} /> {msg.text}{' '}
+          <button className="link-btn" onClick={() => setView('watchdog')}>
+            Watchdog
+          </button>
+        </span>
+      </div>
+    );
+  }
+  if (msg.notice === 'trigger') {
+    return (
+      <div className="msg-system trigger-notice">
+        <span>
+          <Radio size={12} /> {msg.text}{' '}
+          <button className="link-btn" onClick={() => setView('triggers')}>
+            Triggers
+          </button>
+        </span>
+      </div>
+    );
+  }
+  if (msg.notice === 'job') return <JobResult msg={msg} />;
+  // A verified speculative fix (ADR 008): its card, kept live; the text stands in once the run is gone.
+  if (msg.notice === 'speculative' && msg.speculationId) return <SpeculationNotice id={msg.speculationId} fallback={msg.text} />;
   return (
     <div className="msg-system">
-      <span>{msg.text}</span>
+      {/* An outside-edit note carries the agents' <untrusted> label (ADR 104); people read it without. */}
+      <span>{msg.notice === 'outside-edit' ? withoutUntrustedTags(msg.text) : msg.text}</span>
+    </div>
+  );
+}
+
+/** A background job's result as the bot got it (ADR 004): one line, the output on demand, the full log a click away. */
+function JobResult({ msg }: { msg: ChatMessage }) {
+  const [first, ...rest] = msg.text.split('\n');
+  const failed = / · (failed|stopped)/.test(first);
+  return (
+    <div className={cx('msg-system job-result', failed && 'failed')} data-job={msg.jobId}>
+      <details>
+        <summary>
+          <Timer size={12} /> {first.replace(/^Background job /, '')}
+        </summary>
+        <pre>{rest.join('\n')}</pre>
+      </details>
+      {msg.jobId && (
+        <button className="link-btn" onClick={() => openModal({ kind: 'jobLog', jobId: msg.jobId! })}>
+          Full log
+        </button>
+      )}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { logger } from './log';
 import { oneShot } from './oneShot';
 import { parseMentions } from './orchestrator/chatLog';
 import { chats, messages, routingLog, settings, uid } from './store';
+import { modelJson } from './text';
 
 const log = logger('routing');
 
@@ -32,11 +33,7 @@ interface Candidate {
 
 /** Turns a probability answer for candidates in one order into probabilities by bot id. */
 export function parseProbs(text: string, order: Candidate[]): Record<string, number> {
-  const body = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start < 0 || end < start) throw new Error('Not JSON');
-  const raw = JSON.parse(body.slice(start, end + 1));
+  const raw = modelJson(text);
   const probs = (raw.probabilities ?? raw) as Record<string, unknown>;
   const out: Record<string, number> = {};
   for (const c of order) {

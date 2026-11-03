@@ -2,6 +2,8 @@
 // The desktop app captures stdout/stderr into ~/.crew/logs/server.log. CREW_LOG_LEVEL picks how much
 // is written (debug, info, warn, error or silent; info by default).
 
+import { redact } from './hardening/redactor';
+
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 } as const;
 type Level = Exclude<keyof typeof LEVELS, 'silent'>;
 
@@ -19,7 +21,8 @@ function format(value: unknown): string {
 
 function write(level: Level, scope: string, args: unknown[]) {
   if (LEVELS[level] < threshold) return;
-  const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} [${scope}] ${args.map(format).join(' ')}`;
+  // No secret Crew holds ever reaches the log (ADR 104).
+  const line = redact(`${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} [${scope}] ${args.map(format).join(' ')}`);
   if (level === 'error' || level === 'warn') process.stderr.write(`${line}\n`);
   else process.stdout.write(`${line}\n`);
 }

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 7001,
+    "body": "Still broken on Safari.",
+    "user": { "login": "carol", "type": "User" },
+    "html_url": "https://github.com/acme/shop/issues/12#issuecomment-7001",
+    "issue_url": "https://api.github.com/repos/acme/shop/issues/12",
+    "created_at": "2026-11-02T10:10:00Z"
+  },
+  {
+    "id": 7002,
+    "body": "Coverage report: 81%",
+    "user": { "login": "codecov[bot]", "type": "Bot" },
+    "html_url": "https://github.com/acme/shop/pull/13#issuecomment-7002",
+    "issue_url": "https://api.github.com/repos/acme/shop/issues/13",
+    "created_at": "2026-11-02T10:11:00Z"
+  }
+]

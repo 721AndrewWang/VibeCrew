@@ -184,6 +184,8 @@ export class TurnStream {
   finish(result: SDKResultMessage) {
     // Claude Code reports running totals for the whole session; the orchestrator turns them into this turn's share.
     this.msg.meta = {
+      // Measured when the prompt was built (the chain of recall), before the result came in.
+      ...(this.msg.meta?.injected ? { injected: this.msg.meta.injected } : {}),
       sessionCostUsd: result.total_cost_usd,
       sessionTokens: sumTokens(result.modelUsage),
       durationMs: result.duration_ms,

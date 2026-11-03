@@ -1,6 +1,7 @@
 import {
   Accessibility,
   AlarmClock,
+  Bandage,
   Bell,
   BookOpen,
   Bot as BotIcon,
@@ -16,10 +17,12 @@ import {
   Coffee,
   Compass,
   Database,
+  Dices,
   Drama,
   Eye,
   Feather,
   FileText,
+  Flag,
   Flame,
   FlaskConical,
   FolderOpen,
@@ -64,6 +67,7 @@ import {
   SquareTerminal,
   Star,
   Stethoscope,
+  Tag,
   Target,
   Terminal,
   TriangleAlert,
@@ -72,7 +76,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { type LogoId, logoOf } from '../../../shared/logos';
@@ -175,6 +179,10 @@ const EMOJI_ICONS: Record<string, LucideIcon> = {
   '🐙': GitBranch,
   '⏰': AlarmClock,
   '⚠': TriangleAlert,
+  '🏷': Tag,
+  '🩹': Bandage,
+  '🏁': Flag,
+  '🎲': Dices,
 };
 
 const lineIcon = (emoji?: string): LucideIcon | undefined => EMOJI_ICONS[(emoji || '').replace(/\uFE0F/g, '')];
@@ -260,7 +268,14 @@ export function GroupAvatar({ bots, size = 40 }: { bots: Bot[]; size?: number })
 
 // ---------------------------------------------------------------- modal
 
+const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ title, icon, onClose, children, footer, wide }: { title: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  // Where focus was when the dialog opened, read during the first render (before an autoFocus inside moves it).
+  const opener = useRef<Element | null | undefined>(undefined);
+  if (opener.current === undefined) opener.current = document.activeElement;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -268,12 +283,36 @@ export function Modal({ title, icon, onClose, children, footer, wide }: { title:
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Keyboard users land in the dialog and go back where they were when it closes.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) el.focus();
+    return () => {
+      const back = opener.current;
+      if (back instanceof HTMLElement && back.isConnected) back.focus();
+    };
+  }, []);
+  // Tab cycles inside the dialog instead of wandering into the page behind it.
+  const trap = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Tab' || !ref.current) return;
+    const list = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => x.offsetParent !== null);
+    if (!list.length) return;
+    const first = list[0];
+    const last = list[list.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cx('modal', wide && 'wide')} role="dialog" aria-modal="true">
+      <div className={cx('modal', wide && 'wide')} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref} tabIndex={-1} onKeyDown={trap}>
         <div className="modal-head">
           {icon}
-          <h2>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <span className="spacer" />
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
@@ -462,8 +501,9 @@ export function MenuButton({
 
 // ---------------------------------------------------------------- misc
 
-export function Toggle({ on, onChange, disabled, title }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string }) {
-  return <button type="button" className={cx('toggle', on && 'on')} disabled={disabled} title={title} onClick={() => onChange(!on)} aria-pressed={on} />;
+/** An on/off switch. `label` is its accessible name: the switch draws no text of its own, so without one a screen reader says only "switch". */
+export function Toggle({ on, onChange, disabled, title, label }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string; label?: string }) {
+  return <button type="button" role="switch" className={cx('toggle', on && 'on')} disabled={disabled} title={title} aria-label={label} aria-checked={on} onClick={() => onChange(!on)} />;
 }
 
 export function Toasts() {

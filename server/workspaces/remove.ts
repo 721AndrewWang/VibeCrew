@@ -41,7 +41,7 @@ function unregister(ws: Workspace) {
  * Removes a workspace's worktree (and its branch when asked). When the branch is kept, the work is
  * committed to it first; if that is not possible nothing is touched and the error is thrown.
  */
-async function disposeWorkspace(ws: Workspace, deleteBranch: boolean) {
+export async function disposeWorkspace(ws: Workspace, deleteBranch: boolean) {
   const info = ws.workspace;
   const exists = fs.existsSync(info.worktree);
   if (exists && !deleteBranch) {
@@ -91,7 +91,8 @@ export async function doRemove(chatId: string, deleteBranch: boolean) {
  * if that work cannot be committed, the worktree stays on disk and the user is told where.
  */
 async function retire(ws: Workspace) {
-  const keep = await hasUnmergedWork(ws.workspace);
+  // A speculative run's branch was never anyone's work (ADR 008).
+  const keep = !ws.workspace.speculative && (await hasUnmergedWork(ws.workspace));
   try {
     await disposeWorkspace(ws, !keep);
   } catch (e) {
@@ -103,18 +104,34 @@ async function retire(ws: Workspace) {
   }
 }
 
-/** The chat is deleted or moved to another project: its workspace goes away in the background. */
+/** The chat is deleted or moved to another project: its workspace, and its Workers', go away in the background. */
 export function detachWorkspace(chat: Chat) {
   const ws = workspaceOf(chat);
   chat.workspaceId = null;
   if (ws) void retire(ws).catch((e) => log.warn('retire:', gitError(e)));
+  for (const p of projects.all()) if (p.workspace?.workerId && p.workspace.chatId === chat.id) void retire(p as Workspace).catch((e) => log.warn('retire:', gitError(e)));
 }
 
-/** Startup: drop workspaces whose chat is gone, and chats whose worktree was deleted by hand. */
-export async function reconcileWorkspaces() {
+/** A Worker's workspace is gone: the branch stays if its work never reached the chat's branch. */
+export async function retireWorkerWorkspace(ws: Workspace) {
+  await retire(ws);
+}
+
+/**
+ * Startup: drop workspaces whose chat (or Worker) is gone, and chats whose worktree was deleted by
+ * hand. `liveWorkers` are the Workers whose workspaces stay.
+ */
+export async function reconcileWorkspaces(liveWorkers: Set<string> = new Set()) {
   for (const p of projects.all()) {
     if (!p.workspace) continue;
     const ws = p as Workspace;
+    if (ws.workspace.workerId) {
+      if (!liveWorkers.has(ws.workspace.workerId) || !chats.get(ws.workspace.chatId)) await retire(ws).catch((e) => log.warn('cleanup:', gitError(e)));
+      else if (!fs.existsSync(ws.workspace.worktree)) projects.delete(ws.id);
+      // A Worker cut short by a restart: its work so far is kept on its branch.
+      else await autoCommit(ws.workspace.worktree, 'Recovered: uncommitted changes from before the last interruption').catch(() => {});
+      continue;
+    }
     const chat = chats.get(ws.workspace.chatId);
     if (!chat || chat.workspaceId !== ws.id) {
       await retire(ws).catch((e) => log.warn('cleanup:', gitError(e)));

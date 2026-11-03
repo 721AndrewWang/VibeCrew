@@ -1,4 +1,4 @@
-import type { BotStatus, PermissionLevel, ToolPart } from '../../shared/types';
+import type { BotStatus, PermissionLevel, PublicSettings, ToolPart } from '../../shared/types';
 
 export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
@@ -62,6 +62,11 @@ export function fmtDuration(ms: number) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/** The list with `x` added, or without it when it was in. */
+export function toggled<T>(list: T[], x: T): T[] {
+  return list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
+}
+
 /** "1 file" / "3 files". */
 export function plural(n: number, one: string, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
@@ -74,6 +79,11 @@ export function fmtRelative(ts: number) {
   const n = Math.max(1, Math.round(abs / (unit[0] as number)));
   const label = `${n} ${unit[1]}${n === 1 ? '' : 's'}`;
   return diff >= 0 ? `in ${label}` : `${label} ago`;
+}
+
+/** Dollars: cents below $10, whole dollars from there. */
+export function fmtUsd(n: number) {
+  return n >= 10 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
 }
 
 /** Token counts: 950, 1.2k, 45k, 1.3M. */
@@ -247,4 +257,17 @@ export function copyText(text: string) {
   document.execCommand('copy');
   ta.remove();
   return Promise.resolve();
+}
+
+/** The model gateway's addresses for the model pickers: groups first, then each provider's models. */
+export function gatewayOptions(gw: Pick<PublicSettings['gateway'], 'groups' | 'providers'>): { id: string; label: string }[] {
+  return [
+    ...gw.groups.map((g) => ({ id: g.id, label: `${g.id} (group: ${g.members.join(' → ') || 'empty'})` })),
+    ...gw.providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}/${m}`, label: `${p.id}/${m}` }))),
+  ];
+}
+
+/** Text with the agents' `<untrusted …>` labels (ADR 104) taken out, for people to read. */
+export function withoutUntrustedTags(text: string): string {
+  return text.replace(/<untrusted\b[^>]*>\n?/g, '').replace(/\n?<\/untrusted>/g, '');
 }

@@ -4,19 +4,31 @@ import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
 import { isLogoId } from '../shared/logos';
-import type { Attachment, Bootstrap, RecordedStep } from '../shared/types';
+import { WORKER_ACTIVE } from '../shared/status';
+import type { Attachment, AuditEntry, Bootstrap, FilteredSource, GatewayProvider, GatewaySettings, RecordedStep, SourceRule } from '../shared/types';
 import { memoryFile, readMemory } from './agents/prompts';
 import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
+import { auditEntries } from './audit';
 import { hasBrowser, screenshot } from './browser';
 import { bus } from './bus';
+import { channelRoutes } from './channels';
 import { authStatus, checkAuth, testConnection } from './claudeAuth';
 import { APP_VERSION, lanAddress, tailscaleAddress } from './config';
 import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
 import { PROVIDER_PRESETS } from './data/providers';
 import { devServer, devServerStates } from './devserver';
+import { approveDraft, createDraft, discardDraft, listDrafts } from './drafts';
 import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, updateBot, updateChat } from './entities';
 import { frictionReport } from './friction';
+import { addImportedProvider, gatewayOn, gatewayReport, syncGateway, testGateway } from './gateway';
+import { normalizeGateway } from './gateway/config';
+import { githubStatuses, pollGithub, syncGithub } from './github';
+import { guardTool } from './guard';
+import { brokerConnection, syncBroker } from './hardening/broker';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
+import { getJob, jobLog, listJobs, stopJob } from './jobs';
+import { activeWorkers, dismissWorker, invalidateRouters, listWorkers, refreshWorkerSessions, routerInfos, stopWorker, unsubscribeWorker } from './layers';
+import { subscriptionsOn } from './layers/subscriptions';
 import { DraftEdit, draftSkill, editSkillDraft, skillCandidates } from './learnSkills';
 import { logger } from './log';
 import { botStatuses, invalidateAllSessions, invalidateProject, resetChat, resolveApproval, sendUserMessage, setPreviewPage, stopChat } from './orchestrator';
@@ -24,6 +36,7 @@ import { noteEditorWrite } from './outsideEdits';
 import { ensurePreview, previewInfos, restartPreviews } from './preview';
 import {
   allProjects,
+  chatProjectId,
   createProject,
   decorate,
   getProject,
@@ -40,8 +53,11 @@ import {
 } from './projects';
 import { barkUrlOk, sendBark } from './push';
 import { quietly } from './quietWrites';
+import { recallOn, recallText } from './recall';
 import { routingReport } from './router';
 import { deleteRoutine, runRoutine, saveRoutine } from './routines';
+import { guardContext } from './safety';
+import { normalizeSafety } from './safetyConfig';
 import { cleanDomains, sandboxStatus } from './sandbox';
 import {
   Approval,
@@ -49,9 +65,14 @@ import {
   BotPatch,
   body,
   ChatPatch,
+  DraftInput,
+  GatewayTestBody,
+  GithubPoll,
   GroupCreate,
+  GuardCheck,
   ImprovementReject,
   MessageSend,
+  PreviewConsole,
   ProjectOpen,
   ProjectPatch,
   RoutineSave,
@@ -60,13 +81,19 @@ import {
   SkillDraftRequest,
   SkillSave,
   Upload,
+  WatchdogMessage,
+  WorkerUnsubscribe,
 } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
-import { bots, chats, improvements, messages, projects, routines, type Settings, settings } from './store';
+import { bootSpeculations, discardSpeculation, getSpeculation, listSpeculations, mergeSpeculation, speculationDiff, spentToday } from './speculative';
+import { bots, chats, improvements, messages, projects, routerLogId, routines, type Settings, settings, WATCHDOG_LOG, workers } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
+import { listTriggers, publishConsole, threadsOf, triggerDetail } from './triggers';
+import { normalizeSuperAgent } from './triggers/fastPath';
 import { IMAGE_MIMES, saveUpload, uploadFile } from './uploads';
 import { usageOf } from './usage';
+import { acceptProposal, askWatchdog, dismissWatch, invalidateWatchdog, rejectProposal, syncWatchdog, tick, watchdogOverview } from './watchdog';
 import { abortSync, commitWorkspace, createWorkspace, mergeWorkspace, removeWorkspace, resolveConflicts, suggestCommitMessage, syncWorkspace, workspaceDiff, workspaceStatus } from './workspaces';
 
 const log = logger('api');
@@ -98,6 +125,11 @@ function bootstrap(): Bootstrap {
     templates: BOT_TEMPLATES,
     plugins: PLUGINS,
     statuses: botStatuses(),
+    workers: listWorkers(),
+    routers: routerInfos(),
+    jobs: listJobs(),
+    drafts: listDrafts(),
+    speculations: bootSpeculations(),
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
@@ -110,6 +142,9 @@ function bootstrap(): Bootstrap {
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+/** The gateway settings a session is made with (the rest is read per request). */
+const sessionView = (g: GatewaySettings) => JSON.stringify([g.enabled, g.port, g.providers, g.groups, g.defaultTarget, g.fastTarget, g.roles]);
 
 /** Connection fields from a request body (Settings page), applied over the saved settings. */
 function connectionPatch(b: Record<string, unknown>, cur: Settings): Partial<Settings> {
@@ -182,6 +217,32 @@ export function apiRouter() {
       if (barkUrl && !barkUrlOk(barkUrl)) throw new HttpError(400, "That Bark URL doesn't look right; it should look like https://api.day.app/your-key");
       patch.push = { barkUrl, afterMinutes: b.push.afterMinutes ?? prev.afterMinutes };
     }
+    if (b.superAgent) {
+      // Partial per source: a patch to one source's mode keeps its allow-list, and the other sources.
+      const sources = { ...cur.superAgent.sources };
+      for (const [k, v] of Object.entries(b.superAgent.sources || {}) as [FilteredSource, Partial<SourceRule> | undefined][]) if (v) sources[k] = { ...sources[k], ...v };
+      patch.superAgent = normalizeSuperAgent({
+        ...cur.superAgent,
+        ...b.superAgent,
+        sources,
+        router: { ...cur.superAgent.router, ...b.superAgent.router },
+        recall: { ...cur.superAgent.recall, ...b.superAgent.recall },
+        watchdog: { ...cur.superAgent.watchdog, ...b.superAgent.watchdog },
+        speculative: { ...cur.superAgent.speculative, ...b.superAgent.speculative },
+      });
+    }
+    if (b.gateway || b.gatewayTokens) {
+      patch.gateway = normalizeGateway({ ...cur.gateway, ...b.gateway });
+      const tokens = { ...cur.gatewayTokens };
+      for (const [k, v] of Object.entries(b.gatewayTokens || {})) {
+        if (v.trim()) tokens[k] = v.trim();
+        else delete tokens[k];
+      }
+      // A removed provider's key goes with it.
+      for (const k of Object.keys(tokens)) if (!patch.gateway.providers.some((p) => p.id === k)) delete tokens[k];
+      patch.gatewayTokens = tokens;
+    }
+    if (b.safety) patch.safety = normalizeSafety({ ...cur.safety, ...b.safety });
     if (b.sandbox) {
       patch.sandbox = { enabled: b.sandbox.enabled ?? cur.sandbox.enabled, allowedDomains: b.sandbox.allowedDomains ? cleanDomains(b.sandbox.allowedDomains) : cur.sandbox.allowedDomains };
     }
@@ -194,10 +255,37 @@ export function apiRouter() {
       patch.pluginSecrets = next;
     }
     const lanChanged = patch.lanEnabled !== undefined && patch.lanEnabled !== cur.lanEnabled;
+    const routesChanged = !!patch.gateway && sessionView(patch.gateway) !== sessionView(cur.gateway);
+    const recallBefore = recallOn();
+    const brokerBefore = !!brokerConnection(cur);
     settings.update(patch);
+    // The key broker (ADR 104) stands in for a settings-held key while credentials are stripped.
+    await syncBroker();
+    const brokerChanged = brokerBefore !== !!brokerConnection(settings.get());
+    // Sessions get the gateway's address, credential and target when they start.
+    if (routesChanged) {
+      await syncGateway();
+      invalidateAllSessions();
+      invalidateRouters();
+      invalidateWatchdog();
+      void checkAuth(true);
+    }
     bus.emit({ t: 'settings', settings: settings.public() });
     // Claude Code gets the deny list when a session starts.
-    if (patch.denyRules || patch.sandbox) invalidateAllSessions();
+    // Recall's tool (and the system prompt that names it) is fixed when a session starts.
+    const recallChanged = recallOn() !== recallBefore || (recallBefore && !!b.superAgent?.recall);
+    // ...and its environment: stripping credentials (ADR 007) changes what every agent session starts with.
+    const stripChanged = !!patch.safety && patch.safety.stripCredentials !== cur.safety.stripCredentials;
+    if (patch.denyRules || patch.sandbox || recallChanged || stripChanged || brokerChanged) invalidateAllSessions();
+    if (stripChanged || brokerChanged) invalidateWatchdog();
+    // The Router's model and limits are in its session.
+    if (b.superAgent?.router || b.superAgent?.enabled === false || recallChanged || stripChanged || brokerChanged) invalidateRouters();
+    // A Worker's thread tools, prompt and event hook are fixed when its session starts.
+    if (patch.superAgent && subscriptionsOn(patch.superAgent) !== subscriptionsOn(cur.superAgent)) refreshWorkerSessions(() => true);
+    // The Watchdog's timer and limits follow the switches.
+    if (b.superAgent) syncWatchdog();
+    // So does GitHub polling (ADR 102): it runs only while the Super-agent is on.
+    if (b.superAgent) syncGithub();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -218,13 +306,142 @@ export function apiRouter() {
   });
 
   r.get('/usage', (_req, res) => res.json(usageOf()));
+
+  // ------------------------------------------------------------ model gateway (ADR 009)
+  r.get('/gateway', (req, res) => res.json(gatewayReport(Math.max(1, Math.min(1000, Number(req.query.limit) || 100)))));
+  r.post('/gateway/test', async (req, res) => res.json(await testGateway(body(GatewayTestBody, req.body).target)));
+  r.post('/gateway/import-connection', async (_req, res) => {
+    let provider: GatewayProvider;
+    try {
+      provider = addImportedProvider();
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    bus.emit({ t: 'settings', settings: settings.public() });
+    if (gatewayOn()) {
+      invalidateAllSessions();
+      invalidateRouters();
+      invalidateWatchdog();
+    }
+    res.json({ provider, settings: settings.public() });
+  });
   r.get('/routing', (_req, res) => res.json(routingReport()));
+
+  // ------------------------------------------------------------ triggers (Super-agent)
+  // ------------------------------------------------------------ GitHub channel (ADR 102)
+  r.get('/github', (_req, res) => res.json({ projects: githubStatuses() }));
+  r.post('/github/poll', async (req, res) => res.json({ poll: await pollGithub(body(GithubPoll, req.body).projectId) }));
+
+  r.get('/triggers', (req, res) =>
+    res.json(
+      listTriggers({
+        source: str(req.query.source),
+        verdict: str(req.query.verdict),
+        threadId: str(req.query.thread),
+        limit: Number(req.query.limit) || undefined,
+        before: Number(req.query.before) || undefined,
+      }),
+    ),
+  );
+  r.get('/triggers/:id', (req, res) => {
+    const d = triggerDetail(req.params.id);
+    if (!d) throw new HttpError(404, 'Trigger not found (it may have aged out of the log)');
+    res.json(d);
+  });
+  // Chain of recall (ADR 005): what an agent in this chat would read for an id.
+  r.get('/recall/:id', (req, res) => {
+    if (!recallOn()) throw new HttpError(404, 'The chain of recall is off');
+    const chatId = str(req.query.chatId);
+    if (!chatId || !chats.get(chatId)) throw new HttpError(400, 'chatId must name a chat');
+    const r = recallText(req.params.id, { chatId }, Number(req.query.from) || 0);
+    if ('error' in r) throw new HttpError(404, r.error);
+    res.json(r);
+  });
+  r.post('/triggers/preview-console', (req, res) => {
+    const b = body(PreviewConsole, req.body);
+    res.json({ trigger: publishConsole({ project: getProject(b.projectId), chatId: b.chatId, page: b.page, entries: b.entries }) });
+  });
+
+  // ------------------------------------------------------------ speculative execution (ADR 008)
+  r.get('/speculations', (req, res) =>
+    res.json({ speculations: listSpeculations({ chatId: str(req.query.chatId) || undefined, projectId: str(req.query.projectId) || undefined }), spentTodayUsd: spentToday() }),
+  );
+  r.get('/speculations/:id', (req, res) => {
+    const sp = getSpeculation(req.params.id);
+    if (!sp) throw new HttpError(404, 'No such speculative run');
+    res.json({ speculation: sp });
+  });
+  r.get('/speculations/:id/diff', async (req, res) => res.json({ diff: await speculationDiff(req.params.id) }));
+  r.post('/speculations/:id/merge', async (req, res) => res.json({ speculation: await mergeSpeculation(req.params.id) }));
+  r.post('/speculations/:id/discard', async (req, res) => res.json({ speculation: await discardSpeculation(req.params.id) }));
+
+  // ------------------------------------------------------------ two-layer mode (Router and Workers)
+  r.get('/workers', (req, res) => res.json(listWorkers(str(req.query.chatId) || undefined)));
+  const worker = (id: string) => {
+    const w = workers.get(id);
+    if (!w) throw new HttpError(404, 'Worker not found');
+    return w;
+  };
+  r.get('/workers/:id/messages', (req, res) => {
+    const w = worker(req.params.id);
+    res.json({ worker: w, messages: messages.list(req.params.id, { limit: 200 }), threads: threadsOf(w.threads) });
+  });
+  // The user takes a Worker off a thread: that thread's later events go to the Router again (ADR 003).
+  r.post('/workers/:id/unsubscribe', (req, res) => {
+    const w = worker(req.params.id);
+    const { threadId } = body(WorkerUnsubscribe, req.body);
+    if (!unsubscribeWorker(w, threadId)) throw new HttpError(404, 'The Worker does not subscribe to that thread');
+    res.json(w);
+  });
+  r.post('/workers/:id/stop', async (req, res) => {
+    await stopWorker(worker(req.params.id).id, { why: 'The user stopped the task' });
+    res.json(worker(req.params.id));
+  });
+  r.post('/workers/:id/dismiss', async (req, res) => {
+    const w = worker(req.params.id);
+    if (WORKER_ACTIVE.has(w.status)) throw new HttpError(409, 'Stop the Worker first');
+    await dismissWorker(w);
+    res.json(w);
+  });
+  // ------------------------------------------------------------ full duplex: background jobs
+  r.get('/jobs', (req, res) => res.json(listJobs(str(req.query.chatId) || undefined)));
+  const job = (id: string) => {
+    const j = getJob(id);
+    if (!j) throw new HttpError(404, 'Job not found');
+    return j;
+  };
+  r.get('/jobs/:id/log', (req, res) => {
+    const j = job(req.params.id);
+    const num = (v: unknown) => (typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : undefined);
+    res.json({ ...jobLog(j.id, num(req.query.from), num(req.query.lines)), messages: j.kind === 'task' ? messages.list(j.id, { limit: 50 }) : undefined });
+  });
+  r.post('/jobs/:id/stop', async (req, res) => {
+    res.json(await stopJob(job(req.params.id).id, 'Stopped by the user'));
+  });
+  r.get('/chats/:id/router/messages', (req, res) => {
+    if (!chats.get(req.params.id)) throw new HttpError(404, 'Chat not found');
+    res.json({ messages: messages.list(routerLogId(req.params.id), { limit: 200 }) });
+  });
+
+  // ------------------------------------------------------------ the Watchdog (Super-agent)
+  r.get('/watchdog', (_req, res) => res.json(watchdogOverview()));
+  r.get('/watchdog/messages', (_req, res) => res.json({ messages: messages.list(WATCHDOG_LOG, { limit: 200 }) }));
+  r.post('/watchdog/messages', (req, res) => res.json({ message: askWatchdog(body(WatchdogMessage, req.body).text) }));
+  r.post('/watchdog/tick', async (_req, res) => {
+    const t = await tick('manual');
+    if (t.reason === 'off') throw new HttpError(409, 'The Watchdog is off. Turn it on in Settings → Super-agent.');
+    res.json({ tick: t });
+  });
+  r.post('/watchdog/proposals/:id/accept', (req, res) => res.json({ proposal: acceptProposal(req.params.id) }));
+  r.post('/watchdog/proposals/:id/reject', (req, res) => res.json({ proposal: rejectProposal(req.params.id) }));
+  r.post('/watchdog/watches/:id/resolve', (req, res) => res.json({ watch: dismissWatch(req.params.id) }));
 
   // ------------------------------------------------------------ improvements
   r.get('/improvements', (_req, res) => res.json(listImprovements()));
   r.get('/friction', (req, res) => {
     const days = Math.max(1, Math.min(90, Math.round(Number(req.query.days) || 7)));
-    res.json(frictionReport(days));
+    // While the chain of recall is on, the bots read older messages with recall.
+    res.json(frictionReport(days, Date.now(), recallOn() ? 'recall' : 'chat_history'));
   });
   r.post('/improvements/run', async (_req, res) => res.json(await proposeImprovements()));
   r.post('/improvements/:id/accept', (req, res) => res.json(acceptImprovement(req.params.id)));
@@ -351,6 +568,8 @@ export function apiRouter() {
   r.get('/chats/:id/workspace', async (req, res) => res.json(await workspaceStatus(req.params.id)));
   r.post('/chats/:id/workspace', async (req, res) => res.json(decorate(await createWorkspace(req.params.id))));
   r.delete('/chats/:id/workspace', async (req, res) => {
+    // Workers' changes are merged into this workspace's branch.
+    if (activeWorkers(req.params.id).length) throw new HttpError(409, "Workers are running in this chat and merge their changes into this workspace's branch; stop them first");
     await removeWorkspace(req.params.id, req.query.deleteBranch === '1');
     res.json({ ok: true });
   });
@@ -379,9 +598,13 @@ export function apiRouter() {
     else res.json(decorate(await createProject({ name: b.name || '', template: b.template || 'static', parentDir: b.parentDir || undefined, folder: b.folder })));
   });
   r.patch('/projects/:id', (req, res) => {
-    const p = updateProject(req.params.id, body(ProjectPatch, req.body));
+    const patch = body(ProjectPatch, req.body);
+    const p = updateProject(req.params.id, patch);
     // Rules and commit settings reach the bots through their sessions.
     invalidateProject(p.id);
+    // The Routers list the project's skill families in their system prompt (ADR 007), and its GitHub channel (ADR 102).
+    if (patch.skillFamilies || patch.github) invalidateRouters();
+    if (patch.github) syncGithub();
     res.json(decorate(p));
   });
   r.delete('/projects/:id', async (req, res) => {
@@ -391,9 +614,42 @@ export function apiRouter() {
     await devServer(req.params.id).stop();
     for (const c of chats.all()) if (c.projectId === req.params.id) updateChat(c.id, { projectId: null });
     projects.delete(req.params.id);
+    syncGithub();
     bus.emit({ t: 'project_deleted', id: req.params.id });
     res.json({ ok: true });
   });
+  // ------------------------------------------------------------ safety (ADR 007)
+  r.get('/drafts', (req, res) => res.json({ drafts: listDrafts(str(req.query.chatId) || undefined) }));
+  // A draft made by hand (or by a tool on the user's behalf); agents use draft_external_action.
+  r.post('/drafts', async (req, res) => {
+    const b = body(DraftInput, req.body);
+    const chatId = str(req.query.chatId) || null;
+    const chat = chats.get(chatId);
+    const project = projects.get(chat ? chatProjectId(chat) : str(req.query.projectId));
+    if (!project && b.kind !== 'message') throw new HttpError(400, 'A project (or a chat with one) is needed to run that in');
+    try {
+      res.json({ draft: await createDraft(b, { chatId: chat?.id ?? null, botId: null, cwd: project?.path || '' }) });
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  });
+  r.post('/drafts/:id/approve', async (req, res) => res.json({ draft: await approveDraft(req.params.id) }));
+  r.post('/drafts/:id/discard', (req, res) => res.json({ draft: discardDraft(req.params.id) }));
+  r.get('/audit', (req, res) => {
+    const event = str(req.query.event) as AuditEntry['event'] | '';
+    res.json({ enabled: settings.get().safety.audit, entries: auditEntries(Number(req.query.limit) || 200, { chatId: str(req.query.chatId) || undefined, event: event || undefined }) });
+  });
+  // The guard's verdict for a command, without running it (Settings → Safety's tester).
+  r.post('/guard/check', (req, res) => {
+    const b = body(GuardCheck, req.body);
+    const project = projects.get(b.projectId) ?? null;
+    const cwd = project?.path || os.homedir();
+    res.json({ enabled: settings.get().safety.guard, verdict: guardTool('Bash', { command: b.command }, guardContext(cwd, project)) });
+  });
+
+  // ------------------------------------------------------------ channels (ADR 103)
+  channelRoutes(r);
+
   r.get('/projects/:id/tree', (req, res) => res.json(listDir(getProject(req.params.id), str(req.query.path))));
   r.get('/projects/:id/file', (req, res) => res.json(readProjectFile(getProject(req.params.id), str(req.query.path))));
   r.put('/projects/:id/file', (req, res) => {

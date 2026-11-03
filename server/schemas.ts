@@ -4,9 +4,12 @@
 // exist?) stay where they were.
 
 import { z } from 'zod';
+import { LOGIN_RE, MAX_AUTHORS, MAX_REPOS, REPO_RE } from './github/config';
 import { HttpError } from './projects';
 
 const PERMISSION = z.enum(['auto', 'edits', 'ask', 'review', 'plan']);
+const FAMILY = z.enum(['triage', 'reproduce', 'draft-fix', 'review', 'release', 'repo-health']);
+const MODE = z.enum(['chat', 'worker', 'speculative']);
 const EFFORT = z.enum(['', 'low', 'medium', 'high', 'xhigh', 'max']);
 const id = z.string().min(1).max(64);
 const text = (max: number) => z.string().max(max);
@@ -41,6 +44,7 @@ const botFields = {
   monthlyBudgetUsd: z.number().min(0).max(1_000_000).nullable(),
   freshSession: z.boolean(),
   blindReview: z.boolean(),
+  fullDuplex: z.boolean(),
 };
 
 export const BotCreate = z.object({ ...botFields, template: text(64) }).partial();
@@ -90,8 +94,36 @@ export const ProjectPatch = z
     allowedDomains: z.array(text(300)).max(100),
     requireChallenge: z.boolean(),
     autoChallenge: z.object({ enabled: z.boolean(), paths: z.array(text(200)).max(50), minLines: z.number().int().min(0).max(100_000) }),
+    skillFamilies: z.array(FAMILY).max(20),
+    speculative: z
+      .object({
+        enabled: z.boolean(),
+        checkCommand: text(500),
+        signals: z.object({ failingChecks: z.boolean(), consoleErrors: z.boolean(), bugReports: z.boolean() }).partial(),
+        maxFixLines: z.number().int().min(1).max(2000),
+      })
+      .partial(),
+    passEnv: z
+      .array(
+        z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'should be variable names (letters, digits, _)')
+          .max(200),
+      )
+      .max(50),
+    github: z.object({
+      enabled: z.boolean(),
+      repos: z.array(z.string().regex(REPO_RE, 'should be owner/name')).max(MAX_REPOS),
+      everyMinutes: z.number().int().min(1).max(1440),
+      authors: z.array(z.string().regex(LOGIN_RE, 'should be GitHub logins')).max(MAX_AUTHORS),
+      events: z.object({ issues: z.boolean(), comments: z.boolean(), reviewComments: z.boolean(), checks: z.boolean() }),
+      candidates: z.boolean(),
+    }),
   })
   .partial();
+
+/** Poll a project's GitHub repositories now (ADR 102). */
+export const GithubPoll = z.object({ projectId: id });
 
 export const ProjectOpen = z.object({
   mode: z.enum(['open', 'create']).default('create'),
@@ -135,7 +167,12 @@ export const SkillSave = z.object({
   argsHint: text(200).optional(),
   body: text(100_000).optional(),
   previousName: text(40).optional(),
+  family: FAMILY.nullable().optional(),
+  modes: z.array(MODE).max(3).optional(),
+  readOnly: z.boolean().optional(),
 });
+
+const sourceRule = z.object({ mode: z.enum(['explicit', 'candidate', 'ignore']), allow: z.array(text(300)).max(50) }).partial();
 
 // Connection fields (authMode, apiKey, provider…) are read by connectionPatch; anything else here
 // is checked, and unknown keys are ignored as before.
@@ -159,8 +196,90 @@ export const SettingsPatch = z
     baseUrl: text(500),
     providerToken: text(500),
     provider: z.object({ preset: text(64).optional(), baseUrl: text(500).optional(), model: text(200).optional(), fastModel: text(200).optional() }),
+    superAgent: z
+      .object({
+        enabled: z.boolean(),
+        sources: z.object({ turn: sourceRule, 'outside-edit': sourceRule, 'preview-console': sourceRule }).partial(),
+        projects: z.array(id).max(200),
+        policies: text(10_000),
+        maxCandidatesPerHour: z.number().int().min(0).max(1000),
+        router: z.object({ enabled: z.boolean(), model: text(200), workerModel: text(200), maxWorkers: z.number().int().min(1).max(8), subscriptions: z.boolean() }).partial(),
+        recall: z.object({ enabled: z.boolean(), inlineWords: z.number().int().min(20).max(200) }).partial(),
+        watchdog: z
+          .object({
+            enabled: z.boolean(),
+            model: text(200),
+            everyMinutes: z.number().int().min(1).max(60),
+            maxTicksPerHour: z.number().int().min(1).max(60),
+            maxActionsPerTick: z.number().int().min(0).max(10),
+            dailyBudgetUsd: z.number().min(0).max(100),
+            stuckMinutes: z.number().int().min(5).max(240),
+          })
+          .partial(),
+        speculative: z
+          .object({
+            model: text(200),
+            dailyBudgetUsd: z.number().min(0).max(100),
+            maxConcurrent: z.number().int().min(1).max(4),
+            maxMinutes: z.number().int().min(5).max(120),
+          })
+          .partial(),
+      })
+      .partial(),
+    // Shapes only; normalizeGateway drops what does not parse (bad ids, URLs, members).
+    gateway: z
+      .object({
+        enabled: z.boolean(),
+        port: z.number().int().min(0).max(65535),
+        providers: z.array(z.looseObject({ id: text(40), baseUrl: text(500) })).max(50),
+        groups: z.array(z.looseObject({ id: text(40), members: z.array(text(200)).max(20) })).max(50),
+        defaultTarget: text(200),
+        fastTarget: text(200),
+        roles: z.record(z.string(), text(200)),
+        windows: z.array(z.looseObject({ role: text(20) })).max(50),
+        masking: z.boolean(),
+      })
+      .partial(),
+    /** Provider id → key; '' removes it. */
+    gatewayTokens: z.record(z.string(), z.string().max(2000)),
+    safety: z.object({ guard: z.boolean(), stripCredentials: z.boolean(), audit: z.boolean() }).partial(),
   })
   .partial();
+
+export const GatewayTestBody = z.object({ target: text(200) });
+
+/** Console output the preview reported, forwarded by the UI while the Super-agent is on. */
+export const PreviewConsole = z.object({
+  projectId: id,
+  chatId: id.nullable().optional(),
+  page: text(2000).default('/'),
+  entries: z
+    .array(z.object({ level: z.enum(['error', 'warn', 'info', 'log']), text: text(20_000), ts: z.number(), source: text(2000).optional() }))
+    .min(1)
+    .max(100),
+});
+
+/** The user takes a Worker off one of its Threads (ADR 003). */
+export const WorkerUnsubscribe = z.object({ threadId: id });
+
+/** A draft of an external action: its kind and fields; Crew builds the exact command from them. */
+export const DraftInput = z.object({
+  kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'review-reply', 'message']),
+  remote: text(200).optional(),
+  branch: text(200).optional(),
+  number: z.number().int().min(1).max(10_000_000).optional(),
+  comment: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
+  title: text(300).optional(),
+  body: text(60_000).optional(),
+  base: text(200).optional(),
+  head: text(200).optional(),
+  repo: text(200).optional(),
+  channel: text(200).optional(),
+  why: text(1000).optional(),
+});
+
+/** A command for the guard's dry run (Settings → Safety). */
+export const GuardCheck = z.object({ command: text(20_000), projectId: id.nullable().optional() });
 
 export const ImprovementReject = z.object({ note: text(500).optional() });
 
@@ -198,3 +317,6 @@ function explain(issue: z.core.$ZodIssue): string {
 }
 
 const TYPE_NAMES: Record<string, string> = { string: 'text', number: 'a number', boolean: 'true/false', array: 'a list', object: 'an object', int: 'an integer' };
+
+/** A maintainer's message to the Watchdog. */
+export const WatchdogMessage = z.object({ text: text(4000).min(1) });

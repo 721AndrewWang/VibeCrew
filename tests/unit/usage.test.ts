@@ -2,9 +2,19 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../shared/types';
 
 const list: ChatMessage[] = [];
+/** Two-layer mode's logs (the chat's Router turns and a Worker's), and a full-duplex sub-task's. */
+const logs: Record<string, ChatMessage[]> = { rt_c1: [], wk_1: [], job_1: [], job_2: [] };
 vi.mock('../../server/store', () => ({
   chats: { all: () => [{ id: 'c1' }] },
-  messages: { sorted: () => list },
+  workers: { all: () => [{ id: 'wk_1' }] },
+  jobs: {
+    all: () => [
+      { id: 'job_1', kind: 'task' },
+      { id: 'job_2', kind: 'command' },
+    ],
+  },
+  routerLogId: (id: string) => `rt_${id}`,
+  messages: { sorted: (id: string) => (id === 'c1' ? list : logs[id] || []) },
 }));
 
 const { shareOfTurn, usageOf } = await import('../../server/usage');
@@ -51,5 +61,24 @@ describe('usage', () => {
     shareOfTurn(d);
     expect(d.meta!.costUsd).toBeCloseTo(0.02, 5);
     expect(d.meta!.tokens).toEqual(tokens(1_000));
+  });
+
+  it("counts a Router's and a Worker's turns toward the bot they ran as", () => {
+    const before = usageOf(now).b1.month;
+    const log = (logId: string, costUsd: number) =>
+      logs[logId].push({ id: `${logId}-${++seq}`, chatId: logId, seq, ts: now.getTime() - 500, role: 'bot', botId: 'b1', text: '', meta: { costUsd, sessionCostUsd: costUsd, sessionId: logId } });
+    log('rt_c1', 0.01);
+    log('wk_1', 0.2);
+    const after = usageOf(now).b1.month;
+    expect(after.turns).toBe(before.turns + 2);
+    expect(after.costUsd).toBeCloseTo(before.costUsd + 0.21, 5);
+  });
+
+  it("counts a background sub-task's turn toward its bot", () => {
+    const before = usageOf(now).b1.month;
+    logs.job_1.push({ id: `job_1-${++seq}`, chatId: 'job_1', seq, ts: now.getTime() - 500, role: 'bot', botId: 'b1', text: '', meta: { costUsd: 0.05, sessionCostUsd: 0.05, sessionId: 'job_1' } });
+    const after = usageOf(now).b1.month;
+    expect(after.turns).toBe(before.turns + 1);
+    expect(after.costUsd).toBeCloseTo(before.costUsd + 0.05, 5);
   });
 });

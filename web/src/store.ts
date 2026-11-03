@@ -1,8 +1,12 @@
 import { create } from 'zustand';
+import { DEFAULT_SAFETY, DEFAULT_SUPER_AGENT } from '../../shared/defaults';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../../shared/logos';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type {
   Attachment,
+  AuditEntry,
   AuthStatus,
+  BackgroundJob,
   Bootstrap,
   Bot,
   BotStatus,
@@ -11,23 +15,30 @@ import type {
   ChatMessage,
   ConsoleEntry,
   DevServerState,
+  ExternalDraft,
   PluginDef,
   PreviewInfo,
   Project,
   ProviderPreset,
   PublicSettings,
   RecordedStep,
+  RouterInfo,
   Routine,
   SandboxStatus,
   ServerEvent,
   Skill,
+  Speculation,
+  Thread,
+  Trigger,
   TurnSummary,
   UsageSummary,
+  WatchdogInfo,
+  Worker,
 } from '../../shared/types';
 import { api } from './api';
 import { desktop } from './desktop';
 
-export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'settings';
+export type View = 'chat' | 'bots' | 'skills' | 'routines' | 'projects' | 'triggers' | 'activity' | 'watchdog' | 'settings';
 export type ComputerTab = 'browser' | 'files' | 'terminal' | 'changes';
 export type Device = 'fill' | 'desktop' | 'tablet' | 'mobile';
 
@@ -85,11 +96,26 @@ export interface AppState {
   skills: Skill[];
   routines: Record<string, Routine>;
   statuses: Record<string, BotStatus>;
+  /** Two-layer mode: Workers not yet dismissed, and each chat's Router. */
+  workers: Record<string, Worker>;
+  routers: Record<string, RouterInfo>;
+  /** The Watchdog's live state, once the server has sent it (or the Watchdog page loaded it). */
+  watchdog: WatchdogInfo | null;
+  /** Full duplex: background jobs of full-duplex bots. */
+  jobs: Record<string, BackgroundJob>;
+  /** External-action drafts (ADR 007), by id: pending ones and the latest decided. */
+  actionDrafts: Record<string, ExternalDraft>;
+  /** Speculative runs (ADR 008), by id: ready fixes and the latest others, kept live. */
+  speculations: Record<string, Speculation>;
+  /** The audit log's newest entries, newest first: loaded by Settings → Safety, then kept live. */
+  audit: { entries: AuditEntry[]; loaded: boolean };
   devServers: Record<string, DevServerState>;
   previews: Record<string, PreviewInfo>;
   devLogs: Record<string, string>;
   msgs: Record<string, MsgState>;
   turns: Record<string, TurnSummary[]>;
+  /** The Trigger bus's recent events, newest first; loaded by the Triggers view, then kept live. */
+  triggers: { list: Trigger[]; threads: Record<string, Thread>; loaded: boolean };
   /** Bumped when files change on disk, per project. */
   filesVersion: Record<string, number>;
   lastChanged: Record<string, string[]>;
@@ -113,7 +139,13 @@ export interface AppState {
     | { kind: 'newProject' }
     | { kind: 'chatSettings'; chatId: string }
     | { kind: 'saveRecording'; projectId: string }
-    | { kind: 'trace'; chatId: string; msgId: string };
+    | { kind: 'trace'; chatId: string; msgId: string }
+    /** A Worker's transcript, or (no workerId) the chat's Router log. */
+    | { kind: 'agentLog'; chatId: string; workerId?: string }
+    /** A background job's full log (a command) or transcript (a sub-task). */
+    | { kind: 'jobLog'; jobId: string }
+    /** A Trigger with its Thread and neighbours, opened from wherever its id is shown. */
+    | { kind: 'trigger'; triggerId: string };
 }
 
 const LS_UI = 'vc-ui';
@@ -160,6 +192,10 @@ export const useStore = create<AppState>(() => ({
     rotateAtTokens: 60_000,
     wrapUpAtTokens: 120_000,
     push: { configured: false, afterMinutes: 10 },
+    gateway: { enabled: false, port: 0, providers: [], groups: [], defaultTarget: '', fastTarget: '', roles: {}, windows: [], masking: false },
+    safety: DEFAULT_SAFETY,
+    // The policy box stays empty until the server sends the real settings.
+    superAgent: { ...DEFAULT_SUPER_AGENT, policies: '' },
   },
   auth: { cliFound: false, loggedIn: false, method: 'unknown', ready: false, checkedAt: 0 },
   features: { pty: false, browser: false, sandbox: { available: false, missing: [] } },
@@ -174,11 +210,19 @@ export const useStore = create<AppState>(() => ({
   skills: [],
   routines: {},
   statuses: {},
+  workers: {},
+  jobs: {},
+  routers: {},
+  watchdog: null,
+  actionDrafts: {},
+  speculations: {},
+  audit: { entries: [], loaded: false },
   devServers: {},
   previews: {},
   devLogs: {},
   msgs: {},
   turns: {},
+  triggers: { list: [], threads: {}, loaded: false },
   filesVersion: {},
   lastChanged: {},
   view: 'chat',
@@ -239,11 +283,17 @@ export async function boot() {
       skills: b.skills,
       routines: byId(b.routines),
       statuses: b.statuses,
+      workers: byId(b.workers || []),
+      jobs: byId(b.jobs || []),
+      routers: Object.fromEntries((b.routers || []).map((r) => [r.chatId, r])),
+      actionDrafts: byId(b.drafts || []),
+      speculations: byId(b.speculations || []),
       devServers: Object.fromEntries(b.devServers.map((d) => [d.projectId, d])),
       previews: Object.fromEntries(b.previews.map((p) => [p.projectId, p])),
       activeChatId: active,
-      // Messages may have moved on while disconnected.
+      // Messages (and triggers) may have moved on while disconnected.
       msgs: {},
+      triggers: { list: [], threads: {}, loaded: false },
       mobilePane: cur.booted ? cur.mobilePane : active && window.innerWidth > 760 ? 'chat' : 'list',
     });
     if (active) {
@@ -406,6 +456,52 @@ export function applyEvent(ev: ServerEvent) {
     case 'settings':
       set({ settings: ev.settings });
       break;
+    case 'trigger': {
+      const cur = s.triggers;
+      if (!cur.loaded) break;
+      // A decision arrives as a new snapshot of a trigger already listed: it keeps its place.
+      const i = cur.list.findIndex((t) => t.id === ev.trigger.id);
+      const list = i >= 0 ? cur.list.map((t, j) => (j === i ? ev.trigger : t)) : [ev.trigger, ...cur.list].slice(0, TRIGGERS_KEPT);
+      set({ triggers: { list, threads: { ...cur.threads, [ev.thread.id]: ev.thread }, loaded: true } });
+      break;
+    }
+    case 'worker': {
+      const workers = { ...s.workers };
+      if (ev.worker.dismissedAt) delete workers[ev.worker.id];
+      else workers[ev.worker.id] = ev.worker;
+      set({ workers });
+      break;
+    }
+    case 'worker_deleted': {
+      const workers = { ...s.workers };
+      delete workers[ev.id];
+      set({ workers });
+      break;
+    }
+    case 'router':
+      set({ routers: { ...s.routers, [ev.router.chatId]: ev.router } });
+      break;
+    case 'watchdog':
+      set({ watchdog: ev.watchdog });
+      break;
+    case 'job':
+      set({ jobs: { ...s.jobs, [ev.job.id]: ev.job } });
+      break;
+    case 'job_deleted': {
+      const jobs = { ...s.jobs };
+      delete jobs[ev.id];
+      set({ jobs });
+      break;
+    }
+    case 'draft':
+      set({ actionDrafts: { ...s.actionDrafts, [ev.draft.id]: ev.draft } });
+      break;
+    case 'speculation':
+      set({ speculations: { ...s.speculations, [ev.speculation.id]: ev.speculation } });
+      break;
+    case 'audit':
+      if (s.audit.loaded) set({ audit: { loaded: true, entries: [ev.entry, ...s.audit.entries].slice(0, 500) } });
+      break;
     case 'auth':
       set({ auth: ev.auth });
       break;
@@ -476,6 +572,43 @@ export async function loadMessages(chatId: string, older = false) {
     set({ msgs: { ...get().msgs, [chatId]: { list: st?.list || [], loaded: false, hasMore: false, loading: false } } });
     toast("Couldn't load messages", (e as Error).message, 'error');
   }
+}
+
+const TRIGGERS_KEPT = 300;
+
+/** Loads the recent triggers; after that the view stays current from the server's events. */
+export async function loadTriggers() {
+  try {
+    const r = await api.triggers(TRIGGERS_KEPT);
+    set({ triggers: { list: r.triggers, threads: r.threads, loaded: true } });
+    return r;
+  } catch (e) {
+    toast("Couldn't load triggers", (e as Error).message, 'error');
+    return null;
+  }
+}
+
+/** Loads a Router's or a Worker's log into `msgs` under its id; live events keep it current after that. */
+export async function loadLog(logId: string, request: Promise<{ messages: ChatMessage[] }>) {
+  try {
+    const r = await request;
+    set({ msgs: { ...get().msgs, [logId]: { list: r.messages, loaded: true, hasMore: false, loading: false } } });
+  } catch (e) {
+    toast("Couldn't load the transcript", (e as Error).message, 'error');
+  }
+}
+
+/** The chat runs in two layers: its Router talks to the user and dispatches Workers. */
+export function routerModeOf(chat: Chat | null | undefined, settings: PublicSettings = get().settings): boolean {
+  return !!chat && chat.kind === 'group' && settings.superAgent.enabled && settings.superAgent.router.enabled;
+}
+
+/** The chat's Router is thinking or has events waiting, or one of its Workers is active. */
+export function useLayersBusy(chatId: string): boolean {
+  return useStore((s) => {
+    const r = s.routers[chatId];
+    return (!!r && (r.state === 'thinking' || r.queued > 0)) || Object.values(s.workers).some((w) => w.chatId === chatId && WORKER_ACTIVE.has(w.status));
+  });
 }
 
 export async function loadTurns(chatId: string) {

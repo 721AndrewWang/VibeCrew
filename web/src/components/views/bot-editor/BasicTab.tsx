@@ -67,6 +67,16 @@ export function BasicTab({ draft, patch, nameOk }: { draft: Bot; patch: (p: Part
       </div>
       <div className="setting-row">
         <div>
+          <div className="sr-title">Full duplex: run long work in the background</div>
+          <div className="hint">
+            Gives it start, stop and status tools: builds, test suites and sub-tasks run in the background under the same approvals and sandbox as its commands, and their results come back as new
+            messages. Messages you send while it works reach it after its current step instead of after the whole turn.
+          </div>
+        </div>
+        <Toggle label="Full duplex (background jobs)" on={!!draft.fullDuplex} onChange={(fullDuplex) => patch({ fullDuplex })} />
+      </div>
+      <div className="setting-row">
+        <div>
           <div className="sr-title">Judge results only, not teammates' notes (adversarial review)</div>
           <div className="hint">
             Each turn it gets only the user's request and the changes themselves. Teammates' notes are hidden so it isn't swayed by the author's reasoning. Its verdict is recorded on the isolated

@@ -6,6 +6,7 @@ import './styles/layout.css';
 import './styles/chat.css';
 import './styles/computer.css';
 import './styles/views.css';
+import './styles/superagent.css';
 import { App } from './App';
 import { connectSocket } from './socket';
 import { boot } from './store';

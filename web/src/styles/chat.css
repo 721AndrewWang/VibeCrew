@@ -1656,3 +1656,456 @@ body.resizing iframe {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---------------------------------------------------------------- two-layer mode: Router and Workers */
+.workers-bar {
+  margin: 0 16px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  font-size: 12.5px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.wb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+}
+
+.wb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.wb-toggle:disabled {
+  cursor: default;
+}
+
+.wb-toggle .busy {
+  color: var(--accent-text);
+}
+
+.worker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.worker-row.waiting {
+  background: var(--orange-soft);
+}
+
+.wr-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wr-title,
+.wr-note {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wr-note {
+  font-size: 11.5px;
+}
+
+.agent-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.agent-threads {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-thread {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.wb-direct {
+  font-size: 12px;
+  margin-right: 10px;
+}
+
+.agent-task {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-sunken, var(--bg));
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-log {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.agent-batch {
+  margin: 10px 0 2px 41px;
+  font-size: 11.5px;
+}
+
+.router-settings {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.router-settings .sr-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- full duplex: background jobs */
+.jobs-bar .wb-toggle {
+  gap: 5px;
+}
+
+.jobs-bar .wr-note code {
+  font-size: 11px;
+  margin-right: 4px;
+}
+
+.job-result {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.job-result details {
+  max-width: min(720px, 90%);
+  font-size: 12px;
+  color: var(--text-2);
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg-elev));
+  border: 1px solid color-mix(in oklab, var(--accent) 12%, var(--border));
+  padding: 5px 14px;
+  border-radius: 12px;
+  line-height: 1.6;
+}
+
+.job-result summary {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.job-result.failed summary {
+  color: var(--red);
+}
+
+.job-result pre,
+.job-log pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-sunken, var(--bg));
+  font-size: 11.5px;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.job-log pre {
+  max-height: 55vh;
+}
+
+/* ---------------------------------------------------------------- drafted external actions (ADR 007) */
+.approval-effects {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+
+.drafts-bar {
+  margin: 0 16px 6px;
+  border: 1.5px solid var(--orange);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  font-size: 12.5px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.drafts-bar .draft-card {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.draft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  font-size: 12.5px;
+}
+
+.draft-card.discarded,
+.draft-card.done {
+  opacity: 0.85;
+}
+
+.draft-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.draft-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+}
+
+.draft-by {
+  font-size: 11.5px;
+}
+
+.draft-title {
+  font-weight: 600;
+}
+
+.draft-cmd pre,
+.draft-body {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11.5px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.draft-push-url {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  word-break: break-word;
+}
+
+.draft-reverse {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.drafts-list,
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audit-row {
+  display: grid;
+  grid-template-columns: 130px 90px 1fr;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.audit-row pre {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 760px) {
+  .audit-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.guard-verdict {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.family-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- speculative fixes (ADR 008) */
+.spec-bar {
+  border-color: var(--border-strong, var(--border));
+}
+
+.spec-card .draft-head b {
+  white-space: nowrap;
+}
+
+.spec-card .spec-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+
+.spec-card .spec-files .add {
+  color: var(--green);
+}
+
+.spec-card .spec-files .del {
+  color: var(--red);
+}
+
+.spec-diff-head {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+}
+
+.spec-runs .audit-row {
+  grid-template-columns: 150px 120px 1fr;
+}
+
+/* ---------------------------------------------------------------- channel norms (ADR 103) */
+.reply-kind {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.reply-kind.question,
+.reply-kind.acceptance {
+  color: var(--text);
+}
+
+.report-details {
+  width: min(560px, 100%);
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+
+.report-details .rd-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.report-detail {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px 9px;
+  margin-top: 4px;
+  background: var(--bg-elev);
+}
+
+.report-detail summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.report-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-detail .rd-chevron {
+  align-self: center;
+  transition: transform 0.15s;
+}
+
+.report-detail[open] .rd-chevron {
+  transform: rotate(90deg);
+}
+
+.report-detail .rd-gist {
+  flex-basis: 100%;
+  padding-left: 21px;
+}
+
+.report-detail .rd-body {
+  padding: 6px 0 2px 21px;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.webhook-block .wh-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.webhook-block .wh-preview {
+  white-space: pre-wrap;
+  font-size: 12px;
+  border-left: 2px solid var(--border-strong);
+  padding: 4px 10px;
+  margin: 6px 0;
+}
+
+.webhook-block .wh-deliveries {
+  font-size: 12px;
+  margin: 4px 0 0;
+  padding-left: 16px;
+}

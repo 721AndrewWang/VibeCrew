@@ -1,7 +1,7 @@
 // What reaches the model each turn, as the real Claude Code CLI sends it to the mock endpoint:
 // the full environment once per session, then only what changed; chat_history returns full text.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
+import { fromCrewSession, type MockProvider, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, waitFor, waitTurn } from '../helpers/server';
 
 const TOKEN = 'mock-secret-token';
@@ -49,7 +49,7 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
     const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text });
     const reply = await waitTurn(crew.api, chatId, sent.seq, 120_000);
     expect(reply.status).toBe('done');
-    const main = mock.requests.filter((r) => r.tools.length && lastUserText(r.body).includes(text));
+    const main = mock.requests.filter((r) => fromCrewSession(r) && lastUserText(r.body).includes(text));
     return lastUserText(main[0].body);
   };
 
@@ -85,7 +85,7 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
     await turn('Fourth');
     const sent = await turn('Fifth');
     // A new conversation: the earlier turns are not in it, the environment comes in full, and the bot is told.
-    const main = mock.requests.filter((r) => r.tools.length && lastUserText(r.body).includes('Fifth'));
+    const main = mock.requests.filter((r) => fromCrewSession(r) && lastUserText(r.body).includes('Fifth'));
     const users = main[0].body.messages.filter((m: any) => m.role === 'user');
     expect(users).toHaveLength(1);
     expect(JSON.stringify(main[0].body.messages)).not.toContain('Fourth');
@@ -125,7 +125,7 @@ describe.skipIf(!claudeCli())('slimmer prompts', () => {
       return (chat.context?.[chief.id]?.at ?? 0) >= before;
     }, 15_000);
     const sent = await turn('Seventh');
-    const main = mock.requests.filter((r) => r.tools.length && lastUserText(r.body).includes('Seventh'));
+    const main = mock.requests.filter((r) => fromCrewSession(r) && lastUserText(r.body).includes('Seventh'));
     const users = main[0].body.messages.filter((m: any) => m.role === 'user');
     expect(users).toHaveLength(1);
     expect(sent).toContain('This is a new session');

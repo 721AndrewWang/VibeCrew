@@ -10,7 +10,10 @@ import { doRemove } from './remove';
 import { doSuggest } from './suggest';
 import { doAbort, doCommit, doResolve, doSync } from './sync';
 
-export { detachWorkspace, reconcileWorkspaces } from './remove';
+export { requireWorkspace, type Workspace, workspaceOf } from './common';
+export { checkGit, createSpeculativeWorkspace, createWorkerWorkspace } from './create';
+export { detachWorkspace, disposeWorkspace, reconcileWorkspaces, retireWorkerWorkspace } from './remove';
+export { runSetup } from './setup';
 export { workspaceDiff, workspaceStatus } from './status';
 
 // ---------------------------------------------------------------- public operations

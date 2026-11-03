@@ -5,6 +5,9 @@ import type { AuthStatus } from '../shared/types';
 import { bus } from './bus';
 import { cleanEnv, findClaudeExecutable } from './config';
 import { providerPreset } from './data/providers';
+import { gatewayEnv, gatewayModel, gatewayOn, gatewayReady } from './gateway';
+import type { Scope } from './gateway/config';
+import { brokered } from './hardening/broker';
 import { type Settings, settings } from './store';
 
 const run = promisify(execFile);
@@ -23,9 +26,19 @@ export function providerConfigured(s: Settings = settings.get()): boolean {
 
 /**
  * Environment for the bots' Claude Code: which endpoint, credentials and models it uses.
- * undefined removes a variable; '' sets it empty.
+ * undefined removes a variable; '' sets it empty. With a scope and the model gateway on, the
+ * session talks to the gateway instead (ADR 009); without a scope (testing a connection as entered
+ * in Settings), always the connection itself.
  */
-export function modelEnv(s: Settings = settings.get()): Record<string, string | undefined> {
+export function modelEnv(s: Settings = settings.get(), scope?: Scope, model?: string): Record<string, string | undefined> {
+  if (scope && gatewayOn(s)) return gatewayEnv(scope, model);
+  // An agent session never gets a key from settings.json: the key broker stands in for it (ADR 104).
+  if (scope) return brokered(connectionEnv(s), s);
+  return connectionEnv(s);
+}
+
+/** The connection as configured: its endpoint, its key and its models. */
+function connectionEnv(s: Settings): Record<string, string | undefined> {
   if (s.authMode === 'api-key' && s.apiKey) {
     return { ANTHROPIC_API_KEY: s.apiKey, CLAUDE_CODE_OAUTH_TOKEN: undefined, ...(s.baseUrl ? { ANTHROPIC_BASE_URL: s.baseUrl } : {}) };
   }
@@ -54,10 +67,14 @@ export function modelEnv(s: Settings = settings.get()): Record<string, string | 
   return {};
 }
 
-/** A bot's model setting, or undefined to use the connection's default. */
-export function botModel(model: string | undefined): string | undefined {
+/**
+ * A bot's model setting, or undefined to use the connection's default. With the gateway on, the
+ * target the scope's calls go to (a group or provider/model).
+ */
+export function botModel(model: string | undefined, scope?: Scope): string | undefined {
   const s = settings.get();
   const m = model || s.defaultModel || undefined;
+  if (scope && gatewayOn(s)) return gatewayModel(scope, m);
   // Claude model names mean nothing to another provider: its own model (ANTHROPIC_MODEL) applies.
   if (s.authMode === 'provider' && m && /^claude-|^(opus|sonnet|haiku|fable)$/i.test(m)) return undefined;
   return m;
@@ -80,7 +97,10 @@ export async function checkAuth(force = false): Promise<AuthStatus> {
       } catch {
         /* version is informational */
       }
-      if (s.authMode === 'provider') {
+      if (gatewayOn(s)) {
+        next.loggedIn = gatewayReady(s);
+        next.method = 'gateway';
+      } else if (s.authMode === 'provider') {
         next.loggedIn = providerConfigured(s);
         next.method = 'provider';
       } else if (s.authMode === 'api-key' && s.apiKey) {

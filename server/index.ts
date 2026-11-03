@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import express from 'express';
 import { type WebSocket, WebSocketServer } from 'ws';
@@ -12,24 +13,41 @@ import { bus } from './bus';
 import { checkAuth } from './claudeAuth';
 import { APP_NAME, APP_VERSION, findChrome, findClaudeExecutable, HOME_DIR, lanAddress, WEB_DIST } from './config';
 import { stopAllDevServers } from './devserver';
+import { recoverDrafts } from './drafts';
 import { initIfNeeded } from './entities';
+import { stopGateway, syncGateway } from './gateway';
+import { closeGithub, startGithub } from './github';
+import { stopBroker, syncBroker } from './hardening/broker';
+import { agentPeer, fence, refuse } from './hardening/fence';
+import { redactForUi } from './hardening/redactor';
+import { installRedaction, redactResponses } from './hardening/secrets';
+import { recoverJobs, stopAllJobs } from './jobs';
+import { recoverLayers, resumeRouters } from './layers';
 import { logger } from './log';
 import { closeAllSessions } from './orchestrator';
 import { startOutsideEditNotes } from './outsideEdits';
 import { closeAllPreviews } from './preview';
 import { startRoutines } from './routines';
 import { guard, wsAllowed } from './security';
+import { recoverSpeculations } from './speculative';
 import { flushAll, settings } from './store';
 import { closeAllTerminals, closeTerminal, detachTerminals, openTerminal, terminalInput, terminalResize } from './terminal';
+import { startTriggers } from './triggers';
+import { closeWatchdog, startWatchdog } from './watchdog';
 import { stopAllWatches } from './watcher';
 import { reconcileWorkspaces } from './workspaces';
 
 const log = logger('server');
+// Before anything logs or answers: secrets never reach a log, a file or the UI (ADR 104).
+installRedaction();
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', false);
 app.use(guard);
+// Processes Crew started (agents, their commands) may not drive Crew itself (ADR 104).
+app.use('/api', fence);
+app.use('/api', redactResponses);
 app.use('/api', apiRouter());
 
 // The favicon follows the logo chosen in Settings → Appearance; it is drawn here, built UI or not.
@@ -70,12 +88,19 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy();
     return;
   }
+  const agent = agentPeer(req.socket);
+  if (agent !== null) {
+    refuse(agent, 'WebSocket /ws');
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return;
+  }
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
 });
 
 wss.on('connection', (ws: WebSocket) => {
   const send = (data: unknown) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(data));
+    if (ws.readyState === ws.OPEN) ws.send(redactForUi(JSON.stringify(data)));
   };
   const off = bus.on(send);
   const termSend = new Map<string, (d: string) => void>();
@@ -122,9 +147,21 @@ wss.on('connection', (ws: WebSocket) => {
 
 async function main() {
   await initIfNeeded();
-  await reconcileWorkspaces().catch((e) => log.warn('reconcile workspaces:', e));
+  // Before anything can start a session: sessions get the gateway's address when they start.
+  await syncGateway();
+  await syncBroker();
+  const layers = recoverLayers();
+  // Speculative runs a restart cut off go first, branch and all, so reconciling does not keep their branches.
+  await recoverSpeculations().catch((e) => log.warn('recover speculative runs:', e));
+  await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
+  startTriggers();
+  recoverDrafts();
+  resumeRouters(layers);
+  recoverJobs();
   startRoutines();
   startOutsideEditNotes();
+  startWatchdog();
+  startGithub();
   void checkAuth(true).then((a) => {
     if (!a.cliFound) console.warn('⚠️  Claude Code CLI (claude) not found. Install it first: npm i -g @anthropic-ai/claude-code');
     else if (!a.ready && a.method === 'provider') console.warn("⚠️  The model provider isn't set up yet: fill in the URL, key and model in Crew under Settings → Model connection.");
@@ -133,7 +170,10 @@ async function main() {
   });
 
   const s = settings.get();
-  const port = Number(process.env.CREW_PORT) || s.port;
+  // CREW_PORT=0 asks for any free port, picked by the system as the server binds: nothing can take it
+  // in between (the test harness runs many servers side by side this way). The bound port is printed and kept.
+  const asked = process.env.CREW_PORT?.trim();
+  const port = asked && /^\d+$/.test(asked) ? Number(asked) : s.port;
   const host = s.lanEnabled ? '0.0.0.0' : '127.0.0.1';
   server.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code === 'EADDRINUSE') {
@@ -145,8 +185,9 @@ async function main() {
     process.exit(1);
   });
   server.listen(port, host, () => {
-    if (port !== s.port) settings.update({ port });
-    const local = `http://localhost:${port}`;
+    const bound = (server.address() as AddressInfo | null)?.port ?? port;
+    if (bound !== s.port) settings.update({ port: bound });
+    const local = `http://localhost:${bound}`;
     console.log(`\n  🤖 ${APP_NAME} ${APP_VERSION} is running\n`);
     console.log(`  Local:       ${local}`);
     const lan = lanUrl();
@@ -174,10 +215,14 @@ async function shutdown() {
   shuttingDown = true;
   console.log('\nShutting down…');
   flushAll();
+  closeWatchdog();
+  closeGithub();
   closeAllSessions();
   closeAllTerminals();
   closeAllPreviews();
-  await Promise.race([Promise.all([stopAllDevServers(), closeBrowser(), stopAllWatches()]), new Promise((r) => setTimeout(r, 4000))]);
+  void stopGateway();
+  void stopBroker();
+  await Promise.race([Promise.all([stopAllDevServers(), stopAllJobs(), closeBrowser(), stopAllWatches()]), new Promise((r) => setTimeout(r, 4000))]);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

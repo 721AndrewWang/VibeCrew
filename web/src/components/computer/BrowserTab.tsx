@@ -132,6 +132,21 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
 
   // Messages from the script injected into the previewed page.
   useEffect(() => {
+    // While the Super-agent is on, console errors become triggers, batched so a burst is one event.
+    let errors: ConsoleEntry[] = [];
+    let timer: number | undefined;
+    const sendErrors = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (!errors.length) return;
+      const entries = errors;
+      errors = [];
+      void api.previewConsole({ projectId: project.id, chatId: chat.id, page: previewOf(project.id).path, entries }).catch(() => {});
+    };
+    const forwardError = (entry: ConsoleEntry) => {
+      errors.push(entry);
+      timer ??= window.setTimeout(sendErrors, 2000);
+    };
     const onMsg = (e: MessageEvent) => {
       if (!iframe.current || e.source !== iframe.current.contentWindow) return;
       const d = e.data as PreviewToHost & { __crew?: boolean };
@@ -160,6 +175,7 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
       }
       if (d.type === 'console') {
         updatePreview(project.id, (p) => ({ console: [...p.console, d.entry].slice(-300) }));
+        if (d.entry.level === 'error' && useStore.getState().settings.superAgent.enabled) forwardError(d.entry);
         return;
       }
       if (d.type === 'picked') {
@@ -176,7 +192,10 @@ export function BrowserTab({ chat, project, active }: { chat: Chat; project: Pro
       }
     };
     window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      sendErrors();
+    };
   }, [project.id, chat.id]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: tell the page only when the flag changes

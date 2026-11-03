@@ -1,11 +1,44 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_SAFETY, DEFAULT_SUPER_AGENT } from '../shared/defaults';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
-import type { AuthMode, Bot, Chat, ChatMessage, Improvement, PermissionLevel, Project, ProviderSettings, PublicSettings, Routine, RoutingRecord, SandboxSettings } from '../shared/types';
+import type {
+  AuditEntry,
+  AuthMode,
+  BackgroundJob,
+  Bot,
+  Chat,
+  ChatMessage,
+  ExternalDraft,
+  GatewaySettings,
+  Improvement,
+  PermissionLevel,
+  Project,
+  ProviderSettings,
+  PublicSettings,
+  Routine,
+  RoutingRecord,
+  SafetySettings,
+  SandboxSettings,
+  Speculation,
+  SuperAgentSettings,
+  Thread,
+  Trigger,
+  WatchdogAction,
+  WatchdogProposal,
+  WatchdogTick,
+  WatchdogWatch,
+  Worker,
+} from '../shared/types';
+import { normalizeWebhooks, type WebhookConfig } from './channels/webhookConfig';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
+import { DEFAULT_GATEWAY, normalizeGateway } from './gateway/config';
+import { redact } from './hardening/redactor';
 import { SCHEMA_VERSION } from './migrations';
+import { normalizeSafety } from './safetyConfig';
 import { DEFAULT_ALLOWED } from './sandbox';
+import { normalizeSuperAgent } from './triggers/fastPath';
 
 export function uid(prefix = ''): string {
   return prefix + crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x');
@@ -38,7 +71,11 @@ export class Collection<T extends { id: string }> {
   private timer: NodeJS.Timeout | null = null;
   private readonly flushFn = () => this.flush();
 
-  constructor(private file: string) {
+  /** mkdir: create the file's folder on the first write instead of expecting it. */
+  constructor(
+    private file: string,
+    private opts: { mkdir?: boolean } = {},
+  ) {
     for (const item of readJson<T[]>(file, [])) this.items.set(item.id, item);
   }
 
@@ -77,7 +114,102 @@ export class Collection<T extends { id: string }> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     pendingFlushes.delete(this.flushFn);
+    if (this.opts.mkdir) fs.mkdirSync(path.dirname(this.file), { recursive: true });
     writeJsonAtomic(this.file, this.all());
+  }
+}
+
+/**
+ * An append-only log, one JSON snapshot per line: the last snapshot of an id wins, so an update is
+ * another line. Bounded by count and age; what falls out is dropped from memory at once and from
+ * the file when it is compacted (once stale lines outnumber live ones). Kept in time order.
+ */
+export class JsonlLog<T extends { id: string; at: number }> {
+  private items = new Map<string, T>();
+  private lines = 0;
+
+  constructor(
+    private file: string,
+    private limits: { max: number; maxAgeMs: number },
+    /** Called for each record pruned, e.g. to delete what it points at. */
+    private onDrop?: (item: T) => void,
+  ) {
+    let text = '';
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      return;
+    }
+    const loaded = new Map<string, T>();
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      this.lines++;
+      try {
+        const rec = JSON.parse(line) as T;
+        if (rec?.id) loaded.set(rec.id, rec);
+      } catch {
+        /* a torn last line */
+      }
+    }
+    for (const rec of [...loaded.values()].sort((a, b) => a.at - b.at)) this.items.set(rec.id, rec);
+  }
+
+  get size() {
+    return this.items.size;
+  }
+
+  get(id: string | null | undefined): T | undefined {
+    return id ? this.items.get(id) : undefined;
+  }
+
+  /** Oldest first. */
+  all(): T[] {
+    return [...this.items.values()];
+  }
+
+  /** The newest `limit` records that pass `filter`, newest first. */
+  recent(limit: number, filter?: (item: T) => boolean): T[] {
+    const out: T[] = [];
+    const list = this.all();
+    for (let i = list.length - 1; i >= 0 && out.length < limit; i--) if (!filter || filter(list[i])) out.push(list[i]);
+    return out;
+  }
+
+  /** Adds a record, or a new snapshot of one already there (it keeps its place in time). */
+  append(item: T) {
+    this.items.set(item.id, item);
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    fs.appendFileSync(this.file, JSON.stringify(item) + '\n');
+    this.lines++;
+    if (this.items.size > this.limits.max * 1.1) this.prune();
+  }
+
+  /** Drops records over the count or past the age limit; returns them. */
+  prune(now = Date.now()): T[] {
+    const dropped: T[] = [];
+    const cutoff = now - this.limits.maxAgeMs;
+    const excess = this.items.size - this.limits.max;
+    for (const item of this.items.values()) {
+      if (dropped.length < excess || item.at < cutoff) dropped.push(item);
+      else break;
+    }
+    for (const item of dropped) {
+      this.items.delete(item.id);
+      this.onDrop?.(item);
+    }
+    if (this.lines > this.items.size * 2) this.compact();
+    return dropped;
+  }
+
+  compact() {
+    if (!fs.existsSync(path.dirname(this.file))) return;
+    const body = this.all()
+      .map((x) => JSON.stringify(x) + '\n')
+      .join('');
+    const tmp = `${this.file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, body);
+    fs.renameSync(tmp, this.file);
+    this.lines = this.items.size;
   }
 }
 
@@ -111,6 +243,15 @@ export interface Settings {
   pluginSecrets: Record<string, string>;
   /** Phone push (Bark) when an approval stays open this many minutes; the URL holds the device key. */
   push: { barkUrl: string; afterMinutes: number };
+  superAgent: SuperAgentSettings;
+  /** The local model gateway (ADR 009). */
+  gateway: GatewaySettings;
+  /** Gateway providers' keys by provider id; never leave the server except to their own provider. */
+  gatewayTokens: Record<string, string>;
+  /** The command guard, the credential-stripped environment and the audit log (ADR 007). */
+  safety: SafetySettings;
+  /** Outgoing webhooks for Router notifications, by project id (ADR 103); the URLs never leave the server except to themselves. */
+  webhooks: Record<string, WebhookConfig>;
   initialized: boolean;
 }
 
@@ -136,6 +277,11 @@ const DEFAULT_SETTINGS: Settings = {
   token: '',
   pluginSecrets: {},
   push: { barkUrl: '', afterMinutes: 10 },
+  superAgent: DEFAULT_SUPER_AGENT,
+  gateway: DEFAULT_GATEWAY,
+  gatewayTokens: {},
+  safety: DEFAULT_SAFETY,
+  webhooks: {},
   initialized: false,
 };
 
@@ -147,6 +293,11 @@ class SettingsStore {
     if (!isLogoId(this.data.logo)) this.data.logo = DEFAULT_LOGO;
     if (!this.data.routing) this.data.routing = { mode: 'shadow' };
     if (!this.data.sandbox) this.data.sandbox = { ...DEFAULT_SETTINGS.sandbox, allowedDomains: [...DEFAULT_ALLOWED] };
+    this.data.superAgent = normalizeSuperAgent(this.data.superAgent);
+    this.data.gateway = normalizeGateway(this.data.gateway);
+    if (!this.data.gatewayTokens || typeof this.data.gatewayTokens !== 'object') this.data.gatewayTokens = {};
+    this.data.safety = normalizeSafety(this.data.safety);
+    this.data.webhooks = normalizeWebhooks(this.data.webhooks);
     if (!this.data.token) {
       this.data.token = crypto.randomBytes(18).toString('base64url');
       this.persist();
@@ -184,6 +335,9 @@ class SettingsStore {
       rotateAtTokens: s.rotateAtTokens ?? 60_000,
       wrapUpAtTokens: s.wrapUpAtTokens ?? 120_000,
       push: { configured: !!s.push?.barkUrl, afterMinutes: s.push?.afterMinutes ?? 10 },
+      superAgent: s.superAgent,
+      gateway: { ...s.gateway, providers: s.gateway.providers.map((p) => ({ ...p, hasToken: !!s.gatewayTokens[p.id] })) },
+      safety: s.safety,
     };
   }
 
@@ -260,7 +414,8 @@ class MessageStore {
   /** Stores the message; writes a snapshot line unless persist is false (streaming updates). */
   put(msg: ChatMessage, persist = true) {
     this.load(msg.chatId).set(msg.id, msg);
-    if (persist) fs.appendFileSync(this.file(msg.chatId), JSON.stringify(msg) + '\n');
+    // A tool's output may carry a secret; the file never does (ADR 104).
+    if (persist) fs.appendFileSync(this.file(msg.chatId), redact(JSON.stringify(msg)) + '\n');
   }
 
   delete(chatId: string, id: string) {
@@ -275,7 +430,7 @@ class MessageStore {
 
   compact(chatId: string) {
     const lines = this.sorted(chatId)
-      .map((m) => JSON.stringify(m))
+      .map((m) => redact(JSON.stringify(m)))
       .join('\n');
     const tmp = this.file(chatId) + '.tmp';
     fs.writeFileSync(tmp, lines ? lines + '\n' : '');
@@ -291,3 +446,34 @@ export const routines = new Collection<Routine>(DATA.routines);
 export const improvements = new Collection<Improvement>(DATA.improvements);
 export const routingLog = new Collection<RoutingRecord>(DATA.routing);
 export const messages = new MessageStore();
+
+/** Payloads of triggers that have no other home, one file each, removed with the trigger. */
+export const triggerPayloadFile = (id: string) => path.join(DATA.triggerPayloads, `${id}.json`);
+export const TRIGGER_LIMITS = { max: 2000, maxAgeMs: 14 * 86_400_000 };
+export const triggerLog = new JsonlLog<Trigger>(DATA.triggers, TRIGGER_LIMITS, (t) => {
+  if (t.ref.kind === 'payload') fs.rmSync(triggerPayloadFile(t.id), { force: true });
+});
+export const threads = new Collection<Thread>(DATA.threads, { mkdir: true });
+/** Two-layer mode's Workers; their turns are kept by `messages` under the Worker's id. */
+export const workers = new Collection<Worker>(DATA.workers);
+/** Full duplex's background jobs; a sub-task's transcript is kept by `messages` under the job's id. */
+export const jobs = new Collection<BackgroundJob>(DATA.jobs, { mkdir: true });
+/** Drafts of actions that leave the machine in the user's name; they run only on the user's click. */
+export const drafts = new Collection<ExternalDraft>(DATA.drafts);
+export const AUDIT_LIMITS = { max: 5000, maxAgeMs: 180 * 86_400_000 };
+/** Agent-authored external actions, their approvals and the guard's refusals (only while safety.audit is on). */
+export const auditLog = new JsonlLog<AuditEntry>(DATA.audit, AUDIT_LIMITS);
+/** Where `messages` keeps a chat's Router turns. */
+export const routerLogId = (chatId: string) => `rt_${chatId}`;
+
+/** The Watchdog's ledger: every tick (run or skipped) and maintainer turn, and every action it took or was refused. */
+export const SPECULATION_LIMITS = { max: 500, maxAgeMs: 30 * 86_400_000 };
+/** Speculative runs and the signals a gate refused (ADR 008). */
+export const speculationLog = new JsonlLog<Speculation>(DATA.speculations, SPECULATION_LIMITS);
+export const WATCHDOG_LIMITS = { max: 5000, maxAgeMs: 30 * 86_400_000 };
+export const watchdogTicks = new JsonlLog<WatchdogTick>(DATA.watchdogTicks, WATCHDOG_LIMITS);
+export const watchdogActions = new JsonlLog<WatchdogAction>(DATA.watchdogActions, WATCHDOG_LIMITS);
+export const watchdogWatches = new Collection<WatchdogWatch>(DATA.watchdogWatches, { mkdir: true });
+export const watchdogProposals = new Collection<WatchdogProposal>(DATA.watchdogProposals, { mkdir: true });
+/** Where `messages` keeps the Watchdog's turns and the maintainers' messages to it. */
+export const WATCHDOG_LOG = 'watchdog';

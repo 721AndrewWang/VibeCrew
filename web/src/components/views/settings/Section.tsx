@@ -2,9 +2,9 @@ import { Check, Copy } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { copyText } from '../../../utils';
 
-export function Section({ icon, title, extra, children }: { icon: ReactNode; title: string; extra?: ReactNode; children: ReactNode }) {
+export function Section({ icon, title, extra, children, id }: { icon: ReactNode; title: string; extra?: ReactNode; children: ReactNode; id?: string }) {
   return (
-    <section className="card settings-card">
+    <section className="card settings-card" id={id}>
       <div className="sc-head">
         <span className="sc-icon">{icon}</span>
         <h2>{title}</h2>

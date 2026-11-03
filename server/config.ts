@@ -36,6 +36,30 @@ export const DATA = {
   routing: path.join(HOME_DIR, 'routing.json'),
   /** Moments Crew got in the way, one JSON line each (server/friction.ts). */
   friction: path.join(HOME_DIR, 'friction.jsonl'),
+  /** The Trigger bus (server/triggers): created on its first write, so only once the feature is on. */
+  triggers: path.join(HOME_DIR, 'triggers', 'triggers.jsonl'),
+  threads: path.join(HOME_DIR, 'triggers', 'threads.json'),
+  triggerPayloads: path.join(HOME_DIR, 'triggers', 'payloads'),
+  /** Two-layer mode's Workers (server/layers): written on the first dispatch. */
+  workers: path.join(HOME_DIR, 'workers.json'),
+  /** The model gateway's usage log (server/gateway): written on its first call. */
+  gatewayCalls: path.join(HOME_DIR, 'gateway', 'calls.jsonl'),
+  /** The Watchdog (server/watchdog): created on its first write, so only once it is on. */
+  watchdog: path.join(HOME_DIR, 'watchdog'),
+  watchdogTicks: path.join(HOME_DIR, 'watchdog', 'ticks.jsonl'),
+  watchdogActions: path.join(HOME_DIR, 'watchdog', 'actions.jsonl'),
+  watchdogWatches: path.join(HOME_DIR, 'watchdog', 'watches.json'),
+  watchdogProposals: path.join(HOME_DIR, 'watchdog', 'proposals.json'),
+  /** Speculative runs (server/speculative, ADR 008): created on the first record, so only once a project opted in. */
+  speculative: path.join(HOME_DIR, 'speculative'),
+  speculations: path.join(HOME_DIR, 'speculative', 'runs.jsonl'),
+  /** Full duplex's background jobs (server/jobs): created on the first job. */
+  jobs: path.join(HOME_DIR, 'jobs', 'jobs.json'),
+  jobLogs: path.join(HOME_DIR, 'jobs'),
+  /** External-action drafts (ADR 007): written on the first draft. */
+  drafts: path.join(HOME_DIR, 'drafts.json'),
+  /** The audit log (ADR 007): written only while settings.safety.audit is on. */
+  audit: path.join(HOME_DIR, 'audit.jsonl'),
 };
 
 for (const dir of [HOME_DIR, DATA.messages, DATA.skills, DATA.uploads, DATA.turns, DATA.memory, DATA.worktrees]) {
@@ -66,14 +90,69 @@ const KEEP_CLAUDE_CODE_VARS = new Set([
   'CLAUDE_CODE_GIT_BASH_PATH',
 ]);
 
-/** process.env without the variables of an enclosing Claude Code session. */
-export function cleanEnv(extra: Record<string, string | undefined> = {}): Record<string, string> {
+/** Names that look like a secret: tokens, keys, passwords, credentials (ADR 007). */
+const SECRET_NAME = /(TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIAL|_AUTH$|^AUTH_|SESSION_?KEY|SIGNING_?KEY|CLIENT_?SECRET|WEBHOOK)/i;
+/** Well-known ones whose names do not say so, and agent sockets that sign or push for the user. */
+const SECRET_VARS = new Set([
+  'SSH_AUTH_SOCK',
+  'SSH_AGENT_PID',
+  'GPG_AGENT_INFO',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'AWS_PROFILE',
+  'AWS_SHARED_CREDENTIALS_FILE',
+  'AWS_CONFIG_FILE',
+  'AWS_WEB_IDENTITY_TOKEN_FILE',
+  'AZURE_CLIENT_ID',
+  'AZURE_TENANT_ID',
+  'KUBECONFIG',
+  'DOCKER_AUTH_CONFIG',
+  'DOCKER_CONFIG',
+  'NETRC',
+  'GIT_ASKPASS',
+  'SSH_ASKPASS',
+  'GH_ENTERPRISE_TOKEN',
+  'DATABASE_URL',
+  'REDIS_URL',
+  'MONGODB_URI',
+  'SENTRY_DSN',
+  'SLACK_WEBHOOK_URL',
+]);
+
+/**
+ * The model's own connection, which Claude Code needs to run at all: Anthropic's variables, the
+ * Claude Code ones Crew keeps, and the cloud credentials when Claude Code is told to use that cloud.
+ */
+function modelConnectionVar(name: string, env: NodeJS.ProcessEnv): boolean {
+  if (name.startsWith('ANTHROPIC_') || KEEP_CLAUDE_CODE_VARS.has(name)) return true;
+  if (env.CLAUDE_CODE_USE_BEDROCK && /^AWS_/.test(name)) return true;
+  if (env.CLAUDE_CODE_USE_VERTEX && (/^(GOOGLE_|CLOUDSDK_|GCLOUD_)/.test(name) || name === 'VERTEX_REGION_CLAUDE')) return true;
+  if (env.CLAUDE_CODE_USE_FOUNDRY && /^AZURE_/.test(name)) return true;
+  return false;
+}
+
+/** Whether a variable would hand an agent a credential of the user's (the model's own connection excepted). */
+export function isCredentialVar(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (modelConnectionVar(name, env)) return false;
+  return SECRET_VARS.has(name) || SECRET_NAME.test(name) || /^AWS_(ACCESS|SECRET|SESSION)/.test(name);
+}
+
+export interface CleanEnvOptions {
+  /** Drop variables that look like credentials (agent sessions; ADR 007). `extra` is applied after, so the model's own key survives. */
+  stripCredentials?: boolean;
+  /** Names kept although they look like credentials: a project passes them through on purpose. */
+  passEnv?: string[];
+}
+
+/** process.env without the variables of an enclosing Claude Code session (and, for agents, without the user's credentials). */
+export function cleanEnv(extra: Record<string, string | undefined> = {}, opts: CleanEnvOptions = {}): Record<string, string> {
   const out: Record<string, string> = {};
+  const pass = new Set(opts.passEnv || []);
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue;
     if (SESSION_VARS.test(k) || DESKTOP_VARS.test(k)) continue;
     if (k.startsWith('CLAUDE_CODE_') && !KEEP_CLAUDE_CODE_VARS.has(k)) continue;
     if (k.startsWith('CREW_')) continue;
+    if (opts.stripCredentials && !pass.has(k) && isCredentialVar(k)) continue;
     out[k] = v;
   }
   // The desktop app runs this server without the user's NODE_OPTIONS; programs we start get them back.

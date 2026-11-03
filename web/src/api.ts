@@ -1,15 +1,25 @@
 import type {
   Attachment,
+  AuditEntry,
   AuthStatus,
+  BackgroundJob,
   Bootstrap,
   Bot,
   Chat,
   ChatMessage,
+  ConsoleEntry,
   DevServerState,
   Effort,
+  ExternalDraft,
   FrictionReport,
+  GatewayProvider,
+  GatewayReport,
+  GatewayTest,
+  GithubStatus,
+  GuardVerdict,
   Improvement,
   ImprovementEffect,
+  JobLog,
   PermissionLevel,
   PreviewInfo,
   Project,
@@ -19,8 +29,22 @@ import type {
   RoutingReport,
   Skill,
   SkillCandidate,
+  SkillFamily,
+  Speculation,
+  Thread,
+  Trigger,
+  TriggerDetail,
+  TriggerList,
   TurnSummary,
   TurnTrace,
+  WatchdogOverview,
+  WatchdogProposal,
+  WatchdogTick,
+  WatchdogWatch,
+  WebhookDelivery,
+  WebhookInfo,
+  WebhookPatch,
+  Worker,
   WorkspaceMergeResult,
   WorkspaceStatus,
 } from '../../shared/types';
@@ -42,13 +66,13 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     credentials: 'same-origin',
   });
   const text = await res.text();
-  let data: any = null;
+  let data: unknown = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
     data = text;
   }
-  if (!res.ok) throw new ApiError(res.status, data?.error || `Request failed (${res.status})`);
+  if (!res.ok) throw new ApiError(res.status, (data as { error?: string } | null)?.error || `Request failed (${res.status})`);
   return data as T;
 }
 
@@ -107,6 +131,11 @@ export const api = {
   updateSettings: (p: Record<string, unknown>) => patch<{ settings: PublicSettings; lanUrl?: string }>('/api/settings', p),
   /** One tiny prompt through Claude Code with these (unsaved) connection settings. */
   testConnection: (p: Record<string, unknown>) => post<{ ok: boolean; text: string; models?: string[]; ms: number }>('/api/settings/test-connection', p),
+  /** The model gateway: running state, recent calls, totals and windows. */
+  gateway: (limit = 100) => get<GatewayReport>(`/api/gateway?limit=${limit}`),
+  testGateway: (target: string) => post<GatewayTest>('/api/gateway/test', { target }),
+  /** Adds the current model connection (key included, server side) as a gateway provider. */
+  importConnection: () => post<{ provider: GatewayProvider; settings: PublicSettings }>('/api/gateway/import-connection'),
   friction: (days = 7) => get<FrictionReport>(`/api/friction?days=${days}`),
   /** Sends a test push to the saved Bark address. */
   testPush: () => post<{ ok: boolean }>('/api/settings/push-test'),
@@ -164,7 +193,7 @@ export const api = {
   screenshot: (id: string, path: string, device: string, fullPage = false) => post<UploadResult>(`/api/projects/${id}/screenshot`, { path, device, fullPage }),
   fs: (path?: string) => get<{ path: string; parent: string | null; home: string; entries: { name: string; path: string; isProject: boolean }[] }>(`/api/fs${path ? `?path=${q(path)}` : ''}`),
 
-  saveSkill: (s: Partial<Skill> & { name: string; previousName?: string }) => post<Skill>('/api/skills', s),
+  saveSkill: (s: Omit<Partial<Skill>, 'family'> & { name: string; previousName?: string; family?: SkillFamily | null }) => post<Skill>('/api/skills', s),
   deleteSkill: (name: string) => del(`/api/skills/${q(name)}`),
   skillFromRecording: (p: { name: string; title: string; goal: string; page: string; steps: RecordedStep[] }) => post<Skill>('/api/skills/from-recording', p),
 
@@ -175,6 +204,11 @@ export const api = {
 
   upload: (file: { name: string; mime: string; data: string }) => post<UploadResult>('/api/uploads', file),
   routing: () => get<RoutingReport>('/api/routing'),
+  triggers: (limit = 200) => get<TriggerList>(`/api/triggers?limit=${limit}`),
+  /** A trigger with its payload resolved and its related and neighbouring triggers. */
+  trigger: (id: string) => get<TriggerDetail>(`/api/triggers/${q(id)}`),
+  /** Console errors from the preview, while the Super-agent is on. */
+  previewConsole: (p: { projectId: string; chatId?: string | null; page: string; entries: ConsoleEntry[] }) => post<{ trigger: Trigger | null }>('/api/triggers/preview-console', p),
   skillCandidates: () => get<SkillCandidate[]>('/api/skills/candidates'),
   draftSkill: (chatId: string, messageId: string) => post<{ improvement: Improvement; costUsd: number } | { skipped: string; costUsd: number }>('/api/skills/draft', { chatId, messageId }),
   improvements: () => get<{ items: Improvement[]; effects: Record<string, ImprovementEffect> }>('/api/improvements'),
@@ -183,6 +217,46 @@ export const api = {
   editImprovement: (id: string, d: Record<string, unknown>) => patch<{ improvement: Improvement }>(`/api/improvements/${id}`, d),
   rejectImprovement: (id: string, note?: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/reject`, { note }),
   revertImprovement: (id: string) => post<{ improvement: Improvement }>(`/api/improvements/${id}/revert`),
+
+  // Two-layer mode: a chat's Router and its Workers.
+  workerLog: (id: string) => get<{ worker: Worker; messages: ChatMessage[]; threads: Thread[] }>(`/api/workers/${q(id)}/messages`),
+  stopWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/stop`),
+  /** Takes the Worker off a thread: its later events go to the Router again. */
+  unsubscribeWorker: (id: string, threadId: string) => post<Worker>(`/api/workers/${q(id)}/unsubscribe`, { threadId }),
+  dismissWorker: (id: string) => post<Worker>(`/api/workers/${q(id)}/dismiss`),
+  routerLog: (chatId: string) => get<{ messages: ChatMessage[] }>(`/api/chats/${q(chatId)}/router/messages`),
+
+  // The Watchdog.
+  watchdog: () => get<WatchdogOverview>('/api/watchdog'),
+  watchdogLog: () => get<{ messages: ChatMessage[] }>('/api/watchdog/messages'),
+  askWatchdog: (text: string) => post<{ message: ChatMessage }>('/api/watchdog/messages', { text }),
+  watchdogTick: () => post<{ tick: WatchdogTick }>('/api/watchdog/tick'),
+  githubStatus: () => get<{ projects: GithubStatus[] }>('/api/github'),
+  pollGithub: (projectId: string) => post<{ poll: GithubStatus }>('/api/github/poll', { projectId }),
+  acceptWatchdogProposal: (id: string) => post<{ proposal: WatchdogProposal }>(`/api/watchdog/proposals/${q(id)}/accept`),
+  rejectWatchdogProposal: (id: string) => post<{ proposal: WatchdogProposal }>(`/api/watchdog/proposals/${q(id)}/reject`),
+  resolveWatchdogWatch: (id: string) => post<{ watch: WatchdogWatch }>(`/api/watchdog/watches/${q(id)}/resolve`),
+
+  // Full duplex: background jobs.
+  jobLog: (id: string, from?: number, lines?: number) => get<JobLog & { messages?: ChatMessage[] }>(`/api/jobs/${q(id)}/log${from !== undefined ? `?from=${from}&lines=${lines ?? 400}` : ''}`),
+  stopJob: (id: string) => post<BackgroundJob>(`/api/jobs/${q(id)}/stop`),
+
+  // Safety (ADR 007): drafts of external actions, the audit log, the guard's dry run.
+  // Speculative execution (ADR 008): verified fixes to merge or discard, and recent runs.
+  speculations: (q: { chatId?: string; projectId?: string } = {}) =>
+    get<{ speculations: Speculation[]; spentTodayUsd: number }>(`/api/speculations?${new URLSearchParams(Object.entries(q).filter(([, v]) => !!v) as [string, string][])}`),
+  speculationDiff: (id: string) => get<{ diff: string }>(`/api/speculations/${q(id)}/diff`),
+  mergeSpeculation: (id: string) => post<{ speculation: Speculation }>(`/api/speculations/${q(id)}/merge`),
+  discardSpeculation: (id: string) => post<{ speculation: Speculation }>(`/api/speculations/${q(id)}/discard`),
+  approveDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/approve`),
+  discardDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/discard`),
+  audit: (limit = 200) => get<{ enabled: boolean; entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),
+  // ADR 103: a project's Router-notification webhook (the URL itself never comes back).
+  projectWebhook: (projectId: string) => get<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`),
+  saveProjectWebhook: (projectId: string, body: WebhookPatch) => put<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`, body),
+  deleteProjectWebhook: (projectId: string) => del<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`),
+  testProjectWebhook: (projectId: string) => post<{ delivery: WebhookDelivery }>(`/api/projects/${q(projectId)}/webhook/test`),
+  guardCheck: (command: string, projectId?: string | null) => post<{ enabled: boolean; verdict: GuardVerdict }>('/api/guard/check', { command, projectId: projectId || null }),
 };
 
 export function fileToBase64(file: Blob): Promise<string> {

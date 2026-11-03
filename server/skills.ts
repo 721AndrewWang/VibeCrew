@@ -1,9 +1,30 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RecordedStep, Skill } from '../shared/types';
+import { isFamily } from '../shared/families';
+import type { Project, RecordedStep, Skill, SkillFamily, SkillMode } from '../shared/types';
 import { bus } from './bus';
 import { DATA } from './config';
 import { BUILTIN_SKILLS } from './data/builtinSkills';
+import { configOf } from './projects';
+
+const MODES: SkillMode[] = ['chat', 'worker', 'speculative'];
+
+/** Modes from front matter ("chat, worker") or a request; nothing valid = unset (chat and worker). */
+function parseModes(v: unknown): SkillMode[] | undefined {
+  const list = Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[,\s]+/) : [];
+  const out = MODES.filter((m) => list.includes(m));
+  return out.length ? out : undefined;
+}
+
+/** Whether a skill may run in a mode (ADR 007). */
+export function runsIn(s: Skill, mode: SkillMode): boolean {
+  return (s.modes || ['chat', 'worker']).includes(mode);
+}
+
+/** The lifecycle families a project opted in to (a workspace has its parent's). */
+export function projectFamilies(project: Project | null | undefined): SkillFamily[] {
+  return project ? (configOf(project).skillFamilies || []).filter(isFamily) : [];
+}
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
@@ -30,6 +51,9 @@ function parse(file: string): Skill | null {
       body: body.trim(),
       builtin: false,
       updatedAt: fs.statSync(file).mtimeMs,
+      family: isFamily(meta.family) ? meta.family : undefined,
+      modes: parseModes(meta.modes),
+      readOnly: meta.readOnly === 'true' || undefined,
     };
   } catch {
     return null;
@@ -45,6 +69,9 @@ function serialize(s: Skill): string {
     `icon: ${oneLine(s.icon)}`,
     `argsHint: ${oneLine(s.argsHint || '')}`,
     `description: ${oneLine(s.description)}`,
+    ...(s.family ? [`family: ${s.family}`] : []),
+    ...(s.modes?.length ? [`modes: ${s.modes.join(', ')}`] : []),
+    ...(s.readOnly ? ['readOnly: true'] : []),
     '---',
     s.body.trim(),
     '',
@@ -68,7 +95,7 @@ export const skills = {
     return this.list().find((s) => s.name === name);
   },
 
-  save(input: Partial<Skill> & { name: string }, previousName?: string): Skill {
+  save(input: Omit<Partial<Skill>, 'family'> & { name: string; family?: SkillFamily | null }, previousName?: string): Skill {
     const name = input.name.trim().toLowerCase();
     if (!NAME_RE.test(name)) throw new Error('Skill names may only contain lowercase letters, digits and hyphens (up to 40 characters)');
     const s: Skill = {
@@ -80,6 +107,9 @@ export const skills = {
       body: input.body?.trim() || '',
       builtin: false,
       updatedAt: Date.now(),
+      family: isFamily(input.family) ? input.family : undefined,
+      modes: parseModes(input.modes),
+      readOnly: input.readOnly || undefined,
     };
     if (!s.body) throw new Error("The skill content can't be empty");
     // Renaming: drop the old file and tell clients (a renamed override brings its built-in back).
@@ -96,6 +126,25 @@ export const skills = {
     const builtin = BUILTIN_SKILLS.find((b) => b.name === name);
     if (builtin) bus.emit({ t: 'skill', skill: { ...builtin, builtin: true, updatedAt: 0 } });
     else bus.emit({ t: 'skill_deleted', name });
+  },
+
+  /**
+   * What a bot's system prompt lists: general skills, plus the families its project opted in to
+   * (each installed skill costs context in every prompt), runnable from the chat.
+   */
+  forPrompt(project: Project | null | undefined): Skill[] {
+    const families = projectFamilies(project);
+    return this.list().filter((s) => runsIn(s, 'chat') && (!s.family || families.includes(s.family)));
+  },
+
+  /**
+   * One family's skills for a mode, or none when the project has not opted in to the family. The
+   * Router's Workers use it now; speculative runs (a later milestone) will use triage, reproduce
+   * and draft-fix the same way.
+   */
+  forFamily(project: Project | null | undefined, family: SkillFamily, mode: SkillMode): Skill[] {
+    if (!projectFamilies(project).includes(family)) return [];
+    return this.list().filter((s) => s.family === family && runsIn(s, mode));
   },
 
   /** Expands a leading "/name args" into the skill's prompt. */

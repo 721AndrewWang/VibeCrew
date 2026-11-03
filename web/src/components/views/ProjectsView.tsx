@@ -1,13 +1,17 @@
 import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2, FolderOpen, FolderPlus, GitBranch, House, MoreHorizontal, Play, Settings, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultAutoChallenge } from '../../../../shared/challenge';
-import type { DevServerState, Project } from '../../../../shared/types';
+import { DEFAULT_GITHUB, DEFAULT_PROJECT_SPECULATIVE } from '../../../../shared/defaults';
+import { SKILL_FAMILIES } from '../../../../shared/families';
+import type { DevServerState, GithubChannel, Project, ProjectSpeculative, SkillFamily } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
-import { copyText, cx, shortPath } from '../../utils';
+import { copyText, cx, shortPath, toggled } from '../../utils';
 import { showWorkspaceChanges } from '../../workspace';
 import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
+import { GithubChannelSection } from './GithubChannelSection';
+import { ProjectWebhook } from './ProjectWebhook';
 
 // ---------------------------------------------------------------- shared bits
 
@@ -45,6 +49,12 @@ function devBadge(st: DevServerState | undefined) {
 
 // ---------------------------------------------------------------- project card
 
+const SPEC_SIGNALS: { key: keyof ProjectSpeculative['signals']; label: string; hint: string }[] = [
+  { key: 'failingChecks', label: 'Failing checks', hint: "A full-duplex bot's background test, lint or build run that failed" },
+  { key: 'consoleErrors', label: 'Console errors', hint: "Errors the preview's page logs" },
+  { key: 'bugReports', label: 'Bug reports', hint: 'A message describing a problem that does not ask for the fix yet' },
+];
+
 function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: () => void }) {
   const [name, setName] = useState(project.name);
   const [devCommand, setDevCommand] = useState(project.devCommand || '');
@@ -57,7 +67,13 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [requireChallenge, setRequireChallenge] = useState(!!project.requireChallenge);
   const [auto, setAuto] = useState(project.autoChallenge || { ...defaultAutoChallenge(), enabled: false });
   const [autoPaths, setAutoPaths] = useState(auto.paths.join('\n'));
+  const [families, setFamilies] = useState<SkillFamily[]>(project.skillFamilies || []);
+  const [passEnv, setPassEnv] = useState((project.passEnv || []).join('\n'));
+  const [spec, setSpec] = useState<ProjectSpeculative>(project.speculative || DEFAULT_PROJECT_SPECULATIVE);
+  const setSignal = (k: keyof ProjectSpeculative['signals'], v: boolean) => setSpec({ ...spec, signals: { ...spec.signals, [k]: v } });
+  const [github, setGithub] = useState<GithubChannel>(project.github || DEFAULT_GITHUB);
   const [saving, setSaving] = useState(false);
+  const toggleFamily = (id: SkillFamily) => setFamilies(toggled(families, id));
 
   const save = async () => {
     setSaving(true);
@@ -80,6 +96,13 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         askRules: rules,
         allowedDomains: domains,
         requireChallenge,
+        skillFamilies: families,
+        speculative: spec,
+        ...(project.github || github.enabled ? { github } : {}),
+        passEnv: passEnv
+          .split(/[\s,]+/)
+          .map((x) => x.trim())
+          .filter(Boolean),
         autoChallenge: {
           ...auto,
           paths: autoPaths
@@ -139,13 +162,34 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <textarea className="input mono" rows={2} value={allowedDomains} placeholder={'One per line, e.g.\napi.example.com\n10.0.0.5:8080'} onChange={(e) => setAllowedDomains(e.target.value)} />
           <div className="hint">On top of the global list in Settings → Sandbox, commands in this project can also reach these hosts.</div>
         </div>
+        <div className="field span-all" data-testid="skill-families">
+          <label>Lifecycle skill families</label>
+          <div className="family-chips">
+            {SKILL_FAMILIES.map((f) => (
+              <label key={f.id} className="check-row" title={f.description}>
+                <input type="checkbox" checked={families.includes(f.id)} onChange={() => toggleFamily(f.id)} /> {f.title}
+                {f.readOnly ? <span className="muted"> (read-only)</span> : null}
+              </label>
+            ))}
+          </div>
+          <div className="hint">
+            Bots here see these families' skills, and the Router can hand them to Workers. Each one adds to every prompt, so turn on only what this project uses. Their slash commands work anywhere.
+          </div>
+        </div>
+        <div className="field span-all">
+          <label>Pass these credentials through to bots</label>
+          <textarea className="input mono" rows={1} value={passEnv} placeholder="Variable names, e.g. NPM_TOKEN" onChange={(e) => setPassEnv(e.target.value)} />
+          <div className="hint">Crew keeps tokens and keys from its environment out of bot sessions (Settings → Safety). Name one here only if this project's commands really need it.</div>
+        </div>
+        {!project.workspace && <ProjectWebhook project={project} />}
+        <GithubChannelSection projectId={project.id} value={github} onChange={setGithub} />
         <div className="field span-all">
           <div className="setting-row">
             <div>
               <div className="sr-title">No AI attribution in commits</div>
               <div className="hint">Bot commits and PRs carry no Co-Authored-By or similar lines, and merge commits don't mention Crew.</div>
             </div>
-            <Toggle on={noAttribution} onChange={setNoAttribution} />
+            <Toggle label="No AI attribution in commits" on={noAttribution} onChange={setNoAttribution} />
           </div>
           <div className="setting-row">
             <div>
@@ -154,7 +198,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
                 Before an isolated workspace merges, Skeptic reviews the latest commit, and it can only merge if nothing is overturned (/challenge). Costs about $0.3–0.6 each time.
               </div>
             </div>
-            <Toggle on={requireChallenge} onChange={setRequireChallenge} />
+            <Toggle label="Require adversarial review before merge" on={requireChallenge} onChange={setRequireChallenge} />
           </div>
           <div className="setting-row">
             <div>
@@ -164,7 +208,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
                 the same changes are never reviewed twice. The rules are fixed; the model doesn't decide what is "risky".
               </div>
             </div>
-            <Toggle on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
+            <Toggle label="Auto adversarial review by rules" on={auto.enabled} onChange={(enabled) => setAuto({ ...auto, enabled })} />
           </div>
           {auto.enabled && (
             <div className="form-grid">
@@ -176,6 +220,49 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
                 <label>Or when at least this many lines change</label>
                 <input className="input num-input" type="number" min={0} step={10} value={auto.minLines} onChange={(e) => setAuto({ ...auto, minLines: Math.max(0, Number(e.target.value) || 0) })} />
                 <div className="hint">Added plus deleted lines. 0 means no line threshold.</div>
+              </div>
+            </div>
+          )}
+          <div className="setting-row" data-testid="project-speculative">
+            <div>
+              <div className="sr-title">Speculative fixes</div>
+              <div className="hint">
+                When a check fails, the preview logs an error, or someone describes a problem without asking for the fix yet, Crew may start a background run in a throwaway worktree that tries to
+                reproduce it and find a small fix. You only hear about it when the check command below fails without the fix and passes with it; then the chat shows the diff with a one-click merge.
+                Anything else is thrown away quietly. Needs Triggers on; the budget and limits all projects share are in Settings → Super-agent → Speculative fixes.
+              </div>
+            </div>
+            <Toggle label="Speculative fixes" on={spec.enabled} onChange={(enabled) => setSpec({ ...spec, enabled })} />
+          </div>
+          {spec.enabled && (
+            <div className="form-grid">
+              <div className="field">
+                <label>Check command</label>
+                <input className="input mono" value={spec.checkCommand} placeholder="e.g. npm test, or npm run lint && npm test" onChange={(e) => setSpec({ ...spec, checkCommand: e.target.value })} />
+                <div className="hint">Crew runs it in the throwaway worktree. Empty: npm test, when package.json has a real test script.</div>
+              </div>
+              <div className="field">
+                <label>Act on</label>
+                <div className="day-chips">
+                  {SPEC_SIGNALS.map((x) => (
+                    <button key={x.key} className={cx('preset-chip sm', spec.signals[x.key] && 'on')} title={x.hint} onClick={() => setSignal(x.key, !spec.signals[x.key])}>
+                      {x.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
+                <label>Largest fix to show (changed lines)</label>
+                <input
+                  className="input num-input"
+                  type="number"
+                  min={1}
+                  max={2000}
+                  step={10}
+                  value={spec.maxFixLines}
+                  onChange={(e) => setSpec({ ...spec, maxFixLines: Math.max(1, Math.min(2000, Number(e.target.value) || 1)) })}
+                />
+                <div className="hint">Outside the reproduction. A bigger fix is not something to merge on one click.</div>
               </div>
             </div>
           )}

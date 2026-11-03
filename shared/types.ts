@@ -56,6 +56,8 @@ export interface Bot {
   freshSession?: boolean;
   /** Adversarial reviewer: sees the user's request and the change, never teammates' explanations, and tries to refute it. */
   blindReview?: boolean;
+  /** Full duplex: long commands and sub-tasks run in the background (start/stop/status tools), and new input reaches a running turn after its current step. */
+  fullDuplex?: boolean;
   /** Project used by this bot's direct chat. */
   projectId: ID | null;
   template?: string;
@@ -93,6 +95,13 @@ export interface Chat {
   effort?: Effort;
   /** botId -> how full its context window was after its last turn (the composer's ring). */
   context?: Record<ID, ContextUsage>;
+  /**
+   * Two-layer mode (ADR 002): the Router's Claude Code session, and the seq of the last chat message
+   * it was given. With subscriptions on (ADR 003): how many events its Router decided on, and how
+   * many went straight to subscribed Workers instead (Router decisions avoided).
+   */
+  /** stoppedAt: the user last stopped the chat (its Router's inbox was dropped then; a restart does not hand it over again, ADR 105). */
+  router?: { sessionId?: string; cursor?: number; decided?: number; direct?: number; stoppedAt?: number };
 }
 
 /** A bot's context window use, as Claude Code's /context reports it. */
@@ -183,14 +192,18 @@ export interface ApprovalPart {
   reason?: string;
   /** What made Crew ask: the level, or the rule that matched. */
   because?: string;
+  /** What the action changes, in words a person can judge (the command guard's summary). */
+  effects?: string[];
 }
 
 export type MessagePart = TextPart | ThinkingPart | ToolPart | ApprovalPart;
 
 export interface MessageTrigger {
-  type: 'user' | 'mention' | 'routine' | 'system';
+  type: 'user' | 'mention' | 'routine' | 'system' | 'job';
   by?: ID;
   routineId?: ID;
+  /** type job: the background job whose result started this turn. */
+  jobId?: ID;
 }
 
 export interface ChatMessage {
@@ -211,9 +224,18 @@ export interface ChatMessage {
   status?: 'queued' | 'streaming' | 'done' | 'error' | 'stopped';
   /**
    * outside-edit: files changed outside the chat, a note about the work itself that blind reviewers
-   * see too. stall: the chain stopped without a handoff and the lead was woken.
+   * see too. stall: the chain stopped without a handoff and the lead was woken. trigger: the
+   * Super-agent's event filter thought an event worth the user's attention (always uiOnly).
+   * watchdog: a notice the Watchdog sent to a chat outside two-layer mode (always uiOnly). job: a
+   * background job's result, delivered to the bot that started it (see jobId). speculative: a
+   * speculative run reproduced a problem and its fix passed the project's checks (always uiOnly; see
+   * speculationId).
    */
-  notice?: 'outside-edit' | 'stall';
+  notice?: 'outside-edit' | 'stall' | 'trigger' | 'watchdog' | 'job' | 'speculative';
+  /** notice job: the job whose result this is. */
+  jobId?: ID;
+  /** notice speculative: the speculative run whose fix is ready (ADR 008). */
+  speculationId?: ID;
   /** The turn was cut short by a restart of Crew; what it had written is kept. */
   interrupted?: boolean;
   error?: string;
@@ -236,11 +258,77 @@ export interface ChatMessage {
     model?: string;
     trace?: TraceRef;
     verdict?: { refuted: number };
+    /** Estimated tokens of the prompt Crew injected, and of the same prompt without Inline & Spill (only while recall is on). */
+    injected?: { tokens: number; without: number };
   };
   /** Files changed by this bot turn. */
   changes?: { files: string[]; reverted?: boolean };
   /** A note for the human only; never included in bot prompts. */
   uiOnly?: boolean;
+  /** Posted by the chat's Router (two-layer mode), speaking as the lead. */
+  router?: boolean;
+  /** On a Router turn in its log: the ids of the events (messages, Workers, Triggers) the turn handled. */
+  batch?: ID[];
+  /** A Router reply under the chat profile (ADR 103): what kind of message it is, and the Worker reports behind it. */
+  channel?: ChannelMeta;
+}
+
+/** What a Router reply is for (ADR 103): the only three things the chat carries. */
+export type ReplyKind = 'decision' | 'question' | 'acceptance';
+
+/** A Worker report attached to a Router reply: a gist in the chat, the full report one click away. UI only, never in prompts. */
+export interface ReportDetail {
+  workerId: ID;
+  title: string;
+  bot: string;
+  status: WorkerOutcome;
+  /** At most 30 words, without code or tool output. */
+  gist: string;
+  /** The full report, capped. */
+  report: string;
+  /** What Crew did with its changes. */
+  landing?: string;
+  at: number;
+}
+
+export interface ChannelMeta {
+  kind: ReplyKind;
+  details?: ReportDetail[];
+}
+
+export type WebhookFormat = 'slack' | 'feishu';
+
+/** A project's outgoing webhook for Router notifications (ADR 103), as the API shows it: never the full URL. */
+export interface WebhookInfo {
+  projectId: ID;
+  configured: boolean;
+  host: string;
+  masked: string;
+  format: WebhookFormat;
+  enabled: boolean;
+  kinds: ReplyKind[];
+  approvedAt?: number;
+  deliveries: WebhookDelivery[];
+}
+
+/** What the user changes about a project's webhook; a new URL or format turns it off again. */
+export interface WebhookPatch {
+  url?: string;
+  format?: WebhookFormat;
+  enabled?: boolean;
+  kinds?: ReplyKind[];
+}
+
+export interface WebhookDelivery {
+  at: number;
+  kind: ReplyKind | 'test';
+  chatId?: ID;
+  messageId?: ID;
+  ok: boolean;
+  status?: number;
+  error?: string;
+  /** What was sent. */
+  text: string;
 }
 
 export interface Project {
@@ -267,6 +355,14 @@ export interface Project {
   requireChallenge?: boolean;
   /** Call the adversarial reviewer by itself when a finished change matches these fixed rules. */
   autoChallenge?: AutoChallenge;
+  /** Lifecycle skill families this project opted in to (each costs context in every prompt). */
+  skillFamilies?: SkillFamily[];
+  /** Speculative execution (ADR 008): silent reproduce-and-fix runs on signals from this project. */
+  speculative?: ProjectSpeculative;
+  /** Environment variables passed through to agent sessions although they look like credentials. */
+  passEnv?: string[];
+  /** GitHub as an asynchronous channel (ADR 102): poll these repositories for Triggers; needs superAgent.enabled. */
+  github?: GithubChannel;
   framework?: string;
   /** Detected (or configured) dev server command; null for static sites. Filled in by the server. */
   devDetected?: string | null;
@@ -294,6 +390,10 @@ export interface WorkspaceInfo {
   mergedAt?: number;
   /** The last adversarial review of this branch. */
   challenge?: ChallengeVerdict;
+  /** Set when this is a Worker's workspace: branched from the chat's branch (baseBranch), merged back into it after each turn. */
+  workerId?: ID;
+  /** A speculative run's throwaway workspace (ADR 008): removed with its branch, never kept. */
+  speculative?: boolean;
 }
 
 export interface AutoChallenge {
@@ -365,7 +465,19 @@ export interface Skill {
   body: string;
   builtin: boolean;
   updatedAt: number;
+  /** The lifecycle family it belongs to (ADR 007); none = a general skill, always available. */
+  family?: SkillFamily;
+  /** Where it may run; unset = chat and worker. */
+  modes?: SkillMode[];
+  /** It only reads: a Worker running it cannot edit files. */
+  readOnly?: boolean;
 }
+
+/** The software lifecycle, the way projects opt in to skills (Apache Magpie's families). */
+export type SkillFamily = 'triage' | 'reproduce' | 'draft-fix' | 'review' | 'release' | 'repo-health';
+
+/** chat: the user types /name; worker: a Router-dispatched Worker's playbook; speculative: silent background runs (a later milestone). */
+export type SkillMode = 'chat' | 'worker' | 'speculative';
 
 export type RoutineTrigger =
   | { type: 'interval'; minutes: number }
@@ -479,6 +591,717 @@ export interface PublicSettings {
   wrapUpAtTokens: number;
   /** Phone push through Bark for approvals left open; the URL itself stays on the server. */
   push: { configured: boolean; afterMinutes: number };
+  /** The event-driven core (Trigger bus, threads, two-stage filter); off = Crew as before. */
+  superAgent: SuperAgentSettings;
+  /** The local model gateway (ADR 009); keys are never included, only whether each provider has one. */
+  gateway: PublicGatewaySettings;
+  /** The command guard, the credential-stripped environment and the audit log (ADR 007). */
+  safety: SafetySettings;
+}
+
+/** Who a gateway call is for: chat turns, two-layer roles, and background one-shot calls. */
+export type GatewayRole = 'bot' | 'worker' | 'router' | 'watchdog' | 'speculative' | 'oneshot';
+
+/** One Anthropic-compatible endpoint with one key (several accounts = several providers). */
+export interface GatewayProvider {
+  /** Used in addresses: <id>/<model>. Letters, digits, '-', '_', '.'. */
+  id: string;
+  name: string;
+  baseUrl: string;
+  /** How the key is sent: Authorization: Bearer, or x-api-key (Anthropic's own API). */
+  auth: 'bearer' | 'x-api-key';
+  /** Models offered in the pickers; any model name works in an address. */
+  models: string[];
+  /** USD per million tokens, for the usage log's estimate; unset = a built-in Claude price table, else 0. */
+  price?: { input: number; output: number };
+}
+
+/** An ordered list of provider/model members: the next one answers when one refuses. */
+export interface GatewayGroup {
+  /** A name without '/'. */
+  id: string;
+  members: string[];
+}
+
+/** A rolling limit on what a role (or one bot) may spend; 0 = no limit on that measure. */
+export interface SpendWindow {
+  id: string;
+  role: GatewayRole | '*';
+  /** Only this bot's calls; unset = every call of the role. */
+  botId?: string;
+  hours: number;
+  maxUsd: number;
+  maxTokens: number;
+}
+
+export interface GatewaySettings {
+  enabled: boolean;
+  /** 0 = any free port, picked when it starts. Always 127.0.0.1. */
+  port: number;
+  providers: GatewayProvider[];
+  groups: GatewayGroup[];
+  /** Where a request without an address goes (a group or provider/model). */
+  defaultTarget: string;
+  /** Claude Code's haiku tier (its background calls); '' = the role's target. */
+  fastTarget: string;
+  /** Overrides the role's own model setting, when set. Bots pick through their own model field. */
+  roles: Partial<Record<Exclude<GatewayRole, 'bot'>, string>>;
+  windows: SpendWindow[];
+  /** Replace keys, passwords and emails in prompts with placeholders, restored in replies. */
+  masking: boolean;
+}
+
+export type PublicGatewaySettings = Omit<GatewaySettings, 'providers'> & { providers: (GatewayProvider & { hasToken: boolean })[] };
+
+export interface GatewayTry {
+  member: string;
+  /** handed-on: the provider refused (quota, rate limit, outage) and the next member was asked. */
+  outcome: 'answered' | 'handed-on' | 'failed' | 'skipped';
+  status?: number;
+  detail?: string;
+  ms: number;
+}
+
+/** One call through the gateway, attributed to whoever actually answered. */
+export interface GatewayCall {
+  id: string;
+  at: number;
+  role: GatewayRole;
+  botId?: string;
+  /** The model Claude Code asked for. */
+  requested: string;
+  /** The group or address it resolved to. */
+  target: string;
+  provider?: string;
+  model?: string;
+  outcome: 'ok' | 'error' | 'limited';
+  status: number;
+  tries: GatewayTry[];
+  tokens?: TurnTokens;
+  /** Estimated from the provider's price. */
+  costUsd: number;
+  latencyMs: number;
+  stream: boolean;
+  masked?: number;
+  /** The spend window that refused it. */
+  window?: string;
+  /** Why it failed. */
+  detail?: string;
+}
+
+export interface GatewayTotals {
+  calls: number;
+  costUsd: number;
+  tokens: number;
+  handedOn: number;
+  errors: number;
+}
+
+export interface GatewayReport {
+  running: boolean;
+  url?: string;
+  error?: string;
+  calls: GatewayCall[];
+  /** Over the last 7 days: by provider that answered, and by scope (role or role:botId). */
+  byProvider: Record<string, GatewayTotals>;
+  byScope: Record<string, GatewayTotals>;
+  /** What each window has used now. */
+  windows: GatewayWindowState[];
+}
+
+export interface GatewayWindowState {
+  id: string;
+  usedUsd: number;
+  usedTokens: number;
+  spent: boolean;
+  /** Seconds until enough of the window's oldest calls leave it for the next call to go through. */
+  retryAfterSec?: number;
+}
+
+/** The answer to one tiny test prompt through the running gateway. */
+export interface GatewayTest {
+  ok: boolean;
+  text: string;
+  status: number;
+  provider?: string;
+  model?: string;
+  tries: GatewayTry[];
+  ms: number;
+}
+
+export interface SafetySettings {
+  /** Hard rules checked before every tool call, in every permission mode; reads never prompt. */
+  guard: boolean;
+  /** Tokens and keys from Crew's environment never reach agent sessions, unless a project passes one through. */
+  stripCredentials: boolean;
+  /** Agent-authored external actions, their approvals and the guard's refusals go to audit.jsonl. */
+  audit: boolean;
+}
+
+/**
+ * The guard's hard rules. credentials, external, network: ADR 007. config: files and settings that
+ * decide what runs later; crew-api: Crew's own server; opaque: what would run cannot be read (ADR 104).
+ */
+export type GuardRule = 'credentials' | 'external' | 'network' | 'config' | 'crew-api' | 'opaque';
+
+/** What the guard makes of an action. */
+export type GuardVerdict = { kind: 'deny'; rule: GuardRule; reason: string } | { kind: 'read' } | { kind: 'change'; effects: string[] };
+
+/** Something that leaves the machine in the user's name: drafted by an agent, run only by the user's click. */
+export type DraftKind = 'git-push' | 'pr-open' | 'pr-comment' | 'issue-open' | 'issue-comment' | 'review-reply' | 'message';
+
+export interface ExternalDraft {
+  id: ID;
+  at: number;
+  kind: DraftKind;
+  chatId: ID | null;
+  botId: ID | null;
+  workerId?: ID;
+  /** Where the command runs. */
+  cwd: string;
+  /** In words: "origin → crew/landing", "PR #12", "#general". */
+  target: string;
+  /** The exact argv that runs on approval (no shell); null for a message the user posts. */
+  command: string[] | null;
+  title?: string;
+  body?: string;
+  /** The agent's reason, shown on the card. */
+  why?: string;
+  status: 'pending' | 'running' | 'done' | 'failed' | 'discarded';
+  decidedAt?: number;
+  result?: { exitCode: number; output: string; url?: string };
+  /** How to undo it, once known. */
+  reverse?: string;
+  /** git-push: the remote branch's head before the push ('' = it did not exist). */
+  before?: string;
+  /** git-push: where the remote pushed to when it was drafted; it must still when it runs (ADR 104). */
+  remoteUrl?: string;
+}
+
+export interface AuditEntry {
+  id: ID;
+  at: number;
+  event: 'drafted' | 'approved' | 'discarded' | 'ran' | 'failed' | 'blocked';
+  /** Who: a bot in a chat, a Worker, a background job of a bot, the Watchdog (botName only), or the user. */
+  actor: { botId?: ID; botName?: string; chatId?: ID; workerId?: ID; jobId?: ID; user?: boolean };
+  kind?: DraftKind;
+  rule?: GuardRule;
+  target?: string;
+  command?: string;
+  cwd?: string;
+  detail?: string;
+  reverse?: string;
+  draftId?: ID;
+}
+
+/**
+ * Where an event came from. user and routine are always explicit requests; the others are
+ * environment events the filter decides on. landing (Crew merged a Worker's branch into its chat's
+ * branch) only ever goes to the Workers subscribed to that workspace (ADR 003). job (a background
+ * job's result, ADR 004) is an explicit request on the chat's thread, for the bot that started it,
+ * and, when Workers subscribe to the folder it ran in, an environment event on that workspace
+ * thread that only goes to them, like landing (ADR 010). github (ADR 102) is an issue, a comment, a
+ * review comment or a check result a project's poller found; never explicit.
+ */
+export type TriggerSource = 'user' | 'routine' | 'turn' | 'outside-edit' | 'preview-console' | 'landing' | 'job' | 'speculative' | 'github';
+
+/**
+ * Sources whose fast-path rule the user can change. landing has no settings (it only ever goes to
+ * subscribers), and neither has a job result: the bot asked for it, and the copy on a workspace
+ * thread only ever goes to subscribers. github's rules are per project (Project.github).
+ */
+export type FilteredSource = Exclude<TriggerSource, 'user' | 'routine' | 'landing' | 'job' | 'speculative' | 'github'>;
+
+/**
+ * Per source, deterministic: act on explicit requests only (the rest is recorded as dropped), let
+ * the rest through to the cheap model as candidates, or ignore the source (nothing is recorded).
+ */
+export type SourceMode = 'explicit' | 'candidate' | 'ignore';
+
+export interface SourceRule {
+  mode: SourceMode;
+  /** Only events matching one of these become candidates: globs for file paths, substrings for error text. Empty = all. */
+  allow: string[];
+}
+
+export interface SuperAgentSettings {
+  enabled: boolean;
+  sources: Record<FilteredSource, SourceRule>;
+  /** Only events from these projects (a workspace counts as its parent) become candidates; empty = all. */
+  projects: ID[];
+  /** The slow path's policies, in the user's words: what is worth acting on. */
+  policies: string;
+  /** Candidates the cheap model sees per hour at most; the rest are dropped. */
+  maxCandidatesPerHour: number;
+  /** Two-layer mode: a resident Router per group chat that dispatches Workers (ADR 002). */
+  router: RouterSettings;
+  /** Inline & Spill context and the recall tool (ADR 005). */
+  recall: RecallSettings;
+  /** The Watchdog: an external control loop on a timer (ADR 006). */
+  watchdog: WatchdogSettings;
+  /** Speculative execution (ADR 008): the limits every project's silent reproduce-and-fix runs share. */
+  speculative: SpeculativeSettings;
+}
+
+// ---------------------------------------------------------------------------- speculative execution (ADR 008)
+
+/** The limits shared by all speculative runs: money and machine load are the user's, not a project's. */
+export interface SpeculativeSettings {
+  /** The runs' model; empty = the Workers' model. */
+  model: string;
+  /** What today's runs may cost; past it, signals are skipped. */
+  dailyBudgetUsd: number;
+  /** Runs in flight at once, across projects. */
+  maxConcurrent: number;
+  /** A run still working after this long is stopped and discarded. */
+  maxMinutes: number;
+}
+
+/** A project's switch for speculative runs, and how Crew verifies their fixes. */
+export interface ProjectSpeculative {
+  enabled: boolean;
+  /** The project's checks: must fail with the reproduction before the fix and pass after it. Empty = `npm test` when package.json has a real test script. */
+  checkCommand: string;
+  /** Which signals may start a run. */
+  signals: { failingChecks: boolean; consoleErrors: boolean; bugReports: boolean };
+  /** A fix changing more lines than this (outside the reproduction) is not surfaced. */
+  maxFixLines: number;
+}
+
+export type SpeculativeSignal = 'failing-check' | 'console-error' | 'bug-report';
+
+/** skipped: a signal matched but a gate said no. ready: verified, waiting for the user's click. */
+export type SpeculationStatus = 'skipped' | 'running' | 'verifying' | 'ready' | 'merged' | 'discarded';
+
+/** One run of the project's check command during verification. */
+export interface SpeculativeCheck {
+  ok: boolean;
+  exitCode: number | null;
+  secs: number;
+  /** The last lines of its output. */
+  tail: string;
+}
+
+/** A speculative run (or a signal a gate refused): what it acted on, what it did, and why it stopped. */
+export interface Speculation {
+  id: ID;
+  at: number;
+  updatedAt: number;
+  signal: SpeculativeSignal;
+  /** The Trigger it acted on. */
+  triggerId: ID;
+  /** The Trigger's fingerprint: the same signal is not speculated on twice in a day. */
+  fingerprint: string;
+  /** The signal, one line. */
+  summary: string;
+  /** The rules that matched. */
+  reasons: string[];
+  /** The root project. */
+  projectId: ID | null;
+  /** Where it is surfaced. */
+  chatId: ID | null;
+  status: SpeculationStatus;
+  /** Why it was skipped or discarded. */
+  why?: string;
+  botId?: ID;
+  workerId?: ID;
+  /** Where a merge applies: the chat's workspace or the project folder. */
+  target?: ID;
+  checkCommand?: string;
+  /** The observed state the throwaway workspace started from, and the run's last commit. */
+  base?: string;
+  head?: string;
+  /** What the run said it did (speculative_result). */
+  claim?: { reproduced: boolean; testFiles: string[]; summary: string };
+  /** after: the checks at the fix; before: the fix put back to the observed state, the reproduction kept. */
+  checks?: { after?: SpeculativeCheck; before?: SpeculativeCheck };
+  /** What it changed; test: part of the reproduction. */
+  files?: { path: string; added: number; removed: number; test: boolean }[];
+  costUsd: number;
+  /** The `speculative` Trigger that surfaced it. */
+  triggerOut?: ID;
+  /** The note in the chat. */
+  messageId?: ID;
+  /** When it was merged or discarded. */
+  decidedAt?: number;
+  /** A failing GitHub check it acted on (ADR 011): the pull request, the check and the head commit the run started from. */
+  github?: { repo: string; number: number; check: string; head: string };
+  /** The comment Crew drafted on that pull request when the fix was verified: posted only on the user's click. */
+  draftId?: ID;
+  /** The check command Crew is running now, by process group: a restart stops it before the run is discarded (ADR 011). */
+  checking?: { pid: number; startedAt: number };
+}
+
+export interface RecallSettings {
+  /** Prompts inline by locality and spill the rest behind ids; agents get recall(id). Needs superAgent.enabled. */
+  enabled: boolean;
+  /** Words of anything not adjacent to the turn that are inlined before the rest spills. */
+  inlineWords: number;
+}
+
+/** Kinds recall resolves; later milestones register more (background jobs). */
+export type RecallKind = 'message' | 'chat' | 'env' | 'trigger' | 'thread' | 'worker' | (string & {});
+
+/** A next hop: an id to recall, how it relates, and one line about it. */
+export interface RecallLink {
+  id: string;
+  rel: string;
+  summary: string;
+}
+
+/** An object as recall sees it: rendered under the Inline & Spill budgets. */
+export interface RecallNode {
+  id: string;
+  kind: RecallKind;
+  title: string;
+  attrs: [string, string][];
+  /** The full content; only the start is inlined, the rest is a read-more away. */
+  body: string;
+  /** Content from the environment (pages, files, tool output): rendered as data, not instructions. */
+  untrusted?: boolean;
+  /** Neighbours: the previous and next message, the message it answers. */
+  around: RecallLink[];
+  links: RecallLink[];
+}
+
+export interface RecallResult {
+  id: string;
+  /** What the agent reads. */
+  text: string;
+  node: RecallNode;
+  /** Estimated tokens of text. */
+  tokens: number;
+}
+
+export interface WatchdogSettings {
+  /** A timer-driven session that checks Workers and errors and can intervene; needs superAgent.enabled. */
+  enabled: boolean;
+  model: string;
+  /** How often the timer ticks. */
+  everyMinutes: number;
+  /** Ticks that call the model, per hour at most; the rest are skipped. */
+  maxTicksPerHour: number;
+  /** Actions (nudge, stop, restart, notify, watch, propose) per turn at most. */
+  maxActionsPerTick: number;
+  /** What the Watchdog's turns may cost per day; past it, ticks are skipped and questions refused. */
+  dailyBudgetUsd: number;
+  /** A Worker with no progress for this long is flagged as stuck. */
+  stuckMinutes: number;
+}
+
+/** One tick of the Watchdog (or a maintainer's turn): whether the model was called and why. */
+export interface WatchdogTick {
+  id: ID;
+  at: number;
+  kind: 'tick' | 'manual' | 'maintainer';
+  outcome: 'ran' | 'skipped' | 'error';
+  /** Why it ran (the flags) or was skipped (quiet, healthy, limit, budget, busy). */
+  reason: string;
+  flags: string[];
+  actions: number;
+  costUsd: number;
+  /** Its turn in the Watchdog's log. */
+  messageId?: ID;
+}
+
+export type WatchdogActionKind = 'nudge' | 'stop' | 'restart' | 'notify' | 'watch' | 'resolve' | 'propose';
+
+/** Something the Watchdog did, or tried to do and a gate refused. */
+export interface WatchdogAction {
+  id: ID;
+  at: number;
+  tickId: ID;
+  kind: WatchdogActionKind;
+  /** A Worker, chat, watch or proposal id. */
+  target: string;
+  chatId?: ID;
+  text: string;
+  refused?: string;
+}
+
+/** A failure the Watchdog keeps re-checking until it is healthy. */
+export interface WatchdogWatch {
+  id: ID;
+  /** What is watched: a Worker id, or any key the Watchdog chose. */
+  subject: string;
+  note: string;
+  createdAt: number;
+  nextAt: number;
+  checks: number;
+  /** Opened by code (a transient error) or by the Watchdog. */
+  by: 'code' | 'watchdog';
+  resolvedAt?: number;
+  resolution?: string;
+}
+
+/** A change the Watchdog proposes; nothing is applied until a maintainer accepts it. */
+export interface WatchdogProposal {
+  id: ID;
+  at: number;
+  /** The trigger policies, or a bot's role description (its prompt). */
+  target: 'policies' | 'bot';
+  botId?: ID;
+  botName?: string;
+  before: string;
+  after: string;
+  rationale: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'stale';
+  decidedAt?: number;
+}
+
+/** The Watchdog as it is right now (not stored). */
+export interface WatchdogInfo {
+  enabled: boolean;
+  state: 'off' | 'idle' | 'thinking' | 'error';
+  detail?: string;
+  nextTickAt?: number;
+  ticksLastHour: number;
+  actionsToday: number;
+  spentTodayUsd: number;
+  /** Speculative runs (ADR 008), which the Watchdog also watches: today's spend against their own daily budget (ADR 011). */
+  speculative?: SpeculativeSpend;
+  lastTick?: WatchdogTick;
+  pendingProposals: number;
+  openWatches: number;
+}
+
+export interface SpeculativeSpend {
+  running: number;
+  spentTodayUsd: number;
+  dailyBudgetUsd: number;
+}
+
+export interface WatchdogOverview extends WatchdogInfo {
+  settings: WatchdogSettings;
+  ticks: WatchdogTick[];
+  actions: WatchdogAction[];
+  watches: WatchdogWatch[];
+  proposals: WatchdogProposal[];
+}
+
+export interface RouterSettings {
+  /** Group chats get a Router that talks to the user and dispatches Workers; needs superAgent.enabled. */
+  enabled: boolean;
+  /** The Router's model: routing and short replies need no more than a lighter one. */
+  model: string;
+  /** The Workers' model; empty = the chat's model switch, else the default model in Settings. */
+  workerModel: string;
+  /** Workers active at once in one chat. */
+  maxWorkers: number;
+  /** Thread subscriptions (ADR 003): later events on a Worker's Threads go straight to it, without a Router call. */
+  subscriptions: boolean;
+}
+
+/** A Trigger delivered straight to a Worker because it subscribes to the Trigger's Thread. */
+export interface WorkerDelivery {
+  triggerId: ID;
+  threadId: ID;
+  at: number;
+  source: TriggerSource;
+  /** A routine run: the user's own words, which wake the Worker. Else data from the environment. */
+  explicit: boolean;
+  summary: string;
+  /** Inlined: the routine's prompt, or the payload's first words. */
+  text: string;
+}
+
+export type WorkerStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'stopped';
+/** How a Worker's turn ended. */
+export type WorkerOutcome = Extract<WorkerStatus, 'done' | 'error' | 'stopped'>;
+
+/** One task a Router dispatched: its own session with full tools, in its own workspace, reporting back to the Router. */
+export interface Worker {
+  id: ID;
+  /** The chat whose Router dispatched it. */
+  chatId: ID;
+  /** The member it runs as: role, permission level, editable paths, rules and budget. */
+  botId: ID;
+  title: string;
+  /** The brief the Router wrote. */
+  task: string;
+  status: WorkerStatus;
+  /** What it is waiting for, what it is preparing, or why it failed. */
+  detail?: string;
+  createdAt: number;
+  updatedAt: number;
+  model?: string;
+  sessionId?: string;
+  /** Where it works: its own workspace (a Project with workspace.workerId), or the chat's folder. */
+  projectId: ID | null;
+  /** Why it works in the chat's folder instead of a workspace of its own. */
+  shared?: string;
+  /** The commit its branch started from, and its last commit merged into the chat's branch. */
+  base?: string;
+  landedHead?: string;
+  /** Its last turn's report to the Router. */
+  /** quiet: the user stopped the whole chat, so the Router was not told (nor is it after a restart, ADR 105). */
+  report?: { at: number; status: WorkerOutcome; text: string; quiet?: boolean };
+  /** What Crew did with its changes after its last turn. */
+  landing?: { at: number; files: string[]; commit?: string; conflicts?: string[]; error?: string };
+  turns: number;
+  costUsd: number;
+  /** Ids of the triggers and messages of the batch that dispatched it. */
+  related: ID[];
+  /** The lifecycle family whose skills are its playbook. */
+  family?: SkillFamily;
+  /** Follow-ups from the Router waiting for the current turn to end. */
+  pending?: string[];
+  dismissedAt?: number;
+  /** The Threads it subscribes to (ADR 003): their later Triggers come to it directly. */
+  threads?: ID[];
+  /** Triggers delivered to it that its session has not read yet. */
+  inbox?: WorkerDelivery[];
+  /** Triggers it received directly, in all. */
+  received?: number;
+  /** A speculative run (ADR 008): quiet, unattended, never landed; its record says what came of it. */
+  speculation?: ID;
+}
+
+/** A chat's Router as it is right now (not stored). */
+export interface RouterInfo {
+  chatId: ID;
+  state: 'idle' | 'thinking' | 'error';
+  /** Events waiting for its next turn. */
+  queued: number;
+  detail?: string;
+  since: number;
+}
+
+/** Where a Trigger's full content is. */
+export type TriggerRef =
+  | { kind: 'message'; chatId: ID; messageId: ID }
+  | { kind: 'routine'; routineId: ID; chatId: ID; messageId: ID }
+  /** Stored beside the log (triggers/payloads/<id>.json): the event has no other home. */
+  | { kind: 'payload' };
+
+export interface TriggerFilter {
+  /** candidate: waiting for the slow path. */
+  verdict: 'act' | 'candidate' | 'drop';
+  /** Who decided: rules in code, or the cheap model. */
+  stage: 'fast' | 'slow';
+  /** The rule that settled it, e.g. explicit-request, duplicate, not-allow-listed, policy. */
+  rule: string;
+  reason: string;
+  slow?: { backend: string; costUsd: number; batch: number; decidedAt: number; invalid?: string };
+  /** The notice an act decision posted. */
+  delivered?: { chatId: ID; messageId: ID };
+  /** The subscribed Workers it went straight to (rule subscribed), with no Router call. */
+  direct?: ID[];
+  /** A Worker it went to handed it back to its Router. */
+  handedBack?: { by: ID; at: number };
+}
+
+/** A semi-structured environment event: small by itself, with ids pointing at everything else. */
+export interface Trigger {
+  id: ID;
+  at: number;
+  source: TriggerSource;
+  threadId: ID;
+  projectId: ID | null;
+  chatId: ID | null;
+  /** One line, at most 200 characters. */
+  summary: string;
+  ref: TriggerRef;
+  /** Ids of tightly related objects: the request a turn answered, the notes an edit produced. */
+  related: ID[];
+  /** The user, or the user's routine or a bot's handoff, asked for this. */
+  explicit: boolean;
+  /** Stable hash of the content, for de-duplication. */
+  fingerprint: string;
+  filter: TriggerFilter;
+  /** What acting meant, e.g. "Sent to Chief". */
+  action?: string;
+  /** A GitHub event's facts (ADR 102), for code that acts on them: which issue or pull request, and a check's outcome. */
+  github?: TriggerGithub;
+}
+
+export interface TriggerGithub {
+  kind: 'issue' | 'comment' | 'review-comment' | 'check';
+  /** The event's key in its repository (`<kind>:<GitHub id>`): a poll a restart cut off is not published twice. */
+  key: string;
+  repo: string;
+  number: number;
+  pr: boolean;
+  check?: { name: string; conclusion: string; head: string };
+}
+
+/** A stream of related Triggers: one chat topic, one routine, one workspace, or one GitHub issue or pull request. */
+export interface Thread {
+  id: ID;
+  /** chat:<chatId> | routine:<routineId> | workspace:<projectId> | github:<projectId>:<owner/repo>#<n> */
+  key: string;
+  kind: 'chat' | 'routine' | 'workspace' | 'github';
+  title: string;
+  projectId: ID | null;
+  chatId: ID | null;
+  createdAt: number;
+  lastAt: number;
+  count: number;
+  lastTriggerId?: ID;
+  /** When an act decision last told the user about this thread (for the cooldown). */
+  lastNoticeAt?: number;
+  /** A chat thread closes when the chat starts a new topic; the next Trigger opens a new thread. */
+  closedAt?: number;
+}
+
+export interface TriggerList {
+  enabled: boolean;
+  triggers: Trigger[];
+  threads: Record<ID, Thread>;
+  /** Over everything still in the log. */
+  /** direct: went straight to subscribed Workers. */
+  stats: { total: number; act: number; drop: number; candidate: number; slowCalls: number; slowCostUsd: number; direct: number };
+}
+
+/** A Trigger with its payload resolved ("read more") and its neighbours, for walking the graph. */
+export interface TriggerDetail {
+  trigger: Trigger;
+  thread: Thread | null;
+  /** The full content, as text (cut at 20,000 characters). */
+  detail: string;
+  related: Trigger[];
+  /** The thread's latest Triggers, newest first. */
+  recent: Trigger[];
+}
+
+/** The GitHub event kinds a project can watch (ADR 102). */
+export interface GithubEvents {
+  /** New issues. */
+  issues: boolean;
+  /** Comments in an issue's or a pull request's conversation. */
+  comments: boolean;
+  /** Review comments on a pull request's diff. */
+  reviewComments: boolean;
+  /** Completed check runs on open pull requests' heads. */
+  checks: boolean;
+}
+
+/** GitHub as an asynchronous channel for one project (ADR 102): what to poll and which events count. */
+export interface GithubChannel {
+  enabled: boolean;
+  /** owner/name of each repository to watch. */
+  repos: string[];
+  /** How often each repository is polled. */
+  everyMinutes: number;
+  /** Logins whose issues and comments count; empty = anyone except bots. */
+  authors: string[];
+  events: GithubEvents;
+  /** Events no Worker subscribes to may go to the cheap model; off = only subscribed Workers see GitHub events. */
+  candidates: boolean;
+}
+
+/** A project's GitHub polling, as it is right now (not stored). */
+export interface GithubStatus {
+  projectId: ID;
+  /** Polling: the channel is on, it has repositories, and so is the Super-agent. */
+  active: boolean;
+  repos: string[];
+  lastPollAt?: number;
+  nextPollAt?: number;
+  lastError?: string;
+  /** Triggers published by the last poll, and in all since Crew started. */
+  lastPublished?: number;
+  published: number;
 }
 
 /** Claude Code's command sandbox: commands are confined, and reach only these domains (plus this machine). */
@@ -735,6 +1558,15 @@ export interface Bootstrap {
   templates: BotTemplate[];
   plugins: PluginDef[];
   statuses: Record<ID, BotStatus>;
+  /** Two-layer mode: Workers not yet dismissed, and the Routers that exist. */
+  workers: Worker[];
+  routers: RouterInfo[];
+  /** Full duplex: background jobs (running ones, and recent finished ones). */
+  jobs: BackgroundJob[];
+  /** External-action drafts: pending ones and the latest decided. */
+  drafts: ExternalDraft[];
+  /** Speculative runs (ADR 008): ready fixes and the latest others. */
+  speculations: Speculation[];
   devServers: DevServerState[];
   previews: PreviewInfo[];
   models: ModelOption[];
@@ -786,6 +1618,16 @@ export type ServerEvent =
   | { t: 'turn'; turn: TurnSummary }
   | { t: 'settings'; settings: PublicSettings }
   | { t: 'auth'; auth: AuthStatus }
+  | { t: 'trigger'; trigger: Trigger; thread: Thread }
+  | { t: 'worker'; worker: Worker }
+  | { t: 'worker_deleted'; id: ID }
+  | { t: 'router'; router: RouterInfo }
+  | { t: 'watchdog'; watchdog: WatchdogInfo }
+  | { t: 'job'; job: BackgroundJob }
+  | { t: 'job_deleted'; id: ID }
+  | { t: 'draft'; draft: ExternalDraft }
+  | { t: 'audit'; entry: AuditEntry }
+  | { t: 'speculation'; speculation: Speculation }
   | { t: 'notify'; title: string; body: string; chatId?: ID; level?: 'info' | 'success' | 'warn' | 'error' };
 
 /** Client -> server websocket events. */
@@ -806,3 +1648,56 @@ export type PreviewToHost =
   | { type: 'recorded'; step: RecordedStep };
 
 export type HostToPreview = { type: 'hello' } | { type: 'pick'; on: boolean } | { type: 'record'; on: boolean } | { type: 'highlight'; selector: string } | { type: 'history'; dir: -1 | 1 };
+
+// ---------------------------------------------------------------------------- full duplex (ADR 004)
+
+/** waiting: a sub-task waits for the user to answer an approval. */
+export type JobStatus = 'running' | 'waiting' | 'done' | 'failed' | 'stopped';
+
+/** Work a full-duplex bot started in the background with `start`; its result comes back as an event. */
+export interface BackgroundJob {
+  id: ID;
+  kind: 'command' | 'task';
+  chatId: ID;
+  botId: ID;
+  /** Where it runs: the chat's workspace or project (null: the home folder). */
+  projectId: ID | null;
+  cwd: string;
+  title: string;
+  command?: string;
+  task?: string;
+  status: JobStatus;
+  /** Why it failed or stopped, or what a sub-task is doing. */
+  detail?: string;
+  /** Ran as a Bash call inside Claude Code's sandbox. */
+  sandboxed: boolean;
+  startedAt: number;
+  endedAt?: number;
+  exitCode?: number | null;
+  signal?: string | null;
+  timeoutMin: number;
+  /** Output so far: lines and bytes written to the log. */
+  lines: number;
+  bytes: number;
+  /** The log hit its size cap; later output was dropped. */
+  truncated?: boolean;
+  /** The bot message (turn) that called start. */
+  startedBy?: ID;
+  /** The system message that delivered the result. */
+  resultMessageId?: ID;
+  triggerId?: ID;
+  /** Command jobs: the full log on disk. */
+  logFile?: string;
+  costUsd?: number;
+  /** A command Crew runs itself (not sandboxed): its process group, so a restart stops what is left of it (ADR 105). */
+  pid?: number;
+}
+
+/** A slice of a job's log ("read more"). */
+export interface JobLog {
+  job: BackgroundJob;
+  /** 1-based line the slice starts at. */
+  from: number;
+  lines: string[];
+  total: number;
+}

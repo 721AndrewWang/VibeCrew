@@ -14,6 +14,9 @@ beforeAll(async () => {
   chatId = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === chief.id).id;
   // The demo bot comes with a few "always allow" rules; start from none.
   await crew.api('PATCH', `/bots/${botId}`, { allowRules: [] });
+  // These cards are about the demo bot's `ls -la`, which the command guard reads as a read that
+  // never prompts (ADR 007); the last test covers that.
+  await crew.api('PATCH', '/settings', { safety: { guard: false } });
 });
 afterAll(() => crew?.stop());
 
@@ -85,5 +88,22 @@ describe('approval cards', () => {
     const readonly = r.kinds.find((k: any) => k.kind === 'approval-readonly');
     expect(readonly.groups.map((g: any) => g.key)).toEqual(['project "always ask" rule Bash(ls*)']);
     expect(r.brief).toContain('@{lead}');
+  });
+});
+
+describe('with the command guard on (the default)', () => {
+  it('runs a read-only command without asking, even in "ask every step", and still asks before writing', async () => {
+    await crew.api('PATCH', '/settings', { safety: { guard: true } });
+    await crew.api('PATCH', `/projects/${(await crew.api('GET', '/bootstrap')).projects[0].id}`, { askRules: [] });
+    await crew.api('PATCH', `/bots/${botId}`, { allowRules: [] });
+    await crew.api('PATCH', `/chats/${chatId}`, { permission: 'ask' });
+    const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text: 'make one more page' });
+    const part = await waitFor(pendingApproval, 20_000);
+    expect(part.toolName).toBe('Write');
+    await crew.api('POST', `/approvals/${part.id}`, { decision: 'allow' });
+    const reply = await answerRest(sent.seq, 'allow');
+    const ls = reply.parts.find((p: any) => p.type === 'tool' && p.name === 'Bash');
+    expect(ls).toMatchObject({ status: 'done', input: { command: 'ls -la' } });
+    expect(reply.parts.filter((p: any) => p.type === 'approval').map((p: any) => p.toolName)).toEqual(['Write']);
   });
 });
