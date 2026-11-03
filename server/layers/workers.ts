@@ -26,6 +26,7 @@ import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previ
 import { chatProjectId, configOf, gitIn } from '../projects';
 import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { reviewDiff } from '../review';
+import { agentEnvOptions } from '../safety';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
@@ -226,7 +227,7 @@ async function launch(w: Worker) {
     const setup = configOf(ws).setupCommand;
     if (setup && !l.stop) {
       save(w, { detail: `Preparing its workspace: ${setup}` });
-      const r = await runSetup(ws.path, setup);
+      const r = await runSetup(ws.path, setup, agentEnvOptions(ws));
       if (!r.ok && l.first) l.first.setupNote = `The workspace setup command \`${setup}\` failed (${r.how}), so some dependencies may be missing:\n${r.out.slice(-1500)}`;
       save(w, { detail: undefined });
     }
@@ -403,7 +404,7 @@ function getSession(w: Worker, chat: Chat, bot: Bot, project: Project | null): A
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     deliveries: subscribed ? () => takeDeliveries(w.id) : undefined,
     attributionOff: !!conf?.noAttribution,
-    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
+    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains, cwd),
     mcpServers: {
       crew: crewServer(crewCtx) as McpServerConfig,
       ...pluginServers(bot),

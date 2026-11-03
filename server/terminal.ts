@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import { cleanEnv } from './config';
+import { trustProcess, untrustProcess } from './hardening/fence';
 import { logger } from './log';
 import { getProject } from './projects';
 
@@ -80,8 +81,13 @@ export function openTerminal(id: string, projectId: string, cols: number, rows: 
     const file = command ? '/bin/bash' : shellPath();
     const args = command ? ['-lc', command] : [];
     const p = pty.spawn(file, args, { name: 'xterm-256color', cols: Math.max(cols, 20), rows: Math.max(rows, 5), cwd: project.path, env });
+    // The user's own shell: it may use Crew's API like the user does (ADR 104's fence).
+    trustProcess(p.pid);
     p.onData(emit);
-    p.onExit(({ exitCode }) => exit(exitCode));
+    p.onExit(({ exitCode }) => {
+      untrustProcess(p.pid);
+      exit(exitCode);
+    });
     term.write = (d) => p.write(d);
     term.resize = (c, r) => {
       try {
@@ -104,7 +110,11 @@ export function openTerminal(id: string, projectId: string, cols: number, rows: 
     const child = spawn('script', args, { cwd: project.path, env: { ...env, COLUMNS: String(cols), LINES: String(rows) } });
     child.stdout.on('data', (b: Buffer) => emit(b.toString('utf8')));
     child.stderr.on('data', (b: Buffer) => emit(b.toString('utf8')));
-    child.on('exit', (code) => exit(code));
+    trustProcess(child.pid);
+    child.on('exit', (code) => {
+      untrustProcess(child.pid);
+      exit(code);
+    });
     term.write = (d) => child.stdin.write(d);
     term.kill = () => child.kill('SIGHUP');
   }

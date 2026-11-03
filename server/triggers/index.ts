@@ -29,6 +29,7 @@ import type {
 } from '../../shared/types';
 import { bus, notify } from '../bus';
 import { DATA, FAKE_AGENT } from '../config';
+import { redactDeep } from '../hardening/redactor';
 import { countRouterEvents, deliverToWorker, noteDirect, type RouterEvent, routerEvent, routerMode } from '../layers';
 import type { HandedBack } from '../layers/prompts';
 import { receivers, subscriptionsOn } from '../layers/subscriptions';
@@ -105,7 +106,8 @@ export function publishTrigger(input: TriggerInput): Trigger | null {
   if (!sa.enabled) return null;
   if (isFiltered(input.source) && sa.sources[input.source].mode === 'ignore') return null;
   try {
-    return publish(input, sa);
+    // A summary or payload may quote a secret (an error, a file); the Trigger log never holds one (ADR 104).
+    return publish(redactDeep(input), sa);
   } catch (e) {
     log.warn('could not publish a trigger:', e);
     return null;

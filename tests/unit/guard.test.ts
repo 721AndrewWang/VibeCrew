@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { commandOf, type GuardContext, guardCommand, guardTool, hostAllowed, shellWords, substitutions } from '../../server/guard';
+import type { GuardRule } from '../../shared/types';
 
 const ctx: GuardContext = {
   cwd: '/work/app',
@@ -8,7 +9,7 @@ const ctx: GuardContext = {
   secretFiles: ['/home/u/.crew/settings.json'],
 };
 
-type Expect = 'read' | 'change' | 'credentials' | 'external' | 'network';
+type Expect = 'read' | 'change' | GuardRule;
 
 const outcome = (cmd: string): Expect => {
   const v = guardCommand(cmd, ctx);

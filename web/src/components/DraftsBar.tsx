@@ -85,6 +85,12 @@ export function DraftCard({ draft: d, compact }: { draft: ExternalDraft; compact
             {pending ? 'Runs exactly, in' : 'Ran, in'} <code>{d.cwd}</code>:
           </span>
           <pre>{command}</pre>
+          {d.kind === 'git-push' && (
+            <span className="muted draft-push-url">
+              Pushes to <code>{d.remoteUrl || '(the remote has no URL)'}</code>. The repository's git hooks do not run for a drafted push; Crew refuses to run it if the remote changed or the
+              repository's own config runs a program.
+            </span>
+          )}
         </div>
       ) : (
         <div className="muted">Nothing runs: copy it and post it yourself, then mark it posted.</div>

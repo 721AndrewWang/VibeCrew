@@ -7,6 +7,7 @@ import { cleanEnv, findClaudeExecutable } from './config';
 import { providerPreset } from './data/providers';
 import { gatewayEnv, gatewayModel, gatewayOn, gatewayReady } from './gateway';
 import type { Scope } from './gateway/config';
+import { brokered } from './hardening/broker';
 import { type Settings, settings } from './store';
 
 const run = promisify(execFile);
@@ -31,6 +32,13 @@ export function providerConfigured(s: Settings = settings.get()): boolean {
  */
 export function modelEnv(s: Settings = settings.get(), scope?: Scope, model?: string): Record<string, string | undefined> {
   if (scope && gatewayOn(s)) return gatewayEnv(scope, model);
+  // An agent session never gets a key from settings.json: the key broker stands in for it (ADR 104).
+  if (scope) return brokered(connectionEnv(s), s);
+  return connectionEnv(s);
+}
+
+/** The connection as configured: its endpoint, its key and its models. */
+function connectionEnv(s: Settings): Record<string, string | undefined> {
   if (s.authMode === 'api-key' && s.apiKey) {
     return { ANTHROPIC_API_KEY: s.apiKey, CLAUDE_CODE_OAUTH_TOKEN: undefined, ...(s.baseUrl ? { ANTHROPIC_BASE_URL: s.baseUrl } : {}) };
   }

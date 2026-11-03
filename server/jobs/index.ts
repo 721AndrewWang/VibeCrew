@@ -10,6 +10,7 @@ import type { AgentSession, TurnHooks } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
 import { bus } from '../bus';
 import { type CleanEnvOptions, DATA } from '../config';
+import { redact } from '../hardening/redactor';
 import { runLogged } from '../layers/turn';
 import { logger } from '../log';
 import { jobs, messages, uid } from '../store';
@@ -131,7 +132,8 @@ export function startCommand(base: JobBase, spec: CommandSpec): BackgroundJob {
     onOutput: (text: string) => {
       const cur = jobs.get(j.id);
       if (!cur || cur.truncated) return;
-      let chunk = text;
+      // The log file, and every result read from it, holds no secret Crew knows (ADR 104).
+      let chunk = redact(text);
       if (cur.bytes + chunk.length > LOG_CAP) {
         chunk = `${chunk.slice(0, Math.max(0, LOG_CAP - cur.bytes))}\n[Crew: the log reached ${LOG_CAP / 1024 / 1024} MB; later output was dropped]\n`;
         cur.truncated = true;

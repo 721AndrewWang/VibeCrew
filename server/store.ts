@@ -31,6 +31,7 @@ import type {
 } from '../shared/types';
 import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { DEFAULT_GATEWAY, normalizeGateway } from './gateway/config';
+import { redact } from './hardening/redactor';
 import { SCHEMA_VERSION } from './migrations';
 import { DEFAULT_SAFETY, normalizeSafety } from './safetyConfig';
 import { DEFAULT_ALLOWED } from './sandbox';
@@ -406,7 +407,8 @@ class MessageStore {
   /** Stores the message; writes a snapshot line unless persist is false (streaming updates). */
   put(msg: ChatMessage, persist = true) {
     this.load(msg.chatId).set(msg.id, msg);
-    if (persist) fs.appendFileSync(this.file(msg.chatId), JSON.stringify(msg) + '\n');
+    // A tool's output may carry a secret; the file never does (ADR 104).
+    if (persist) fs.appendFileSync(this.file(msg.chatId), redact(JSON.stringify(msg)) + '\n');
   }
 
   delete(chatId: string, id: string) {
@@ -421,7 +423,7 @@ class MessageStore {
 
   compact(chatId: string) {
     const lines = this.sorted(chatId)
-      .map((m) => JSON.stringify(m))
+      .map((m) => redact(JSON.stringify(m)))
       .join('\n');
     const tmp = this.file(chatId) + '.tmp';
     fs.writeFileSync(tmp, lines ? lines + '\n' : '');

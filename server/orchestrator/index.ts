@@ -198,7 +198,7 @@ function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { su
       deniedReason(toolName, input, project?.path || os.homedir(), { project, actor: { botId: bot.id, botName: bot.name, chatId: chat.id, jobId: opts.subtask?.jobId } }),
     wrapUpAt: () => settings.get().wrapUpAtTokens,
     attributionOff: !!conf?.noAttribution,
-    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains),
+    sandbox: sandboxOptions(settings.get().sandbox.enabled, settings.get().sandbox.allowedDomains, conf?.allowedDomains, project?.path),
     mcpServers: {
       crew: crewServer(crewCtx) as McpServerConfig,
       ...pluginServers(bot),
@@ -291,7 +291,7 @@ function jobHost(chatId: string, botId: string): JobHost {
       const conf = project ? configOf(project) : null;
       const s = settings.get();
       // The demo agent has no Claude Code to run a sandboxed Bash call in.
-      const sandbox = FAKE ? undefined : sandboxOptions(s.sandbox.enabled, s.sandbox.allowedDomains, conf?.allowedDomains);
+      const sandbox = FAKE ? undefined : sandboxOptions(s.sandbox.enabled, s.sandbox.allowedDomains, conf?.allowedDomains, cwd);
       return {
         command,
         sandbox,

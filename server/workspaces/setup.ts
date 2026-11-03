@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import type { Chat, Project } from '../../shared/types';
-import { cleanEnv } from '../config';
+import { type CleanEnvOptions, cleanEnv } from '../config';
 import { holdTurns, systemMessage } from '../orchestrator';
+import { agentEnvOptions } from '../safety';
 import { chats } from '../store';
 
 const SETUP_TIMEOUT_MS = 15 * 60_000;
@@ -15,15 +16,19 @@ export interface SetupResult {
   out: string;
 }
 
-/** Runs a project's setup command (installing dependencies, say) in a fresh workspace folder. */
-export function runSetup(cwd: string, command: string): Promise<SetupResult> {
+/**
+ * Runs a project's setup command (installing dependencies, say) in a fresh workspace folder. It
+ * runs the repository's code (install scripts), which agents edit: `envOptions` strips the user's
+ * credentials the way an agent session's are (ADR 104).
+ */
+export function runSetup(cwd: string, command: string, envOptions: CleanEnvOptions = {}): Promise<SetupResult> {
   const started = Date.now();
   return new Promise<SetupResult>((resolve) => {
     let tail = '';
     const keep = (d: Buffer) => {
       tail = (tail + d.toString('utf8')).slice(-4000);
     };
-    const child = spawn('bash', ['-c', command], { cwd, env: cleanEnv(), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('bash', ['-c', command], { cwd, env: cleanEnv({}, envOptions), detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout?.on('data', keep);
     child.stderr?.on('data', keep);
     const timer = setTimeout(() => {
@@ -60,7 +65,7 @@ export function runSetup(cwd: string, command: string): Promise<SetupResult> {
  */
 export function prepareWorkspace(chat: Chat, ws: Project, command: string) {
   systemMessage(chat, `Preparing the workspace: ${command}`, { uiOnly: true });
-  const work = runSetup(ws.path, command).then((r) => {
+  const work = runSetup(ws.path, command, agentEnvOptions(ws)).then((r) => {
     const c = chats.get(chat.id);
     if (c && r.ok) systemMessage(c, `The workspace is ready (${r.secs}s).`, { uiOnly: true });
     else if (c) {

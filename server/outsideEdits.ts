@@ -9,11 +9,13 @@ import path from 'node:path';
 import { internal } from './bus';
 import { devServer } from './devserver';
 import { recordFriction } from './friction';
+import { secretFile } from './hardening/paths';
 import { projectBusy, systemMessage } from './orchestrator';
 import { chatProjectId } from './projects';
 import { isQuiet } from './quietWrites';
 import { chats, projects } from './store';
 import { publishTrigger, workspaceThread } from './triggers';
+import { untrusted } from './untrusted';
 import { ensureWatch } from './watcher';
 
 /** Changes settle for this long before the note goes out, so a burst of saves is one note. */
@@ -96,6 +98,8 @@ export function lineChange(before: string, after: string): { line: number; remov
 }
 
 function describe(rel: string, before: string | null, after: string | null): string {
+  // A file that usually holds secrets is named, never quoted, into chats and Triggers (ADR 104).
+  if (secretFile(rel)) return `- ${rel}: changed (content not shown: files like this usually hold secrets)`;
   if (after === null) return `- ${rel}: changed (not a text file, or too large)`;
   // Neither seen before nor committed: a new file, or one Crew has no earlier copy of.
   if (before === null) return `- ${rel}: new file, or one not seen before (${after.split('\n').length} lines)`;
@@ -124,7 +128,8 @@ function flush(projectId: string) {
   const who = byEditor
     ? "The user edited files in Crew's editor"
     : 'Files were changed outside the chat (not by a bot in this chat; maybe the user edited them by hand, or another program or a git operation did)';
-  const text = `${who}:\n${lines.join('\n')}\nTreat the files as they are now as the source of truth. If they disagree with earlier requests in the chat, go with the current files, and if you're unsure, ask the user first.`;
+  // File names and changed lines are whatever the files say: data, not instructions (ADR 104).
+  const text = `${who}:\n${untrusted('outside-edit', lines.join('\n'))}\nTreat the files as they are now as the source of truth. If they disagree with earlier requests in the chat, go with the current files, and if you're unsure, ask the user first.`;
   const notes: string[] = [];
   for (const chat of chats.all()) if (chatProjectId(chat) === projectId) notes.push(systemMessage(chat, text, { notice: 'outside-edit' }).id);
   const paths = entries.map(([rel]) => rel);

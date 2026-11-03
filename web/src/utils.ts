@@ -256,3 +256,8 @@ export function gatewayOptions(gw: Pick<PublicSettings['gateway'], 'groups' | 'p
     ...gw.providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}/${m}`, label: `${p.id}/${m}` }))),
   ];
 }
+
+/** Text with the agents' `<untrusted …>` labels (ADR 104) taken out, for people to read. */
+export function withoutUntrustedTags(text: string): string {
+  return text.replace(/<untrusted\b[^>]*>\n?/g, '').replace(/\n?<\/untrusted>/g, '');
+}
