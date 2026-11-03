@@ -21,7 +21,7 @@ import { FAKE_AGENT } from '../config';
 import type { DraftFields } from '../drafts';
 import { autoCommit, commitSubject, gitError, isMerging, zList } from '../gitops';
 import { logger } from '../log';
-import { whenChatFree } from '../orchestrator';
+import { IDLE_CLOSE_MS, whenChatFree } from '../orchestrator';
 import { preview } from '../orchestrator/chatLog';
 import { deniedReason, denyStreamApprovals, expireApprovals, permissionGate } from '../orchestrator/permissionGate';
 import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previewPageOf } from '../orchestrator/turnContext';
@@ -71,8 +71,6 @@ interface Live {
   recallNote?: boolean;
 }
 
-/** Idle Worker sessions close after this long; the next turn resumes them from their transcript. */
-const IDLE_CLOSE_MS = 15 * 60_000;
 const live = new Map<string, Live>();
 const liveOf = (id: string): Live => {
   const l = live.get(id) ?? { session: null, stream: null, running: false, stop: false, quiet: false };

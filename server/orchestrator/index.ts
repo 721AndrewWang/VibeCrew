@@ -76,7 +76,8 @@ function throttle(ms: number, fn: () => void) {
 }
 
 const FAKE = FAKE_AGENT;
-const IDLE_CLOSE_MS = 15 * 60_000;
+/** Idle sessions (chat bots' and Workers') close after this long; the next turn resumes them from their transcript. */
+export const IDLE_CLOSE_MS = 15 * 60_000;
 
 interface Job {
   chatId: string;
