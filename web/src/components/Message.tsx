@@ -5,6 +5,7 @@ import { api } from '../api';
 import { chatProjectId, focusTurn, openFileInEditor, openModal, setView, toast, useStore } from '../store';
 import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo, withoutUntrustedTags } from '../utils';
 import { Markdown } from './Markdown';
+import { ReplyKindLabel, ReportDetails } from './ReportDetails';
 import { SpeculationNotice } from './SpeculativeBar';
 import { Avatar, confirmDialog, Glyph } from './ui';
 
@@ -444,6 +445,7 @@ export const BotMessage = memo(function BotMessage({
                 <Network size={11} /> Router
               </span>
             )}
+            <ReplyKindLabel channel={msg.channel} />
             {msg.trigger?.type === 'routine' && (
               <span className="msg-meta">
                 <Clock size={11} /> Routine
@@ -494,6 +496,7 @@ export const BotMessage = memo(function BotMessage({
             </span>
           </div>
         )}
+        <ReportDetails channel={msg.channel} chat={chat} />
         {msg.status === 'error' && (
           <div className="msg-error">
             <AlertTriangle size={14} />

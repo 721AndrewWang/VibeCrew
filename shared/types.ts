@@ -269,6 +269,58 @@ export interface ChatMessage {
   router?: boolean;
   /** On a Router turn in its log: the ids of the events (messages, Workers, Triggers) the turn handled. */
   batch?: ID[];
+  /** A Router reply under the chat profile (ADR 103): what kind of message it is, and the Worker reports behind it. */
+  channel?: ChannelMeta;
+}
+
+/** What a Router reply is for (ADR 103): the only three things the chat carries. */
+export type ReplyKind = 'decision' | 'question' | 'acceptance';
+
+/** A Worker report attached to a Router reply: a gist in the chat, the full report one click away. UI only, never in prompts. */
+export interface ReportDetail {
+  workerId: ID;
+  title: string;
+  bot: string;
+  status: 'done' | 'error' | 'stopped';
+  /** At most 30 words, without code or tool output. */
+  gist: string;
+  /** The full report, capped. */
+  report: string;
+  /** What Crew did with its changes. */
+  landing?: string;
+  at: number;
+}
+
+export interface ChannelMeta {
+  kind: ReplyKind;
+  details?: ReportDetail[];
+}
+
+export type WebhookFormat = 'slack' | 'feishu';
+
+/** A project's outgoing webhook for Router notifications (ADR 103), as the API shows it: never the full URL. */
+export interface WebhookInfo {
+  projectId: ID;
+  configured: boolean;
+  host: string;
+  masked: string;
+  format: WebhookFormat;
+  enabled: boolean;
+  kinds: ReplyKind[];
+  approvedAt?: number;
+  deliveries: WebhookDelivery[];
+}
+
+export interface WebhookDelivery {
+  at: number;
+  kind: ReplyKind | 'test';
+  chatId?: ID;
+  messageId?: ID;
+  ok: boolean;
+  status?: number;
+  error?: string;
+  /** What was sent. */
+  text: string;
 }
 
 export interface Project {

@@ -10,6 +10,7 @@ import { copyText, cx, shortPath } from '../../utils';
 import { showWorkspaceChanges } from '../../workspace';
 import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
+import { ProjectWebhook } from './ProjectWebhook';
 
 // ---------------------------------------------------------------- shared bits
 
@@ -177,6 +178,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <textarea className="input mono" rows={1} value={passEnv} placeholder="Variable names, e.g. NPM_TOKEN" onChange={(e) => setPassEnv(e.target.value)} />
           <div className="hint">Crew keeps tokens and keys from its environment out of bot sessions (Settings → Safety). Name one here only if this project's commands really need it.</div>
         </div>
+        {!project.workspace && <ProjectWebhook project={project} />}
         <div className="field span-all">
           <div className="setting-row">
             <div>

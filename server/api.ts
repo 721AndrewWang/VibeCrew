@@ -10,6 +10,7 @@ import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder
 import { auditEntries } from './audit';
 import { hasBrowser, screenshot } from './browser';
 import { bus } from './bus';
+import { channelRoutes } from './channels';
 import { authStatus, checkAuth, testConnection } from './claudeAuth';
 import { APP_VERSION, lanAddress, tailscaleAddress } from './config';
 import { BOT_TEMPLATES, MODEL_OPTIONS, PLUGINS } from './data/catalog';
@@ -634,6 +635,9 @@ export function apiRouter() {
     const cwd = project?.path || os.homedir();
     res.json({ enabled: settings.get().safety.guard, verdict: guardTool('Bash', { command: b.command }, guardContext(cwd, project)) });
   });
+
+  // ------------------------------------------------------------ channels (ADR 103)
+  channelRoutes(r);
 
   r.get('/projects/:id/tree', (req, res) => res.json(listDir(getProject(req.params.id), str(req.query.path))));
   r.get('/projects/:id/file', (req, res) => res.json(readProjectFile(getProject(req.params.id), str(req.query.path))));

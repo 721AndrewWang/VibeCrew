@@ -2018,3 +2018,94 @@ body.resizing iframe {
 .spec-runs .audit-row {
   grid-template-columns: 150px 120px 1fr;
 }
+
+/* ---------------------------------------------------------------- channel norms (ADR 103) */
+.reply-kind {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.reply-kind.question,
+.reply-kind.acceptance {
+  color: var(--text);
+}
+
+.report-details {
+  width: min(560px, 100%);
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+
+.report-details .rd-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.report-detail {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px 9px;
+  margin-top: 4px;
+  background: var(--bg-elev);
+}
+
+.report-detail summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.report-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.report-detail .rd-chevron {
+  align-self: center;
+  transition: transform 0.15s;
+}
+
+.report-detail[open] .rd-chevron {
+  transform: rotate(90deg);
+}
+
+.report-detail .rd-gist {
+  flex-basis: 100%;
+  padding-left: 21px;
+}
+
+.report-detail .rd-body {
+  padding: 6px 0 2px 21px;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.webhook-block .wh-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.webhook-block .wh-preview {
+  white-space: pre-wrap;
+  font-size: 12px;
+  border-left: 2px solid var(--border-strong);
+  padding: 4px 10px;
+  margin: 6px 0;
+}
+
+.webhook-block .wh-deliveries {
+  font-size: 12px;
+  margin: 4px 0 0;
+  padding-left: 16px;
+}

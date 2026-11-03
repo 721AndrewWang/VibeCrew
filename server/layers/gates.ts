@@ -1,14 +1,12 @@
 // The Router's output is probabilistic; these checks are not. Each returns why a tool call is
 // refused (the model reads it as the tool's error), or null. Pure, so they are easy to test.
 
-import { REPLY_WORDS, wordCount } from './prompts';
+import type { ReplyKind } from '../../shared/types';
+import { chatRefusal } from '../channels/profiles';
 
-export function replyRefusal(text: string): string | null {
-  if (!text.trim()) return 'The reply is empty.';
-  const n = wordCount(text);
-  if (n > REPLY_WORDS)
-    return `The reply has ${n} words; the chat takes at most ${REPLY_WORDS}. Keep only what the user needs (a result, a decision, a question); the details stay in the Workers' transcripts.`;
-  return null;
+/** The chat profile (ADR 103): at most 100 words and 6 lines, no tool output, a question asks something. */
+export function replyRefusal(text: string, kind: ReplyKind = 'decision'): string | null {
+  return chatRefusal(text, kind);
 }
 
 export interface DispatchCheck {
