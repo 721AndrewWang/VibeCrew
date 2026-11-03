@@ -21,13 +21,14 @@
   --border-strong: #d1d1d1;
   --text: #111111;
   --text-2: #525252;
-  --text-3: #8c8c8c;
-  --green: #2f7a55;
-  --green-soft: rgba(47, 122, 85, 0.1);
-  --orange: #a8701a;
-  --orange-soft: rgba(168, 112, 26, 0.1);
-  --red: #c43c3c;
-  --red-soft: rgba(196, 60, 60, 0.09);
+  /* Muted text and the status colours meet WCAG AA (4.5:1) on every surface they sit on, badges included (ADR 107). */
+  --text-3: #6b6b6b;
+  --green: #2a6f4d;
+  --green-soft: rgba(42, 111, 77, 0.1);
+  --orange: #8a5a10;
+  --orange-soft: rgba(138, 90, 16, 0.1);
+  --red: #b53535;
+  --red-soft: rgba(181, 53, 53, 0.09);
   --purple: #5a5a5a;
   --bubble-bot: #ffffff;
   --bubble-bot-text: #111111;
@@ -77,7 +78,7 @@
   --border-strong: #383838;
   --text: #ededed;
   --text-2: #a3a3a3;
-  --text-3: #6b6b6b;
+  --text-3: #8a8a8a;
   --green: #5bb58a;
   --green-soft: rgba(91, 181, 138, 0.12);
   --orange: #d6a24c;
@@ -120,7 +121,7 @@
     --border-strong: #383838;
     --text: #ededed;
     --text-2: #a3a3a3;
-    --text-3: #6b6b6b;
+    --text-3: #8a8a8a;
     --green: #5bb58a;
     --green-soft: rgba(91, 181, 138, 0.12);
     --orange: #d6a24c;
