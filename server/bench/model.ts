@@ -15,7 +15,7 @@ export interface Message {
   content: string | Block[];
 }
 
-export type Role = 'router' | 'worker' | 'lead' | 'subtask' | 'filter';
+export type Role = 'router' | 'worker' | 'lead' | 'subtask' | 'filter' | 'speculative';
 
 export interface ModelRequest {
   model: string;
@@ -124,7 +124,7 @@ export const DEFAULT_LATENCY: LatencyModel = {
   readMsPerToken: 0.01,
   newMsPerToken: 0.25,
   outMsPerToken: 25,
-  roleFactor: { router: 0.6, worker: 1, lead: 1, subtask: 1, filter: 0.3 },
+  roleFactor: { router: 0.6, worker: 1, lead: 1, subtask: 1, filter: 0.3, speculative: 1 },
 };
 
 export function callLatency(m: LatencyModel, role: Role, t: { read: number; fresh: number; out: number }): number {

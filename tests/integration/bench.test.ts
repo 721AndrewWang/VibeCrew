@@ -57,6 +57,33 @@ describe('npm run bench -- --reduced', () => {
   });
 });
 
+describe('npm run bench -- --reduced --arms all (ADR 011)', () => {
+  let out: string;
+  beforeAll(() => {
+    out = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-bench-arms-'));
+  });
+  afterAll(() => fs.rmSync(out, { recursive: true, force: true }));
+
+  it('runs speculation, the GitHub channel and per-channel output as extra arms of (a)', () => {
+    const res = spawnSync(process.execPath, [path.join(ROOT, 'node_modules/tsx/dist/cli.mjs'), 'scripts/bench.ts', '--reduced', '--arms', 'all', '--out', out], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, HOME: out, CREW_HOME: path.join(out, 'home') },
+      timeout: 60_000,
+    });
+    expect(res.status, res.stderr).toBe(0);
+    for (const label of ['(a) + speculative runs', '(a) + GitHub channel', '(a) − per-channel output']) expect(res.stdout).toContain(label);
+    const result = JSON.parse(fs.readFileSync(path.join(out, 'bench.json'), 'utf8')) as BenchResult;
+    expect(result.summaries.map((s) => s.config)).toEqual(['super-agent', 'no-direct', 'single-neutral', 'single-delegate']);
+    expect(result.arms.map((s) => s.arm)).toEqual(['speculative', 'github', 'no-channels']);
+    expect(result.runs.filter((r) => r.arm)).toHaveLength(3);
+    const html = fs.readFileSync(path.join(out, 'report.html'), 'utf8');
+    expect(html).toContain('Wave-2 arms');
+    expect(html).not.toContain('<script');
+    expect(fs.existsSync(path.join(out, 'home'))).toBe(false);
+  });
+});
+
 describe('the reduced bench over HTTP, against the mock provider', () => {
   const TOKEN = 'mock-secret-token';
   let mock: MockProvider;
@@ -69,12 +96,15 @@ describe('the reduced bench over HTTP, against the mock provider', () => {
 
   it('gives exactly the in-process result, through real Anthropic-shaped requests', async () => {
     const opts = { ...REDUCED, configs: ['super-agent', 'single-delegate'] as const };
-    const local = await runBench({ ...opts, configs: [...opts.configs] });
+    // The speculative arm too: its run's calls go over HTTP like every other session's.
+    const local = await runBench({ ...opts, configs: [...opts.configs], arms: ['speculative'] });
     const client = httpClient(mock.url, TOKEN);
-    const remote = await runBench({ ...opts, configs: [...opts.configs] }, client);
+    const remote = await runBench({ ...opts, configs: [...opts.configs], arms: ['speculative'] }, client);
     expect(JSON.stringify(remote)).toBe(JSON.stringify(local));
 
-    const calls = local.summaries.reduce((n, s) => n + s.tokens.calls, 0);
+    const calls = [...local.summaries, ...local.arms].reduce((n, s) => n + s.tokens.calls, 0);
+    expect(local.arms[0].tokens.byRole.speculative.calls).toBeGreaterThan(0);
+    expect(mock.requests.some((r) => JSON.stringify(r.body.system || '').includes('You are a speculative background run'))).toBe(true);
     expect(client.calls).toBe(calls);
     expect(mock.requests).toHaveLength(calls);
 
@@ -82,7 +112,7 @@ describe('the reduced bench over HTTP, against the mock provider', () => {
     const router = mock.requests.filter((r) => system(r).includes('coordinator of the group chat'));
     const workers = mock.requests.filter((r) => system(r).includes('You are working as a Worker'));
     const lead = mock.requests.filter((r) => system(r).includes('You lead this group'));
-    expect(router.length).toBe(local.summaries[0].coordinator.calls);
+    expect(router.length).toBe(local.summaries[0].coordinator.calls + local.arms[0].coordinator.calls);
     expect(router[0].tools).toEqual(expect.arrayContaining([TOOLS.dispatch, TOOLS.message, TOOLS.stopWorker, TOOLS.reply]));
     expect(router.some((r) => JSON.stringify(r.body.messages).includes('<workers>'))).toBe(true);
     expect(workers[0].tools).toEqual(expect.arrayContaining([TOOLS.work, TOOLS.handBack]));

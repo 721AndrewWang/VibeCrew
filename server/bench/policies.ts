@@ -7,7 +7,7 @@
 // listed in ADR 101.
 
 import type { Block, Message, ModelRequest, Policy, Reply } from './model';
-import { DELEGATE_MARK, FILTER_MARK, LEAD_MARK, SUBTASK_MARK, WORKER_MARK } from './prompts';
+import { DELEGATE_MARK, FILTER_MARK, LEAD_MARK, SPECULATIVE_MARK, SUBTASK_MARK, WORKER_MARK } from './prompts';
 
 export const TOOLS = {
   dispatch: 'mcp__crew_router__dispatch_worker',
@@ -21,6 +21,7 @@ export const TOOLS = {
   status: 'mcp__crew__status',
   handBack: 'mcp__crew__hand_back',
   unsubscribe: 'mcp__crew__unsubscribe_thread',
+  claim: 'mcp__crew__speculative_result',
 } as const;
 
 /** "T07 is complete": what the work tool says when a task has nothing left. */
@@ -153,6 +154,7 @@ interface RouterEventSeen {
   text: string;
   title?: string;
   status?: string;
+  source?: string;
 }
 
 export function parseWorkers(batch: string): Map<string, { id: string; status: string }> {
@@ -173,6 +175,7 @@ export function parseEvents(batch: string): RouterEventSeen[] {
     text: m[4],
     title: /title="([^"]*)"/.exec(m[3])?.[1],
     status: /status="(\w+)"/.exec(m[3])?.[1],
+    source: /source="([^"]*)"/.exec(m[3])?.[1],
   }));
 }
 
@@ -190,13 +193,23 @@ function routerPolicy(req: ModelRequest): Reply {
   const queue = queueBefore(req.messages, start, TOOLS.reply).filter((i) => !workers.has(i.task));
   const texts = new Map<string, string>();
   const actions: { name: string; input: Record<string, unknown>; task: string }[] = [];
-  const ack = { stopped: [] as string[], followed: [] as string[], finished: [] as string[], halted: [] as string[], heard: false };
+  const ack = { stopped: [] as string[], followed: [] as string[], finished: [] as string[], halted: [] as string[], fixes: [] as string[], relayed: [] as string[], heard: false };
+  // With channel norms (ADR 103) the system prompt says a Worker's report goes under Details; a Router
+  // without them relays what the report says.
+  const norms = req.system.includes('under Details');
   let active = [...workers.values()].filter((w) => ACTIVE.has(w.status)).length;
   const resumed = new Set<string>();
   for (const e of events) {
     if (e.kind === 'worker') {
       const task = /^(T\d+)/.exec(e.title || '')?.[1];
       if (task) (e.status === 'done' ? ack.finished : ack.halted).push(task);
+      if (task && !norms) ack.relayed.push(`${task}: ${e.text.split('\n')[0].trim()}`);
+      continue;
+    }
+    // A verified speculative fix (ADR 008) waits for the user's merge: worth an acceptance reply (ADR 011).
+    if (e.kind === 'environment' && e.source === 'speculative') {
+      const task = /\b(T\d+)\b/.exec(e.text)?.[1];
+      if (task) ack.fixes.push(task);
       continue;
     }
     if (e.kind !== 'user') continue;
@@ -240,7 +253,7 @@ function routerPolicy(req: ModelRequest): Reply {
     const a = actions[done.length];
     return tool(req, a.name, a.input);
   }
-  const needsReply = ack.heard || ack.finished.length > 0 || ack.halted.length > 0;
+  const needsReply = ack.heard || ack.finished.length > 0 || ack.halted.length > 0 || ack.fixes.length > 0;
   if (needsReply && done.length === actions.length) {
     // A refused dispatch goes back to the head of the queue.
     // Dispatches are the plan's last actions, and calls run in plan order.
@@ -254,8 +267,11 @@ function routerPolicy(req: ModelRequest): Reply {
       ack.stopped.length ? `Stopped ${list(ack.stopped)}.` : '',
       ack.finished.length ? `${list(ack.finished)} ${ack.finished.length === 1 ? 'is' : 'are'} done.` : '',
       ack.halted.length ? `${list(ack.halted)} stopped.` : '',
+      ack.fixes.length ? `A verified fix for ${list(ack.fixes)} is ready to merge.` : '',
+      ...ack.relayed,
     ].filter(Boolean);
-    return tool(req, TOOLS.reply, { text: parts.join(' ') || 'Noted.' });
+    const kind = ack.finished.length || ack.fixes.length ? 'acceptance' : 'decision';
+    return tool(req, TOOLS.reply, norms ? { text: parts.join(' ') || 'Noted.', kind } : { text: parts.join(' ') || 'Noted.' });
   }
   return { text: needsReply ? 'Handled.' : 'Nothing needs the user.' };
 }
@@ -423,8 +439,20 @@ function filterPolicy(req: ModelRequest): Reply {
 }
 
 /** The one scripted model: which agent it plays comes from the system prompt. */
+/** A speculative run (ADR 008): works its steps, then claims what it reproduced. */
+function speculativePolicy(req: ModelRequest): Reply {
+  const run = /\b(sp_\d+)\b/.exec(textOf(req.messages[0]))?.[1] || 'sp_0';
+  const calls = callsSince(req.messages, turnStart(req.messages) + 1);
+  const last = calls[calls.length - 1];
+  if (last?.name === TOOLS.claim) return { text: 'Reported.' };
+  if (last?.name === TOOLS.work && /\bis complete\b/.test(last.result || ''))
+    return tool(req, TOOLS.claim, { reproduced: true, testFiles: ['test/repro.test.ts'], summary: `Reproduced the failing check and fixed it (${run}).` });
+  return tool(req, TOOLS.work, { task: run });
+}
+
 export const scriptedPolicy: Policy = (req) => {
   if (req.system.includes('coordinator of the group chat')) return routerPolicy(req);
+  if (req.system.includes(SPECULATIVE_MARK)) return speculativePolicy(req);
   if (req.system.includes(WORKER_MARK) || req.system.includes(SUBTASK_MARK)) return workerPolicy(req);
   if (req.system.includes(FILTER_MARK)) return filterPolicy(req);
   if (req.system.includes(LEAD_MARK)) return req.system.includes(DELEGATE_MARK) ? delegateLeadPolicy(req) : neutralLeadPolicy(req);

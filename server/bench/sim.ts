@@ -4,17 +4,38 @@
 // between steps, landing and reporting when a Worker's turn ends) follows RouterSession,
 // layers/workers.ts and the orchestrator, without the store, git or Claude Code.
 
+import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
 import type { SuperAgentSettings, Thread, Trigger, Worker, WorkerDelivery } from '../../shared/types';
+import { DEFAULT_GITHUB } from '../github/config';
+import type { GhEvent } from '../github/events';
+import { screenGithub } from '../github/filter';
 import { MAX_RUNNING, startRefusal } from '../jobs/gates';
 import { BatchQueue } from '../layers/batch';
 import { dispatchRefusal, messageRefusal, replyRefusal } from '../layers/gates';
-import { type DirectLine, deliveredNote, explicitEvent, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type WorkerLine, workerPrompt } from '../layers/prompts';
+import { type DirectLine, deliveredNote, explicitEvent, REPLY_WORDS, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type WorkerLine, wordCount, workerPrompt } from '../layers/prompts';
 import { ACTIVE, pushInbox, receivers } from '../layers/subscriptions';
+import { speculativePrompt } from '../speculative/prompts';
+import { gateRefusal, SAME_SIGNAL_MS, signalOf } from '../speculative/rules';
 import { type FastInput, fastPath, fingerprintOf, normalizeSuperAgent, reachedSlowPath } from '../triggers/fastPath';
 import { BENCH_EPOCH, VirtualClock } from './clock';
 import { DEFAULT_LATENCY, type LatencyModel, type ModelClient, type Role } from './model';
 import { TOOLS } from './policies';
-import { CHAT_TITLE, ciLine, filler, filterPrompt, filterSystem, jobLine, LEAD, type LeadLine, leadSystem, leadTurnPrompt, newInputText, subtaskSystem, workerSystem } from './prompts';
+import {
+  CHAT_TITLE,
+  ciLine,
+  filler,
+  filterPrompt,
+  filterSystem,
+  jobLine,
+  LEAD,
+  type LeadLine,
+  leadSystem,
+  leadTurnPrompt,
+  newInputText,
+  speculativeSystem,
+  subtaskSystem,
+  workerSystem,
+} from './prompts';
 import { emptyStats, type RoleStats, SimSession, type ToolHandler } from './session';
 import type { Workload, WorkloadEvent } from './workload';
 
@@ -27,8 +48,23 @@ export const CONFIGS: { id: ConfigId; label: string; description: string }[] = [
   { id: 'single-delegate', label: '(d) Single session, delegate-first', description: 'The classic lead bot, full duplex, delegates to background sub-tasks' },
 ];
 
+/**
+ * Extra arms on top of (a), one wave-2 feature switched each (ADR 011): speculative runs on failing
+ * CI (ADR 008), CI as GitHub check events on each task's pull request thread (ADR 102), and the
+ * Router without per-channel output (ADR 103), which (a) and (b) have since Crew always applies it.
+ */
+export type ArmId = 'speculative' | 'github' | 'no-channels';
+
+export const ARMS: { id: ArmId; label: string; description: string }[] = [
+  { id: 'speculative', label: '(a) + speculative runs', description: 'A failing CI result may start a silent reproduce-and-fix run (ADR 008), under its own gates' },
+  { id: 'github', label: '(a) + GitHub channel', description: "CI results arrive as GitHub check events on each task's pull request thread, and Workers subscribe to their task's (ADR 102)" },
+  { id: 'no-channels', label: '(a) − per-channel output', description: 'The Router without channel norms: only the word cap, no reply kinds or Details, reports relayed in the chat (ADR 103)' },
+];
+
 export interface SimOptions {
   config: ConfigId;
+  /** An arm on top of 'super-agent' (ADR 011). */
+  arm?: ArmId;
   workload: Workload;
   client: ModelClient;
   latency?: LatencyModel;
@@ -48,6 +84,11 @@ export interface SimOptions {
    * (which replaces Claude Code's prompt and has no built-in tools).
    */
   harnessTokens?: { claudeCode: number; router: number };
+  /** What one speculative run is assumed to cost, for its daily budget gate (the bench has no prices). */
+  speculativeRunUsd?: number;
+  /** Steps of work a speculative run takes, and how long one run of the check command takes (minutes, before time scaling). */
+  speculativeSteps?: number;
+  checkMin?: number;
 }
 
 export const SIM_DEFAULTS = {
@@ -58,6 +99,9 @@ export const SIM_DEFAULTS = {
   startupMs: 3000,
   maxHops: 8,
   harnessTokens: { claudeCode: 8000, router: 600 },
+  speculativeRunUsd: 0.5,
+  speculativeSteps: 2,
+  checkMin: 1,
 };
 
 export interface RequestOutcome {
@@ -88,8 +132,17 @@ export interface TurnRecord {
   ratePerMin: number;
 }
 
+/** What the wave-2 features did in a run (ADR 011). */
+export interface ArmMetrics {
+  /** The Router's replies: how many, their words, Worker reports attached under Details, refused ones. */
+  channel: { replies: number; words: number; maxWords: number; detailsAttached: number; refused: number };
+  speculative?: { signals: number; started: number; ready: number; skipped: Record<string, number> };
+  github?: { checks: number; direct: number; deliveries: number };
+}
+
 export interface RunResult {
   config: ConfigId;
+  arm?: ArmId;
   label: string;
   requests: RequestOutcome[];
   /** User message to the first user-facing output after the session saw it. */
@@ -115,6 +168,7 @@ export interface RunResult {
   executors: number;
   /** When the last thing happened, in milliseconds from the start. */
   endMs: number;
+  arms: ArmMetrics;
 }
 
 const MIN = 60_000;
@@ -194,6 +248,12 @@ class Run {
   private readonly t0 = BENCH_EPOCH;
   private readonly settings: SuperAgentSettings;
   private readonly thread: Thread;
+  /** The wave-2 switches of this run (ADR 011). */
+  private readonly features: { speculative: boolean; github: boolean; channels: boolean };
+  private taskThreads = new Map<string, Thread>();
+  private arm: ArmMetrics = { channel: { replies: 0, words: 0, maxWords: 0, detailsAttached: 0, refused: 0 } };
+  private batchReports: string[] = [];
+  private specRuns: { id: string; task: string; fingerprint: string; at: number; status: 'running' | 'ready' }[] = [];
 
   private units = new Map<string, Unit>();
   private tasks = new Map<string, TaskState>();
@@ -240,6 +300,10 @@ class Run {
     this.o = { ...SIM_DEFAULTS, latency: DEFAULT_LATENCY, ...given };
     this.twoLayer = opts.config === 'super-agent' || opts.config === 'no-direct';
     this.direct = opts.config === 'super-agent';
+    const arm = opts.config === 'super-agent' ? opts.arm : undefined;
+    this.features = { speculative: arm === 'speculative', github: arm === 'github', channels: this.twoLayer && arm !== 'no-channels' };
+    if (this.features.speculative) this.arm.speculative = { signals: 0, started: 0, ready: 0, skipped: {} };
+    if (this.features.github) this.arm.github = { checks: 0, direct: 0, deliveries: 0 };
     this.stepMs = Math.max(1000, Math.round(this.o.stepMin * MIN * opts.workload.options.timeScale));
     this.settings = normalizeSuperAgent({ enabled: true, router: { enabled: this.twoLayer, subscriptions: this.direct, maxWorkers: this.o.maxWorkers } });
     this.thread = { id: 'th_ws', key: 'workspace:proj', kind: 'workspace', title: `Workspace: ${CHAT_TITLE}`, projectId: 'proj', chatId: null, createdAt: this.t0, lastAt: this.t0, count: 0 };
@@ -380,11 +444,68 @@ class Run {
 
   private publishCi(ev: WorkloadEvent) {
     const failures = ev.ci?.failures ?? [];
-    this.publish({ source: 'preview-console', summary: ev.text, text: ev.text, subjects: failures.map((f) => `${ev.task}: ${f}`), facts: { errors: failures.length } });
+    const t = this.features.github
+      ? this.publishCheck(ev)
+      : this.publish({ source: 'preview-console', summary: ev.text, text: ev.text, subjects: failures.map((f) => `${ev.task}: ${f}`), facts: { errors: failures.length } });
+    if (this.features.speculative && ev.ci && !ev.ci.passed) this.considerSpeculation(t, ev);
   }
 
-  private publish(input: { source: 'preview-console' | 'landing'; summary: string; text: string; subjects: string[]; facts: FastInput['facts']; origin?: string }) {
-    const subs = this.direct ? receivers(this.workerRecs(), { threadId: this.thread.id, explicit: false, origin: input.origin, live: () => true }) : [];
+  /** The pull request thread of a task's branch (ADR 102): one per task, as GitHub has one per pull request. */
+  private taskThread(task: string): Thread {
+    let th = this.taskThreads.get(task);
+    if (!th) {
+      const n = Number(task.replace(/\D/g, '')) || 0;
+      th = { id: `th_pr_${task}`, key: `github:proj:acme/site#${n}`, kind: 'github', title: `GitHub acme/site#${n}`, projectId: 'proj', chatId: null, createdAt: this.now, lastAt: this.now, count: 0 };
+      this.taskThreads.set(task, th);
+    }
+    return th;
+  }
+
+  /** A CI result as GitHub reports it: a check run on the task's pull request, screened by the project's GitHub rules. */
+  private publishCheck(ev: WorkloadEvent): SimTrigger {
+    const task = ev.task || 'T00';
+    const n = Number(task.replace(/\D/g, '')) || 0;
+    const passed = !!ev.ci?.passed;
+    const e: GhEvent = {
+      kind: 'check',
+      repo: 'acme/site',
+      number: n,
+      pr: true,
+      key: `check:${ev.id}`,
+      at: this.now,
+      url: '',
+      body: ev.text,
+      check: { name: 'ci', conclusion: passed ? 'success' : 'failure', head: `head-${ev.id}` },
+    };
+    const screen = screenGithub(e, { ...DEFAULT_GITHUB, enabled: true, repos: ['acme/site'] }, { ownUrls: new Set() });
+    this.arm.github!.checks++;
+    const t = this.publish({
+      source: 'github',
+      summary: ev.text,
+      text: ev.text,
+      subjects: ['check', 'ci', passed ? 'success' : 'failure', `${task}:${ev.ci?.failures.join(',')}`],
+      facts: screen ? { screen } : {},
+      thread: this.taskThread(task),
+    });
+    if (t.filter.rule === 'subscribed') {
+      this.arm.github!.direct++;
+      this.arm.github!.deliveries += t.filter.direct?.length ?? 0;
+    }
+    return t;
+  }
+
+  private publish(input: {
+    source: 'preview-console' | 'landing' | 'github';
+    summary: string;
+    text: string;
+    subjects: string[];
+    facts: FastInput['facts'];
+    origin?: string;
+    /** Default: the chat's workspace thread. */
+    thread?: Thread;
+  }): SimTrigger {
+    const thread = input.thread ?? this.thread;
+    const subs = this.direct ? receivers(this.workerRecs(), { threadId: thread.id, explicit: false, origin: input.origin, live: () => true }) : [];
     const fast: FastInput = {
       source: input.source,
       explicit: false,
@@ -397,7 +518,7 @@ class Run {
       id: `tg_${++this.idSeq.tg}`,
       at: this.now,
       source: input.source,
-      threadId: this.thread.id,
+      threadId: thread.id,
       projectId: 'proj',
       chatId: 'chat',
       summary: input.summary,
@@ -405,33 +526,114 @@ class Run {
       related: [],
       explicit: false,
       fingerprint: fast.fingerprint,
-      filter: fastPath(fast, { ...this.fastContext(), subscribers: subs.map((w) => w.id) }),
+      filter: fastPath(fast, { ...this.fastContext(thread), subscribers: subs.map((w) => w.id) }),
       fast,
       text: input.text,
     };
     this.triggers.push(t);
-    this.thread.count++;
-    this.thread.lastAt = this.now;
+    thread.count++;
+    thread.lastAt = this.now;
     this.count(`${input.source === 'landing' ? 'landing' : 'ci'}:${t.filter.rule}`);
-    if (t.filter.rule === 'subscribed') this.deliverDirect(t, subs);
+    if (t.filter.rule === 'subscribed') this.deliverDirect(t, subs, thread);
     if (t.filter.verdict === 'candidate') this.toFilter(t);
+    return t;
   }
 
-  private fastContext() {
+  private fastContext(thread: Thread = this.thread) {
     return {
       settings: this.settings,
-      thread: this.thread,
+      thread,
       recent: this.triggers.slice(-50).reverse(),
       candidatesLastHour: this.triggers.filter((t) => t.at >= this.now - HOUR && reachedSlowPath(t)).length,
       now: this.now,
     };
   }
 
+  private threadOf(t: SimTrigger): Thread {
+    return [...this.taskThreads.values()].find((th) => th.id === t.threadId) ?? this.thread;
+  }
+
+  // ---------------------------------------------------------------- speculative runs (ADR 008)
+
+  /** Crew's own rules decide, as speculative/index.ts does: the signal, then the gates in order. */
+  private considerSpeculation(t: SimTrigger, ev: WorkloadEvent) {
+    const m = this.arm.speculative!;
+    const match = signalOf({ source: 'job', failed: true, command: 'npm test', checkCommand: 'npm test' });
+    if (!match) return;
+    m.signals++;
+    const twin = this.specRuns.find((s) => s.fingerprint === t.fingerprint && this.now - s.at < SAME_SIGNAL_MS);
+    const inFlight = this.specRuns.filter((s) => s.status === 'running').length;
+    const refused = gateRefusal({
+      rules: { ...DEFAULT_PROJECT_SPECULATIVE, enabled: true, checkCommand: 'npm test' },
+      settings: DEFAULT_SPECULATIVE,
+      signal: match.signal,
+      checkCommand: 'npm test',
+      subscribed: t.filter.rule === 'subscribed',
+      chat: true,
+      bot: null,
+      git: true,
+      duplicateOf: twin?.id,
+      inFlight,
+      // One project in the bench.
+      inFlightHere: inFlight,
+      spentTodayUsd: this.specRuns.length * this.o.speculativeRunUsd,
+    });
+    if (refused) {
+      const key = /straight to Workers/.test(refused)
+        ? 'subscribed'
+        : /same signal/.test(refused)
+          ? 'duplicate'
+          : /budget/.test(refused)
+            ? 'budget'
+            : /already going/.test(refused)
+              ? 'concurrency'
+              : 'other';
+      m.skipped[key] = (m.skipped[key] || 0) + 1;
+      return;
+    }
+    const run = { id: `sp_${this.specRuns.length + 1}`, task: ev.task || 'T00', fingerprint: t.fingerprint, at: this.now, status: 'running' as const };
+    this.specRuns.push(run);
+    m.started++;
+    this.clock.after(this.o.startupMs, () => void this.runSpeculation(run, ev));
+  }
+
+  /** The run's session works its steps and claims; Crew runs the check twice; a verified fix goes to the Router. */
+  private async runSpeculation(run: (typeof this.specRuns)[number], ev: WorkloadEvent) {
+    let steps = 0;
+    const session = new SimSession(this.env, {
+      role: 'speculative',
+      model: 'bench-strong',
+      system: speculativeSystem(),
+      overheadTokens: this.o.harnessTokens.claudeCode,
+      handlers: {
+        [TOOLS.work]: async () => {
+          await this.clock.sleep(this.stepMs);
+          steps++;
+          return steps >= this.o.speculativeSteps ? `${run.id} is complete.\n${filler(this.o.workResultTokens)}` : `Worked on ${run.id}.\n${filler(this.o.workResultTokens)}`;
+        },
+        [TOOLS.claim]: () => "Recorded. When your turn ends, Crew runs the project's checks with and without your fix. End your turn now.",
+      },
+    });
+    await session.turn(speculativePrompt({ signal: 'failing-check', detail: ev.text, checkCommand: 'npm test', playbook: [], context: [`Speculative run ${run.id} (task ${run.task})`] }));
+    // Verification: the check command after the fix, then without it.
+    await this.clock.sleep(2 * Math.max(1000, Math.round(this.o.checkMin * MIN * this.o.workload.options.timeScale)));
+    run.status = 'ready';
+    this.arm.speculative!.ready++;
+    this.toRouter({
+      kind: 'environment',
+      id: `tg_${++this.idSeq.tg}`,
+      at: this.now,
+      source: 'speculative',
+      summary: `A fix is ready (${run.id}) for CI on crew/${run.task} (${run.task}).`,
+      reason: "Crew reproduced the problem in a throwaway workspace and the fix passed the project's checks",
+    });
+  }
+
   private count(key: string, n = 1) {
     this.ruleCounts[key] = (this.ruleCounts[key] || 0) + n;
   }
 
-  private deliverDirect(t: SimTrigger, to: Worker[]) {
+  private deliverDirect(t: SimTrigger, to: Worker[], thread: Thread = this.thread) {
     const ids = to.map((w) => w.id);
     t.filter = { ...t.filter, direct: ids };
     this.unread.set(t.id, new Set(ids));
@@ -443,7 +645,7 @@ class Run {
       for (const x of before) if (!rec.inbox.includes(x)) this.unreadBy(rec.id, x.triggerId, true);
     }
     this.directCount++;
-    this.observed.push({ id: t.id, source: t.source === 'landing' ? "Workers' merges" : 'CI results', thread: this.thread.title, workers: ids });
+    this.observed.push({ id: t.id, source: t.source === 'landing' ? "Workers' merges" : t.source === 'github' ? 'GitHub events' : 'CI results', thread: thread.title, workers: ids });
   }
 
   /** A Worker will not read this one: once nobody holds it, it goes back to the filter (or is let go). */
@@ -456,7 +658,7 @@ class Run {
     const t = this.triggers.find((x) => x.id === triggerId);
     if (!t || drop) return;
     this.directCount--;
-    t.filter = { ...fastPath(t.fast, this.fastContext()), direct: t.filter.direct };
+    t.filter = { ...fastPath(t.fast, this.fastContext(this.threadOf(t))), direct: t.filter.direct };
     this.count(`rerouted:${t.filter.rule}`);
     if (t.filter.verdict === 'candidate') this.toFilter(t);
   }
@@ -515,7 +717,11 @@ class Run {
       maxWorkers: this.o.maxWorkers,
       subscriptions: this.direct,
       recall: false,
-    });
+    })
+      // Without channel norms (ADR 103), the Router's prompt as it was: no reply kinds, no Details.
+      .split('\n')
+      .filter((l) => this.features.channels || !l.startsWith('- Each reply has a kind'))
+      .join('\n');
     const find = (id: unknown) => this.workers.find((w) => w.rec.id === String(id));
     const handlers: Record<string, ToolHandler> = {
       [TOOLS.dispatch]: (input) => {
@@ -557,8 +763,20 @@ class Run {
           .join('\n') || '(none)',
       [TOOLS.reply]: (input) => {
         const text = String(input.text || '');
-        const refusal = replyRefusal(text);
-        if (refusal) return { error: refusal };
+        const kind = input.kind === 'question' || input.kind === 'acceptance' ? input.kind : 'decision';
+        // With channel norms, the chat profile; without, the word cap alone.
+        const words = wordCount(text);
+        const refusal = this.features.channels ? replyRefusal(text, kind) : words > REPLY_WORDS ? `The reply has ${words} words; the chat takes at most ${REPLY_WORDS}.` : null;
+        const ch = this.arm.channel;
+        if (refusal) {
+          ch.refused++;
+          return { error: refusal };
+        }
+        ch.replies++;
+        ch.words += words;
+        ch.maxWords = Math.max(ch.maxWords, words);
+        // The batch's Worker reports go under Details on the first reply (ADR 103).
+        if (this.features.channels) ch.detailsAttached += this.batchReports.splice(0).length;
         this.chat.push({ id: `reply_${this.replySeq}`, seq: ++this.replySeq, who: 'You', text });
         this.userFacing();
         return 'Sent to the chat.';
@@ -576,6 +794,7 @@ class Run {
     this.seen(batch.map((e) => (e.kind === 'user' ? e.id : undefined)));
     for (const e of batch) if (e.kind === 'worker' && e.status === 'done') this.informed(this.workers.find((w) => w.rec.id === e.id)?.task);
     this.turnRecord(batch.length, this.currentExplicit);
+    this.batchReports = batch.filter((e) => e.kind === 'worker').map((e) => e.id);
     const text = renderBatch(batch, this.workerLines(), this.now, recap, this.observed.splice(0));
     await session.turn(text);
     if (session.tokens >= this.o.rotateAtTokens) this.rotate = true;
@@ -594,7 +813,7 @@ class Run {
         status: w.rec.status,
         title: w.rec.title,
         note: w.lastReport ? w.lastReport.split('\n')[0].slice(0, 120) : w.rec.detail,
-        threads: w.rec.threads ? [{ id: this.thread.id, title: this.thread.title }] : undefined,
+        threads: w.rec.threads ? w.rec.threads.map((id) => ({ id, title: id === this.thread.id ? this.thread.title : this.taskThread(w.task).title })) : undefined,
       }));
   }
 
@@ -626,7 +845,7 @@ class Run {
     this.clock.after(this.o.startupMs, () => {
       if (w.stop) return this.finishWorker(w, 'stopped', 'Stopped before it began');
       // Its workspace is ready: it subscribes to the chat's workspace thread (ADR 003).
-      if (rec.threads) rec.threads = [this.thread.id];
+      if (rec.threads) rec.threads = this.features.github ? [this.thread.id, this.taskThread(w.task).id] : [this.thread.id];
       rec.detail = undefined;
       void this.workerLoop(w);
     });
@@ -662,7 +881,12 @@ class Run {
             title: w.rec.title,
             task: w.rec.task,
             userWords: w.userWords,
-            threads: w.rec.threads ? [{ id: this.thread.id, title: this.thread.title, kind: 'workspace' }] : undefined,
+            threads: w.rec.threads
+              ? [
+                  { id: this.thread.id, title: this.thread.title, kind: 'workspace' },
+                  ...(this.features.github ? [{ id: this.taskThread(w.task).id, title: this.taskThread(w.task).title, kind: 'github' }] : []),
+                ]
+              : undefined,
             now: this.now,
           })
         : workerPrompt({ context: [], lead: LEAD, followUps: (w.rec.pending || []).splice(0), now: this.now });
@@ -854,9 +1078,11 @@ class Run {
         };
       });
     const role = this.twoLayer ? 'router' : 'lead';
-    const label = CONFIGS.find((c) => c.id === this.o.config)!.label;
+    const arm = this.o.config === 'super-agent' ? this.o.arm : undefined;
+    const label = arm ? ARMS.find((a) => a.id === arm)!.label : CONFIGS.find((c) => c.id === this.o.config)!.label;
     return {
       config: this.o.config,
+      ...(arm ? { arm } : {}),
       label,
       requests,
       ackMs: this.ackMs,
@@ -875,6 +1101,7 @@ class Run {
       refusals: this.refusals,
       executors: this.twoLayer ? this.workers.length : this.jobs.length,
       endMs: this.now - this.t0,
+      arms: this.arm,
     };
   }
 }

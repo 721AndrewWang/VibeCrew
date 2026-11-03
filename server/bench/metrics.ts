@@ -3,7 +3,7 @@
 
 import type { Role } from './model';
 import type { RoleStats } from './session';
-import { CONFIGS, type ConfigId, type RunResult, type TurnRecord } from './sim';
+import { ARMS, type ArmId, type ArmMetrics, CONFIGS, type ConfigId, type RunResult, type TurnRecord } from './sim';
 
 /** The p-th percentile (0-100), linearly interpolated; null for no values. */
 export function percentile(values: number[], p: number): number | null {
@@ -21,6 +21,7 @@ const MIN = 60_000;
 
 export interface ConfigSummary {
   config: ConfigId;
+  arm?: ArmId;
   label: string;
   description: string;
   requests: { total: number; completed: number; stopped: number; unfinished: number };
@@ -35,6 +36,7 @@ export interface ConfigSummary {
   refusals: Record<string, number>;
   executors: number;
   endMin: number;
+  arms: ArmMetrics;
 }
 
 export function summarize(r: RunResult): ConfigSummary {
@@ -45,8 +47,9 @@ export function summarize(r: RunResult): ConfigSummary {
   const c = r.coordinator;
   return {
     config: r.config,
+    ...(r.arm ? { arm: r.arm } : {}),
     label: r.label,
-    description: CONFIGS.find((x) => x.id === r.config)?.description || '',
+    description: (r.arm ? ARMS.find((x) => x.id === r.arm)?.description : CONFIGS.find((x) => x.id === r.config)?.description) || '',
     requests: { total: r.requests.length, completed: completed.length, stopped: stopped.length, unfinished: r.requests.length - completed.length - stopped.length },
     completionMin: {
       p50: round(percentile(completed, 50)),
@@ -75,6 +78,7 @@ export function summarize(r: RunResult): ConfigSummary {
     refusals: r.refusals,
     executors: r.executors,
     endMin: round(r.endMs / MIN) ?? 0,
+    arms: r.arms,
   };
 }
 

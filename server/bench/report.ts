@@ -181,6 +181,50 @@ thead th{color:var(--text-2);font-weight:600}
 code{font-size:12px}
 `;
 
+/** The wave-2 arms against (a), from the same workload (ADR 011); nothing when none ran. */
+function armsSection(r: BenchResult): string {
+  const base = r.summaries.find((s) => s.config === 'super-agent');
+  if (!r.arms?.length || !base) return '';
+  const rows = [base, ...r.arms];
+  const spec = r.arms.find((s) => s.arm === 'speculative')?.arms.speculative;
+  const gh = r.arms.find((s) => s.arm === 'github')?.arms.github;
+  return `<h2>Wave-2 arms</h2>
+<p>Configuration (a) with one feature switched each: speculative runs, the GitHub channel, and the Router without per-channel output. See <code>docs/adr/011-wave2-integration.md</code>.</p>
+${table(
+  ['Run', 'Completion p50 (min)', 'Router decisions', 'Router calls', 'Straight to Workers', 'Context read', 'Router replies', 'Words per reply', 'Reports under Details', 'Refused replies'],
+  rows.map((s) => [
+    s.label,
+    s.completionMin.p50,
+    s.coordinator.decided,
+    s.coordinator.calls,
+    s.coordinator.direct,
+    s.tokens.contextRead,
+    s.arms.channel.replies,
+    s.arms.channel.replies ? Math.round((s.arms.channel.words / s.arms.channel.replies) * 10) / 10 : null,
+    s.arms.channel.detailsAttached,
+    s.arms.channel.refused,
+  ]),
+)}${
+  spec
+    ? table(
+        ['Speculative runs', 'Failing CI signals', 'Started', 'Fixes ready', 'Skipped (by gate)', 'Speculative context read'],
+        [
+          [
+            'speculative',
+            spec.signals,
+            spec.started,
+            spec.ready,
+            Object.entries(spec.skipped)
+              .map(([k, v]) => `${k} ${v}`)
+              .join(', ') || 'none',
+            r.arms.find((s) => s.arm === 'speculative')?.tokens.byRole.speculative.contextRead ?? null,
+          ],
+        ],
+      )
+    : ''
+}${gh ? table(['GitHub channel', 'Check events', 'Straight to the task’s Workers', 'Deliveries'], [['github', gh.checks, gh.direct, gh.deliveries]]) : ''}`;
+}
+
 export function renderReport(r: BenchResult): string {
   const S = r.summaries;
   const bars = (pick: (s: ConfigSummary) => number | null) => S.map((s) => ({ config: s.config, label: short(s.label), value: pick(s) }));
@@ -200,23 +244,25 @@ export function renderReport(r: BenchResult): string {
     xLabel: 'minutes from request to the user being told it is done',
     yLabel: 'share of requests',
     yMax: 1,
-    series: r.runs.map((run) => {
-      const v = run.requests
-        .filter((q) => q.completionMs !== undefined && !q.stopped)
-        .map((q) => q.completionMs! / 60_000)
-        .sort((a, b) => a - b);
-      return {
-        config: run.config,
-        name: short(run.label),
-        line: true,
-        step: true,
-        markers: false,
-        points: [[0, 0] as [number, number], ...v.map((x, i) => [Math.round(x * 10) / 10, (i + 1) / v.length] as [number, number])],
-      };
-    }),
+    series: r.runs
+      .filter((run) => !run.arm)
+      .map((run) => {
+        const v = run.requests
+          .filter((q) => q.completionMs !== undefined && !q.stopped)
+          .map((q) => q.completionMs! / 60_000)
+          .sort((a, b) => a - b);
+        return {
+          config: run.config,
+          name: short(run.label),
+          line: true,
+          step: true,
+          markers: false,
+          points: [[0, 0] as [number, number], ...v.map((x, i) => [Math.round(x * 10) / 10, (i + 1) / v.length] as [number, number])],
+        };
+      }),
   });
 
-  const routerRuns = r.runs.filter((x) => x.coordinator.role === 'router');
+  const routerRuns = r.runs.filter((x) => x.coordinator.role === 'router' && !x.arm);
   const scatter = xyChart({
     title: 'Router batch size vs arrival rate, per turn',
     unit: '(markers: turns; line: mean per rate bin)',
@@ -410,6 +456,7 @@ ${table(
   ['Configuration', 'Outcome', 'Events'],
   S.flatMap((s) => Object.entries(s.triggers).map(([k, v]) => [s.label, k, v])),
 )}
+${armsSection(r)}
 <h2>Assumptions</h2>
 ${table(
   ['Parameter', 'Value'],

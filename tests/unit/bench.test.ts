@@ -310,3 +310,50 @@ describe('a reduced run', () => {
     expect(busy.tokens.coordinatorContextRead / busy.coordinator.decided).toBeLessThan(calm.tokens.coordinatorContextRead / calm.coordinator.decided);
   });
 });
+
+describe('the wave-2 arms (ADR 011)', () => {
+  it('reads --arms, and runs none unless asked', async () => {
+    expect(parseBenchArgs(['--arms', 'speculative,no-channels']).options).toMatchObject({ arms: ['speculative', 'no-channels'] });
+    expect(parseBenchArgs(['--arms', 'all']).options).toMatchObject({ arms: ['speculative', 'github', 'no-channels'] });
+    expect(() => parseBenchArgs(['--arms', 'nope'])).toThrow(/Unknown arm/);
+    expect((await runBench(REDUCED)).arms).toEqual([]);
+  });
+
+  it('switches each feature on top of (a) alone, deterministically, through Crew’s own rules', async () => {
+    const opts = { ...REDUCED, configs: ['super-agent' as const], arms: ['speculative' as const, 'github' as const, 'no-channels' as const] };
+    const r = await runBench(opts);
+    expect(JSON.stringify(await runBench(opts))).toBe(JSON.stringify(r));
+    const a = r.summaries[0];
+    const arm = (id: string) => r.arms.find((s) => s.arm === id)!;
+    expect(r.arms.map((s) => s.label)).toEqual(['(a) + speculative runs', '(a) + GitHub channel', '(a) − per-channel output']);
+    for (const s of r.arms) expect(s.requests).toMatchObject({ total: 5, unfinished: 0 });
+
+    // Speculation: failing CI is a signal; the gates skip what Workers already have, and a verified
+    // run reaches the Router as an environment event it answers as an acceptance request.
+    const spec = arm('speculative').arms.speculative!;
+    expect(spec.signals).toBeGreaterThan(0);
+    expect(spec.started + Object.values(spec.skipped).reduce((n, v) => n + v, 0)).toBe(spec.signals);
+    expect(spec.ready).toBe(spec.started);
+    expect(spec.started).toBeLessThanOrEqual(4);
+    expect(arm('speculative').tokens.byRole.speculative.calls).toBeGreaterThan(0);
+    expect(a.tokens.byRole.speculative.calls).toBe(0);
+    expect(arm('speculative').arms.channel.replies).toBeGreaterThan(a.arms.channel.replies);
+    expect(a.arms.speculative).toBeUndefined();
+
+    // GitHub: CI results are check events on each task's pull request thread, screened by the project's
+    // GitHub rules; passed checks only ever reach the Workers on that pull request.
+    const gh = arm('github');
+    expect(gh.arms.github!.checks).toBe(r.workload.counts.ci);
+    expect(gh.triggers['ci:check-passed']).toBeGreaterThan(0);
+    expect(a.triggers['ci:check-passed']).toBeUndefined();
+
+    // Without channel norms: no reply kinds or Details, and the reports are relayed in the chat.
+    expect(a.arms.channel.detailsAttached).toBeGreaterThan(0);
+    expect(arm('no-channels').arms.channel.detailsAttached).toBe(0);
+    expect(arm('no-channels').arms.channel.words).toBeGreaterThan(a.arms.channel.words);
+
+    const html = renderReport(r);
+    expect(html).toContain('Wave-2 arms');
+    expect(html).toContain('(a) − per-channel output');
+  });
+});

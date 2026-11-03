@@ -18,7 +18,7 @@ export interface RoleStats {
   output: number;
 }
 
-export const ROLES: Role[] = ['router', 'worker', 'lead', 'subtask', 'filter'];
+export const ROLES: Role[] = ['router', 'worker', 'lead', 'subtask', 'filter', 'speculative'];
 
 export function emptyStats(): Record<Role, RoleStats> {
   return Object.fromEntries(ROLES.map((r) => [r, { sessions: 0, turns: 0, calls: 0, injected: 0, contextRead: 0, output: 0 }])) as Record<Role, RoleStats>;

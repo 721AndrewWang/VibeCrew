@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { type BenchOptions, CONFIGS, type ConfigId, REDUCED, runBench } from './index';
+import { ARMS, type ArmId, type BenchOptions, CONFIGS, type ConfigId, REDUCED, runBench } from './index';
 import { renderReport } from './report';
 
 const USAGE = `Usage: npm run bench -- [options]
@@ -16,6 +16,7 @@ const USAGE = `Usage: npm run bench -- [options]
   --duration <min>     Length of the stream in simulated minutes, before time scaling (default 180)
   --time-scale <x>     Multiplies every time in the stream (default 1; below 1 is a busier chat)
   --configs <list>     Comma-separated: super-agent,no-direct,single-neutral,single-delegate
+  --arms <list>        Extra arms on top of super-agent, comma-separated: speculative,github,no-channels (or all)
   --sweep <list>       Time scales for the batching sweep (default 2,1,0.5,0.25,0.1,0.05,0.02,0.01)
   --no-sweep           Skip the sweep
   --help               Show this
@@ -40,6 +41,7 @@ export function parseBenchArgs(argv: string[]): { help: boolean; out: string; op
       duration: { type: 'string' },
       'time-scale': { type: 'string' },
       configs: { type: 'string' },
+      arms: { type: 'string' },
       sweep: { type: 'string' },
       'no-sweep': { type: 'boolean' },
       help: { type: 'boolean' },
@@ -50,6 +52,10 @@ export function parseBenchArgs(argv: string[]): { help: boolean; out: string; op
   const configs = values.configs?.split(',').map((s) => s.trim()) as ConfigId[] | undefined;
   const bad = configs?.filter((c) => !ids.includes(c));
   if (bad?.length) throw new Error(`Unknown configuration: ${bad.join(', ')} (known: ${ids.join(', ')})`);
+  const armIds = ARMS.map((a) => a.id);
+  const arms = values.arms === 'all' ? armIds : (values.arms?.split(',').map((s) => s.trim()) as ArmId[] | undefined);
+  const badArm = arms?.filter((a) => !armIds.includes(a));
+  if (badArm?.length) throw new Error(`Unknown arm: ${badArm.join(', ')} (known: ${armIds.join(', ')}, all)`);
   const given: Partial<BenchOptions> = {
     seed: values.seed === undefined ? undefined : Math.round(Number(values.seed)),
     messages: num(values.messages, 'messages'),
@@ -57,6 +63,7 @@ export function parseBenchArgs(argv: string[]): { help: boolean; out: string; op
     durationMin: num(values.duration, 'duration'),
     timeScale: num(values['time-scale'], 'time-scale'),
     configs,
+    arms,
     sweep: values['no-sweep'] ? [] : values.sweep?.split(',').map((s) => num(s.trim(), 'sweep')!),
   };
   // Flags given on top of --reduced; the ones not given leave its values alone.
@@ -84,7 +91,7 @@ export async function main(argv: string[]): Promise<number> {
   const html = path.join(args.out, 'report.html');
   fs.writeFileSync(json, `${JSON.stringify(result, null, 2)}\n`);
   fs.writeFileSync(html, renderReport(result));
-  const lines = result.summaries.map(
+  const lines = [...result.summaries, ...result.arms].map(
     (s) =>
       `  ${s.label.padEnd(36)} completion p50 ${String(s.completionMin.p50 ?? '–').padStart(6)} min, p95 ${String(s.completionMin.p95 ?? '–').padStart(6)} min · decisions ${String(s.coordinator.decided).padStart(4)} · context read ${String(s.tokens.contextRead).padStart(9)}`,
   );

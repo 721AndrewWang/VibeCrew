@@ -14,6 +14,7 @@ export const SUBTASK_MARK = 'You are running as a background sub-task';
 export const LEAD_MARK = 'You lead this group';
 export const DELEGATE_MARK = '## Delegate first';
 export const FILTER_MARK = 'You filter events for Crew';
+export const SPECULATIVE_MARK = 'You are a speculative background run';
 
 const WHO = `You are "${LEAD}" (Tech lead), a member of the Crew web dev team. Crew is an app for a team of AI bots that runs on the user's computer: the user chats with you like texting, next to a live web preview, files, and a terminal panel.`;
 
@@ -136,4 +137,9 @@ const FILLER = 'src/components/Widget.tsx:42 ok; ';
 export function filler(tokens: number): string {
   if (tokens <= 0) return '';
   return `(simulated tool output) ${FILLER.repeat(Math.ceil((tokens * 4) / FILLER.length))}`.slice(0, tokens * 4);
+}
+
+/** A speculative run's system prompt (ADR 008), a stand-in like the Worker's: constant per session. */
+export function speculativeSystem(): string {
+  return `${SPECULATIVE_MARK} for Crew: reproduce the problem below with a failing test, fix it with the smallest change, then call speculative_result. Nobody reads your messages and nothing you do reaches the user unless Crew verifies it.`;
 }
