@@ -37,4 +37,23 @@ export async function killGroup(child: ChildProcess, graceMs = 3000): Promise<vo
       resolve();
     });
   });
+  // The leader can be gone while others in its group are still on their way out (or ignore
+  // SIGTERM): give them the rest of the grace period, then SIGKILL whatever is left.
+  const groupAlive = () => {
+    try {
+      process.kill(-pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const until = Date.now() + graceMs;
+  while (groupAlive() && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+  if (groupAlive()) {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
+  }
 }
