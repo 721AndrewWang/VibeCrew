@@ -60,13 +60,16 @@ export function activeChannel(project: Project | undefined, sa: SuperAgentSettin
   return g.enabled && g.repos.length ? g : null;
 }
 
+/** The repository as the project spells it. */
+export const canonicalRepo = (repo: string | undefined, repos: string[]) => repos.find((r) => r.toLowerCase() === (repo || '').trim().toLowerCase());
+
 /** "owner/repo#12" or "#12" (when one repository is watched), as a repository and a number, or why it names neither. */
 export function parseIssueRef(ref: string, repos: string[]): { repo: string; number: number } | { error: string } {
   const m = ref.trim().match(/^(?:([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+))?#?(\d{1,9})$/);
   if (!m) return { error: `"${ref}" is not an issue or pull request: write owner/repo#12, or #12.` };
   const n = Number(m[2]);
   if (m[1]) {
-    const repo = repos.find((r) => r.toLowerCase() === m[1].toLowerCase());
+    const repo = canonicalRepo(m[1], repos);
     return repo ? { repo, number: n } : { error: `${m[1]} is not a repository this project watches (${repos.join(', ') || 'none'}).` };
   }
   if (repos.length === 1) return { repo: repos[0], number: n };

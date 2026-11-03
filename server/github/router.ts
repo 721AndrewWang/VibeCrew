@@ -10,8 +10,8 @@ import { createDraft, showCommand } from '../drafts';
 import { chatProjectId } from '../projects';
 import { projects, settings } from '../store';
 import { ensureThread } from '../triggers';
-import { activeChannel, parseIssueRef } from './config';
-import { asyncBody, canonicalRepo, GITHUB_DRAFT_KINDS, type GithubDraftArgs, githubDraftRefusal } from './gates';
+import { activeChannel, canonicalRepo, parseIssueRef } from './config';
+import { asyncBody, GITHUB_DRAFT_KINDS, type GithubDraftArgs, githubDraftRefusal } from './gates';
 import { githubThread } from './threads';
 
 /** The chat's project (a workspace counts as its parent). */
