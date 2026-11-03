@@ -256,14 +256,14 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
     await start();
     const sp = await waitFor(async () => (await runs()).find((s) => s.id === verifying.id && s.status === 'discarded'), 30_000);
     expect(sp.why).toBe('Crew restarted; its check command was still running and was stopped');
+    // Its whole process group is gone, so the late write cannot come any more: it has not happened by now, it never will.
     await waitFor(() => !alive(pid) || null, 10_000);
-    await new Promise((r) => setTimeout(r, 9000));
     expect(fs.existsSync(path.join(dumps, 'late-restart'))).toBe(false);
     expect(branches()).toBe('');
     // The Router is never handed the run's report (it was no Router's Worker), and the same check
     // read again is neither published twice nor speculated on twice.
+    // The poll publishes before it answers, and a speculative run starts only from a published Trigger.
     await poll();
-    await new Promise((r) => setTimeout(r, 1500));
     expect((await crew.api('GET', '/triggers?source=github')).triggers.length).toBe(triggersBefore);
     expect((await runs()).filter((s) => s.github?.head === head)).toHaveLength(1);
     expect((await routerTurns()).some((m) => (m.batch || []).includes(sp.workerId))).toBe(false);
