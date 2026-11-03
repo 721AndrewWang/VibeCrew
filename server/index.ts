@@ -16,6 +16,7 @@ import { stopAllDevServers } from './devserver';
 import { recoverDrafts } from './drafts';
 import { initIfNeeded } from './entities';
 import { stopGateway, syncGateway } from './gateway';
+import { closeGithub, startGithub } from './github';
 import { stopBroker, syncBroker } from './hardening/broker';
 import { agentPeer, fence, refuse } from './hardening/fence';
 import { redactForUi } from './hardening/redactor';
@@ -160,6 +161,7 @@ async function main() {
   startRoutines();
   startOutsideEditNotes();
   startWatchdog();
+  startGithub();
   void checkAuth(true).then((a) => {
     if (!a.cliFound) console.warn('⚠️  Claude Code CLI (claude) not found. Install it first: npm i -g @anthropic-ai/claude-code');
     else if (!a.ready && a.method === 'provider') console.warn("⚠️  The model provider isn't set up yet: fill in the URL, key and model in Crew under Settings → Model connection.");
@@ -214,6 +216,7 @@ async function shutdown() {
   console.log('\nShutting down…');
   flushAll();
   closeWatchdog();
+  closeGithub();
   closeAllSessions();
   closeAllTerminals();
   closeAllPreviews();

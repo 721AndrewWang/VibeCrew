@@ -10,6 +10,7 @@ import { bus, notify } from '../bus';
 import { reportDetail } from '../channels/details';
 import { CHAT_PROFILE, isReplyKind } from '../channels/profiles';
 import { notifyRouterReply } from '../channels/webhook';
+import { draftGithub, draftGithubTool, issueThread } from '../github/router';
 import { emitChat, preview, setLastMessage } from '../orchestrator/chatLog';
 import { RECALL_TOOL, recallText } from '../recall';
 import { projectFamilies } from '../skills';
@@ -147,8 +148,20 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
         picked = family;
       }
       const subscribe = subscriptionsOn(settings.get().superAgent) && args.subscribe !== false;
-      const w = startWorker(chat, member, { title, task, related: c.related, userMessageIds: c.userMessageIds, subscribe, threads: c.threads, family: picked });
-      return ok(`Started ${w.id} as ${member.name}: "${w.title}". It works in the background and its report will arrive as an event; don't wait for it.`);
+      // A GitHub issue or pull request (ADR 102): the Worker subscribes to its thread, so later comments reach it directly.
+      let threads = c.threads;
+      let issueNote = '';
+      const issue = str(args.github).trim();
+      if (issue) {
+        const r = issueThread(chat, issue);
+        if ('error' in r) return fail(r.error);
+        if (subscribe) {
+          threads = [...threads, r.threadId];
+          issueNote = ` It subscribes to ${r.ref} (${r.threadId}): later comments there go straight to it.`;
+        } else issueNote = ` It does not subscribe to ${r.ref}${subscriptionsOn(settings.get().superAgent) ? '' : ' (direct routing is off)'}: later comments there come to you.`;
+      }
+      const w = startWorker(chat, member, { title, task, related: c.related, userMessageIds: c.userMessageIds, subscribe, threads, family: picked });
+      return ok(`Started ${w.id} as ${member.name}: "${w.title}".${issueNote} It works in the background and its report will arrive as an event; don't wait for it.`);
     },
 
     async message_worker(args) {
@@ -160,6 +173,24 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
       if (refused || !w) return fail(refused || 'No such Worker.');
       if (!text) return fail('The message is empty.');
       return ok(messageWorker(w, text) === 'queued' ? `${w.id} is busy; it gets this when its current turn ends.` : `${w.id} is working on it; its report will arrive as an event.`);
+    },
+
+    async draft_github(args) {
+      const t = turn();
+      if (!t) return fail('No turn is in progress.');
+      return draftGithub(t.c, t.chat, {
+        kind: str(args.kind),
+        repo: str(args.repo),
+        number: typeof args.number === 'number' ? args.number : undefined,
+        comment: typeof args.comment === 'number' ? args.comment : undefined,
+        title: str(args.title) || undefined,
+        head: str(args.head) || undefined,
+        base: str(args.base) || undefined,
+        background: str(args.background),
+        change: str(args.change),
+        verification: str(args.verification),
+        why: str(args.why) || undefined,
+      });
     },
 
     async stop_worker(args) {
@@ -207,7 +238,7 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
 }
 
 /** The handlers as Claude Code sees them. */
-export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?: boolean; recall?: boolean } = {}) {
+export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?: boolean; recall?: boolean; github?: boolean } = {}) {
   const wrap = (name: string) => async (args: Record<string, unknown>) => {
     const r = await h[name](args);
     return { content: [{ type: 'text' as const, text: r.text }], isError: r.isError || undefined };
@@ -236,6 +267,15 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
           task: z.string().describe('A self-contained brief: the goal, the files or pages involved, what counts as done'),
           bot: z.string().optional().describe('The member to run it as (a name from the team list); default you'),
           family: z.string().optional().describe("A skill family the project enabled (see your instructions): the Worker gets that family's skills as its playbook"),
+          ...(o.github
+            ? {
+                github: z
+                  .string()
+                  .max(200)
+                  .optional()
+                  .describe('A GitHub issue or pull request the task is about, owner/repo#12 (or #12): the Worker subscribes to its thread and gets its later comments'),
+              }
+            : {}),
           ...(o.subscriptions
             ? {
                 subscribe: z
@@ -261,6 +301,7 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
         wrap('list_workers'),
         { annotations: { readOnlyHint: true } },
       ),
+      ...(o.github ? [draftGithubTool(wrap)] : []),
       ...(o.recall
         ? [
             tool(

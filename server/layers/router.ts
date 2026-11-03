@@ -20,6 +20,8 @@ import { bus, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { FAKE_AGENT, HOME_DIR } from '../config';
 import { MODEL_OPTIONS } from '../data/catalog';
+import { githubRouterSection } from '../github/prompt';
+import { githubChannelOf } from '../github/router';
 import { logger } from '../log';
 import { emitChat, systemMessage } from '../orchestrator/chatLog';
 import { deniedReason } from '../orchestrator/permissionGate';
@@ -146,6 +148,8 @@ class ChatRouter {
     // A resumed session keeps the system prompt it started with: its first batch says recall is new.
     this.recallNote = !!this.recall && !!chat.router?.sessionId;
     fs.mkdirSync(ROUTER_CWD, { recursive: true });
+    // GitHub as an asynchronous channel (ADR 102): its tool and prompt section, fixed for the session's life like the rest.
+    const github = githubChannelOf(chat);
     const team: TeamMember[] = bots
       .all()
       .filter((b) => chat.botIds.includes(b.id))
@@ -174,13 +178,14 @@ class ChatRouter {
       denyRules: settings.get().denyRules || [],
       // The deny hook every agent session has (blocked actions, then the command guard, ADR 007), as for the Watchdog.
       deniedReason: (toolName, input) => deniedReason(toolName, input, ROUTER_CWD, { actor: { botId: lead.id, botName: lead.name, chatId: chat.id } }),
-      mcpServers: { crew_router: routerMcpServer(this.tools, { subscriptions: subscribed, recall: !!this.recall }) as McpServerConfig },
+      mcpServers: { crew_router: routerMcpServer(this.tools, { subscriptions: subscribed, recall: !!this.recall, github: !!github }) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],
       env: { ...agentEnv({ role: 'router', botId: lead.id }, rs.model || settings.get().defaultModel || undefined), ...NO_TOOL_SEARCH },
       role: 'router',
       fakeTools: this.tools,
     };
+    if (github) cfg.systemPrompt += `\n${githubRouterSection(github.conf.repos, subscribed).join('\n')}`;
     const onSessionId = (sid: string) => {
       const c = chats.get(this.chatId);
       if (!c || c.router?.sessionId === sid) return;

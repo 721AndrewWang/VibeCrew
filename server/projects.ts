@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import type { Chat, Project, ProjectSpeculative } from '../shared/types';
 import { bus } from './bus';
 import { PROJECT_TEMPLATES, slugify } from './data/projectTemplates';
+import { normalizeGithub } from './github/config';
 import { cleanDomains } from './sandbox';
 import { normalizeProjectSpeculative } from './speculative/config';
 import { projects, settings, uid } from './store';
@@ -216,7 +217,19 @@ export async function createProject(input: { name: string; template: string; par
 type ProjectPatch = Partial<
   Pick<
     Project,
-    'name' | 'devCommand' | 'staticRoot' | 'setupCommand' | 'commitGuide' | 'noAttribution' | 'askRules' | 'allowedDomains' | 'requireChallenge' | 'autoChallenge' | 'skillFamilies' | 'passEnv'
+    | 'name'
+    | 'devCommand'
+    | 'staticRoot'
+    | 'setupCommand'
+    | 'commitGuide'
+    | 'noAttribution'
+    | 'askRules'
+    | 'allowedDomains'
+    | 'requireChallenge'
+    | 'autoChallenge'
+    | 'skillFamilies'
+    | 'passEnv'
+    | 'github'
   >
 > & { speculative?: Partial<Omit<ProjectSpeculative, 'signals'>> & { signals?: Partial<ProjectSpeculative['signals']> } };
 
@@ -255,6 +268,7 @@ export function updateProject(id: string, patch: ProjectPatch): Project {
     const names = [...new Set(patch.passEnv.map((n) => n.trim()).filter(Boolean))];
     p.passEnv = names.length ? names : undefined;
   }
+  if (patch.github !== undefined) p.github = normalizeGithub(patch.github);
   p.framework = detectFramework(p.path);
   p.updatedAt = Date.now();
   projects.set(p);

@@ -21,6 +21,7 @@ import { assertWorkspaceIdle, createBot, createGroup, deleteBot, deleteChat, upd
 import { frictionReport } from './friction';
 import { addImportedProvider, gatewayOn, gatewayReport, syncGateway, testGateway } from './gateway';
 import { normalizeGateway } from './gateway/config';
+import { githubStatuses, pollGithub, syncGithub } from './github';
 import { guardTool } from './guard';
 import { brokerConnection, syncBroker } from './hardening/broker';
 import { acceptImprovement, editSettingProposal, listImprovements, proposeImprovements, rejectImprovement, revertImprovement } from './improve';
@@ -65,6 +66,7 @@ import {
   ChatPatch,
   DraftInput,
   GatewayTestBody,
+  GithubPoll,
   GroupCreate,
   GuardCheck,
   ImprovementReject,
@@ -281,6 +283,8 @@ export function apiRouter() {
     if (patch.superAgent && subscriptionsOn(patch.superAgent) !== subscriptionsOn(cur.superAgent)) refreshWorkerSessions(() => true);
     // The Watchdog's timer and limits follow the switches.
     if (b.superAgent) syncWatchdog();
+    // So does GitHub polling (ADR 102): it runs only while the Super-agent is on.
+    if (b.superAgent) syncGithub();
     if (patch.authMode || patch.apiKey !== undefined || patch.provider || patch.providerToken) void checkAuth(true);
     if (lanChanged) {
       await restartPreviews();
@@ -323,6 +327,10 @@ export function apiRouter() {
   r.get('/routing', (_req, res) => res.json(routingReport()));
 
   // ------------------------------------------------------------ triggers (Super-agent)
+  // ------------------------------------------------------------ GitHub channel (ADR 102)
+  r.get('/github', (_req, res) => res.json({ projects: githubStatuses() }));
+  r.post('/github/poll', async (req, res) => res.json({ poll: await pollGithub(body(GithubPoll, req.body).projectId) }));
+
   r.get('/triggers', (req, res) =>
     res.json(
       listTriggers({
@@ -593,8 +601,9 @@ export function apiRouter() {
     const p = updateProject(req.params.id, patch);
     // Rules and commit settings reach the bots through their sessions.
     invalidateProject(p.id);
-    // The Routers list the project's skill families in their system prompt (ADR 007).
-    if (patch.skillFamilies) invalidateRouters();
+    // The Routers list the project's skill families in their system prompt (ADR 007), and its GitHub channel (ADR 102).
+    if (patch.skillFamilies || patch.github) invalidateRouters();
+    if (patch.github) syncGithub();
     res.json(decorate(p));
   });
   r.delete('/projects/:id', async (req, res) => {
@@ -604,6 +613,7 @@ export function apiRouter() {
     await devServer(req.params.id).stop();
     for (const c of chats.all()) if (c.projectId === req.params.id) updateChat(c.id, { projectId: null });
     projects.delete(req.params.id);
+    syncGithub();
     bus.emit({ t: 'project_deleted', id: req.params.id });
     res.json({ ok: true });
   });

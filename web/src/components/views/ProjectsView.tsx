@@ -3,13 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { defaultAutoChallenge } from '../../../../shared/challenge';
 import { SKILL_FAMILIES } from '../../../../shared/families';
 import { DEFAULT_PROJECT_SPECULATIVE } from '../../../../shared/speculative';
-import type { DevServerState, Project, ProjectSpeculative, SkillFamily } from '../../../../shared/types';
+import type { DevServerState, GithubChannel, Project, ProjectSpeculative, SkillFamily } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
 import { copyText, cx, shortPath } from '../../utils';
 import { showWorkspaceChanges } from '../../workspace';
 import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
+import { DEFAULT_GITHUB_CHANNEL, GithubChannelSection } from './GithubChannelSection';
 import { ProjectWebhook } from './ProjectWebhook';
 
 // ---------------------------------------------------------------- shared bits
@@ -70,6 +71,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [passEnv, setPassEnv] = useState((project.passEnv || []).join('\n'));
   const [spec, setSpec] = useState<ProjectSpeculative>(project.speculative || DEFAULT_PROJECT_SPECULATIVE);
   const setSignal = (k: keyof ProjectSpeculative['signals'], v: boolean) => setSpec({ ...spec, signals: { ...spec.signals, [k]: v } });
+  const [github, setGithub] = useState<GithubChannel>(project.github || DEFAULT_GITHUB_CHANNEL);
   const [saving, setSaving] = useState(false);
   const toggleFamily = (id: SkillFamily) => setFamilies(families.includes(id) ? families.filter((f) => f !== id) : [...families, id]);
 
@@ -96,6 +98,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         requireChallenge,
         skillFamilies: families,
         speculative: spec,
+        ...(project.github || github.enabled ? { github } : {}),
         passEnv: passEnv
           .split(/[\s,]+/)
           .map((x) => x.trim())
@@ -179,6 +182,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           <div className="hint">Crew keeps tokens and keys from its environment out of bot sessions (Settings → Safety). Name one here only if this project's commands really need it.</div>
         </div>
         {!project.workspace && <ProjectWebhook project={project} />}
+        <GithubChannelSection projectId={project.id} value={github} onChange={setGithub} />
         <div className="field span-all">
           <div className="setting-row">
             <div>
