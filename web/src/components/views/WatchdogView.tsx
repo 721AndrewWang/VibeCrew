@@ -172,6 +172,12 @@ function WatchdogChat({ enabled }: { enabled: boolean }) {
 
 export function WatchdogView() {
   const live = useStore((s) => s.watchdog);
+  // Speculative runs do not move the Watchdog's own state, so their spend is reloaded when they change.
+  const runs = useStore((s) =>
+    Object.values(s.speculations)
+      .map((x) => `${x.id}:${x.status}:${x.costUsd}`)
+      .join(),
+  );
   const settingsOn = useStore((s) => s.settings.superAgent.enabled && s.settings.superAgent.watchdog.enabled);
   const [o, setO] = useState<WatchdogOverview | null>(null);
   const [error, setError] = useState('');
@@ -187,9 +193,11 @@ export function WatchdogView() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload the lists whenever the live state moves on
   useEffect(() => {
     refresh();
-  }, [live]);
+  }, [live, runs]);
 
   const info = live ?? o;
+  // The overview is reloaded on both kinds of change, so its figure for speculative runs is the newer one.
+  const speculative = o?.speculative ?? info?.speculative;
   const pending = (o?.proposals || []).filter((p) => p.status === 'pending');
   const decided = (o?.proposals || []).filter((p) => p.status !== 'pending').slice(0, 5);
   const watches = (o?.watches || []).filter((w) => !w.resolvedAt);
@@ -222,11 +230,11 @@ export function WatchdogView() {
             <div className="wd-meters">
               <Meter label="Ticks this hour" used={info.ticksLastHour} max={o.settings.maxTicksPerHour} />
               <Meter label="Spent today" used={info.spentTodayUsd} max={o.settings.dailyBudgetUsd} fmt={fmtCost} />
-              {info.speculative && (
+              {speculative && (
                 <Meter
-                  label={`Speculative runs today${info.speculative.running ? ` (${info.speculative.running} running)` : ''}`}
-                  used={info.speculative.spentTodayUsd}
-                  max={info.speculative.dailyBudgetUsd}
+                  label={`Speculative runs today${speculative.running ? ` (${speculative.running} running)` : ''}`}
+                  used={speculative.spentTodayUsd}
+                  max={speculative.dailyBudgetUsd}
                   fmt={fmtCost}
                 />
               )}
