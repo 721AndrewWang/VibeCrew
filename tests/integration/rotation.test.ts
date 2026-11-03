@@ -1,6 +1,7 @@
 // A resumed session that has grown past the threshold starts over on its next turn, with the
 // recent messages again; checking roles that start fresh anyway are left alone.
 import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type CrewServer, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
@@ -62,7 +63,9 @@ describe('session rotation', () => {
     await turn(pixelDm, 'two'); // 25k: marked, but only in memory
     const before = await sessionOf(pixelDm, pixel.id);
     await waitFor(async () => ((await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.id === pixelDm).context?.[pixel.id]?.used ?? 0) >= 25_000);
-    await new Promise((r) => setTimeout(r, 600)); // the debounced save
+    // On disk too (the save is debounced), before the crash.
+    const saved = () => JSON.parse(fs.readFileSync(path.join(crew.home, 'chats.json'), 'utf8')).find((c: any) => c.id === pixelDm)?.context?.[pixel.id]?.used >= 25_000;
+    await waitFor(saved, 10_000, 20);
     await crew.kill();
     crew = await startServer({ dir });
     await turn(pixelDm, 'three');

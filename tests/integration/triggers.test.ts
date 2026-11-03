@@ -33,7 +33,7 @@ describe('in demo mode', () => {
   }
 
   beforeAll(async () => {
-    crew = await startServer();
+    crew = await startServer({ clock: true });
     const b = await crew.api('GET', '/bootstrap');
     group = b.chats.find((c: any) => c.kind === 'group');
     project = b.projects.find((p: any) => p.id === group.projectId) ?? b.projects[0];
@@ -83,8 +83,10 @@ describe('in demo mode', () => {
   });
 
   it('records edits made outside the chat on the workspace thread, with the note as payload', async () => {
-    // Files that change within seconds of a bot's turn are the bot's, not outside edits.
-    await new Promise((r) => setTimeout(r, 4500));
+    // Files that change within seconds of a bot's turn are the bot's, not outside edits: let the
+    // routine's turn end, then move the server's clock past those seconds.
+    await waitTurn(crew.api, group.id, 0);
+    await crew.shiftClock(5000);
     fs.writeFileSync(path.join(project.path, 'notes.txt'), 'hello\n');
     const edit = await waitFor(async () => (await triggers(crew, '?source=outside-edit')).triggers[0], 20_000);
     expect(edit.summary).toBe(`1 file changed outside the chat in ${project.name}: notes.txt`);
