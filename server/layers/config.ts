@@ -2,6 +2,7 @@
 // Pure, so the trigger settings can normalise it without pulling in the Router.
 
 import type { RouterSettings } from '../../shared/types';
+import { bounded, fields, modelName } from '../normalize';
 
 export const DEFAULT_ROUTER: RouterSettings = {
   enabled: false,
@@ -16,17 +17,14 @@ export const DEFAULT_ROUTER: RouterSettings = {
 
 export const MAX_WORKERS_LIMIT = 8;
 
-const model = (v: unknown, fallback: string) => (typeof v === 'string' ? v.trim().slice(0, 200) : fallback);
-
 /** Fills in what a stored (or older, or partial) value lacks. */
 export function normalizeRouter(raw: unknown): RouterSettings {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<RouterSettings>;
-  const max = Number(r.maxWorkers);
+  const r = fields<RouterSettings>(raw);
   return {
     enabled: r.enabled === true,
-    model: model(r.model, DEFAULT_ROUTER.model),
-    workerModel: model(r.workerModel, DEFAULT_ROUTER.workerModel),
-    maxWorkers: Number.isFinite(max) ? Math.max(1, Math.min(MAX_WORKERS_LIMIT, Math.round(max))) : DEFAULT_ROUTER.maxWorkers,
+    model: modelName(r.model, DEFAULT_ROUTER.model),
+    workerModel: modelName(r.workerModel, DEFAULT_ROUTER.workerModel),
+    maxWorkers: bounded(r.maxWorkers, 1, MAX_WORKERS_LIMIT, DEFAULT_ROUTER.maxWorkers),
     subscriptions: r.subscriptions === true,
   };
 }

@@ -2,6 +2,7 @@
 // the poller share. Pure.
 
 import type { GithubChannel, Project, SuperAgentSettings } from '../../shared/types';
+import { bounded, fields, flag } from '../normalize';
 
 export const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 /** GitHub logins: letters, digits and single hyphens; apps end in [bot]. */
@@ -35,14 +36,12 @@ const list = (v: unknown, re: RegExp, max: number): string[] => {
 
 /** Fills in what a stored (or partial) value lacks and drops what is not a valid repository or login. */
 export function normalizeGithub(raw: unknown): GithubChannel {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<GithubChannel>;
-  const ev = (r.events && typeof r.events === 'object' ? r.events : {}) as Partial<GithubChannel['events']>;
-  const every = Number(r.everyMinutes);
-  const flag = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
+  const r = fields<GithubChannel>(raw);
+  const ev = fields<GithubChannel['events']>(r.events);
   return {
     enabled: r.enabled === true,
     repos: list(r.repos, REPO_RE, MAX_REPOS),
-    everyMinutes: Number.isFinite(every) ? Math.max(1, Math.min(1440, Math.round(every))) : DEFAULT_GITHUB.everyMinutes,
+    everyMinutes: bounded(r.everyMinutes, 1, 1440, DEFAULT_GITHUB.everyMinutes),
     authors: list(r.authors, LOGIN_RE, MAX_AUTHORS),
     events: {
       issues: flag(ev.issues, true),

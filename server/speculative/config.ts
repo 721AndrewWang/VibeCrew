@@ -4,23 +4,20 @@
 
 import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
 import type { ProjectSpeculative, SpeculativeSettings } from '../../shared/types';
+import { bounded, fields, flag, modelName } from '../normalize';
 
 export { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE };
 
 export const MAX_CONCURRENT_LIMIT = 4;
 
-const num = (v: unknown, fallback: number, min: number, max: number, round = true) => {
-  const n = Number(v);
-  if (v === undefined || v === null || v === '' || !Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, round ? Math.round(n) : n));
-};
+const num = (v: unknown, fallback: number, min: number, max: number, step: 1 | 0.01 = 1) => bounded(v, min, max, fallback, { step, blank: 'fallback' });
 
 /** Fills in what a stored (or older, or partial) value lacks. */
 export function normalizeSpeculative(raw: unknown): SpeculativeSettings {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<SpeculativeSettings>;
+  const r = fields<SpeculativeSettings>(raw);
   return {
-    model: typeof r.model === 'string' ? r.model.trim().slice(0, 200) : DEFAULT_SPECULATIVE.model,
-    dailyBudgetUsd: Math.round(num(r.dailyBudgetUsd, DEFAULT_SPECULATIVE.dailyBudgetUsd, 0, 100, false) * 100) / 100,
+    model: modelName(r.model, DEFAULT_SPECULATIVE.model),
+    dailyBudgetUsd: num(r.dailyBudgetUsd, DEFAULT_SPECULATIVE.dailyBudgetUsd, 0, 100, 0.01),
     maxConcurrent: num(r.maxConcurrent, DEFAULT_SPECULATIVE.maxConcurrent, 1, MAX_CONCURRENT_LIMIT),
     maxMinutes: num(r.maxMinutes, DEFAULT_SPECULATIVE.maxMinutes, 5, 120),
   };
@@ -28,8 +25,8 @@ export function normalizeSpeculative(raw: unknown): SpeculativeSettings {
 
 /** A project's switch, filled in; undefined (never set) reads as off. */
 export function normalizeProjectSpeculative(raw: unknown): ProjectSpeculative {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<ProjectSpeculative>;
-  const s = (r.signals && typeof r.signals === 'object' ? r.signals : {}) as Partial<ProjectSpeculative['signals']>;
+  const r = fields<ProjectSpeculative>(raw);
+  const s = fields<ProjectSpeculative['signals']>(r.signals);
   const d = DEFAULT_PROJECT_SPECULATIVE;
   return {
     enabled: r.enabled === true,
@@ -41,9 +38,9 @@ export function normalizeProjectSpeculative(raw: unknown): ProjectSpeculative {
             .slice(0, 500)
         : '',
     signals: {
-      failingChecks: typeof s.failingChecks === 'boolean' ? s.failingChecks : d.signals.failingChecks,
-      consoleErrors: typeof s.consoleErrors === 'boolean' ? s.consoleErrors : d.signals.consoleErrors,
-      bugReports: typeof s.bugReports === 'boolean' ? s.bugReports : d.signals.bugReports,
+      failingChecks: flag(s.failingChecks, d.signals.failingChecks),
+      consoleErrors: flag(s.consoleErrors, d.signals.consoleErrors),
+      bugReports: flag(s.bugReports, d.signals.bugReports),
     },
     maxFixLines: num(r.maxFixLines, d.maxFixLines, 1, 2000),
   };

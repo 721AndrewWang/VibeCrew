@@ -3,6 +3,7 @@
 // members a target expands to.
 
 import type { GatewayGroup, GatewayProvider, GatewayRole, GatewaySettings, SpendWindow } from '../../shared/types';
+import { bounded } from '../normalize';
 
 export const GATEWAY_ROLES: GatewayRole[] = ['bot', 'worker', 'router', 'watchdog', 'speculative', 'oneshot'];
 /** Roles whose route the gateway can override; bots pick through their own model field. */
@@ -32,10 +33,7 @@ export interface Scope {
 export const scopeKey = (s: Scope) => (s.botId ? `${s.role}:${s.botId}` : s.role);
 
 const str = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-const num = (v: unknown, min: number, max: number, fallback: number) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
-};
+const num = (v: unknown, min: number, max: number, fallback: number) => bounded(v, min, max, fallback, { step: 0 });
 const list = (v: unknown, max: number) =>
   Array.isArray(v)
     ? [
