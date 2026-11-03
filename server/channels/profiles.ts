@@ -194,6 +194,7 @@ export function asyncProfileFor(kind: DraftKind, channel?: string): AsyncProfile
       return 'issue';
     case 'pr-comment':
     case 'issue-comment':
+    case 'review-reply':
       return 'comment';
     case 'message':
       return RELEASE_CHANNEL.test(channel || '') ? 'release-notes' : 'message';

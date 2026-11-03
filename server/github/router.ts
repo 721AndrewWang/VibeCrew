@@ -4,6 +4,7 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { Bot, Chat, GithubChannel, Project } from '../../shared/types';
+import { asyncProfileFor, asyncRefusal, shapeAsync } from '../channels/profiles';
 import { createDraft, showCommand } from '../drafts';
 import { chatProjectId } from '../projects';
 import { projects, settings } from '../store';
@@ -44,17 +45,26 @@ export async function draftGithub(c: { chatId: string; lead: Bot; explicit: bool
   const refused = githubDraftRefusal(args, { explicit: c.explicit, repos: ch.conf.repos });
   if (refused) return { text: refused, isError: true };
   const cwd = projects.get(chatProjectId(chat))?.path || ch.project.path;
+  // GitHub is an asynchronous channel (ADR 103): the assembled body meets its surface's profile and is shaped like any agent's draft.
+  const kind = args.kind as (typeof GITHUB_DRAFT_KINDS)[number];
+  const profile = asyncProfileFor(kind);
+  let body = asyncBody(args);
+  if (profile) {
+    const shapeRefused = asyncRefusal(profile, body);
+    if (shapeRefused) return { text: `The draft was not saved: ${shapeRefused}`, isError: true };
+    body = shapeAsync(profile, body);
+  }
   try {
     const d = await createDraft(
       {
-        kind: args.kind as (typeof GITHUB_DRAFT_KINDS)[number],
+        kind,
         repo: canonicalRepo(args.repo, ch.conf.repos),
         number: args.number,
         comment: args.comment,
         title: args.title,
         head: args.head,
         base: args.base,
-        body: asyncBody(args),
+        body,
         why: args.why,
       },
       { chatId: chat.id, botId: c.lead.id, cwd },
