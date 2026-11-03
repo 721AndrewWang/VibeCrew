@@ -41,6 +41,7 @@ import { chatProjectId } from '../projects';
 import { bots, chats, messages, projects, routines, settings, TRIGGER_LIMITS, threads, triggerLog, triggerPayloadFile, uid, workers } from '../store';
 import { type FastInput, FILTERED_SOURCES, fastPath, fingerprintOf, reachedSlowPath } from './fastPath';
 import { type Decided, fakeDecide, modelDecide, type SlowItem, SlowQueue } from './slowPath';
+import { STANDING_RULE } from './standing';
 
 const log = logger('triggers');
 
@@ -155,6 +156,8 @@ function publish(input: TriggerInput, sa: SuperAgentSettings): Trigger {
   // The log line is written at once: so is a new thread it points at (counts can catch up later).
   if (isNew) threads.flush();
   if (t.filter.rule === 'subscribed') deliverDirect(t, thread, to, fast);
+  // A standing rule acted in code (ADR 108): delivered as a slow-path decision would be, without the model.
+  if (t.filter.rule === STANDING_RULE && t.filter.verdict === 'act') deliver(t);
   save(t);
   if (t.filter.verdict === 'candidate') slow.push(slowItem(t, thread));
   for (const fn of listeners) {

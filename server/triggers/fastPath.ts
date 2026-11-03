@@ -10,16 +10,12 @@ import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
 import { DEFAULT_RECALL, normalizeRecall } from '../recall/config';
 import { DEFAULT_SPECULATIVE, normalizeSpeculative } from '../speculative/config';
 import { DEFAULT_WATCHDOG, normalizeWatchdog } from '../watchdog/config';
+import { POLICY_LINES, STANDING_RULE, standingRule } from './standing';
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];
 
-export const DEFAULT_POLICIES = [
-  "- Preview console errors: act when the error comes from the app's own code (an uncaught exception, a module that fails to load, a failed request to the app's own server). Stay quiet about third-party scripts, browser extensions, ads and analytics.",
-  '- Failed bot turns: act when the cause is something the user has to fix (login, budget, a missing tool, a broken setup command). Stay quiet about a one-off network blip that a retry would fix.',
-  '- Files changed outside the chat: act only when the change can break what the bots are working on, e.g. dependency manifests, build or framework config, or files a bot changed moments ago. Stay quiet about ordinary edits.',
-  '- GitHub: act on a new issue that reports a bug or asks for a change, a review comment that asks for a change, and a failing check on an open pull request. Stay quiet about thanks, chatter and questions already answered.',
-  '- When unsure, stay quiet.',
-].join('\n');
+// The lines live with the standing rules that apply them in code (standing.ts).
+export const DEFAULT_POLICIES = [POLICY_LINES.console, POLICY_LINES.turn, POLICY_LINES.outsideEdit, POLICY_LINES.github, '- When unsure, stay quiet.'].join('\n');
 
 export const DEFAULT_SUPER_AGENT: SuperAgentSettings = {
   enabled: false,
@@ -230,8 +226,11 @@ function shared(t: FastInput, ctx: FastContext, allowed: boolean | null, drop: D
   if (ctx.thread.lastNoticeAt && ctx.now - ctx.thread.lastNoticeAt < NOTICE_COOLDOWN_MS) {
     return drop('cooldown', `This thread got a notice ${Math.max(1, Math.round((ctx.now - ctx.thread.lastNoticeAt) / 60_000))} min ago; staying quiet`);
   }
-  const twin = ctx.recent.find((r) => r.fingerprint === t.fingerprint && ctx.now - r.at < DUPLICATE_MS && reachedSlowPath(r));
-  if (twin) return drop('duplicate', `Same as ${twin.id}, which the model already saw`);
+  const twin = ctx.recent.find((r) => r.fingerprint === t.fingerprint && ctx.now - r.at < DUPLICATE_MS && (reachedSlowPath(r) || r.filter.rule === STANDING_RULE));
+  if (twin) return drop('duplicate', `Same as ${twin.id}, which ${twin.filter.rule === STANDING_RULE ? 'a standing rule already settled' : 'the model already saw'}`);
+  // A default policy line the user kept decides it in code: no model call, and no share of the hourly budget.
+  const standing = standingRule(t, ctx.settings.policies);
+  if (standing) return standing;
   if (ctx.candidatesLastHour >= ctx.settings.maxCandidatesPerHour) return drop('over-budget', `The hourly budget of ${ctx.settings.maxCandidatesPerHour} model decisions is used up`);
   return { verdict: 'candidate', stage: 'fast', rule: 'candidate', reason: 'Passed the rules; waiting for the cheap model' };
 }

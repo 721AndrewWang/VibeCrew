@@ -140,7 +140,10 @@ describe('the GitHub channel (demo mode, fake gh)', () => {
     const issue = bySummary(list, 'Issue #12 opened by alice');
     expect(issue.filter).toMatchObject({ verdict: 'act', stage: 'slow' });
     expect(issue.action).toContain('Handed to the Router');
-    expect(bySummary(list, 'Check failed on PR #13').filter).toMatchObject({ verdict: 'act', stage: 'slow' });
+    // A failing check is what the default GitHub policy line names: a standing rule acts on it in code (ADR 108).
+    const failed = bySummary(list, 'Check failed on PR #13');
+    expect(failed.filter).toMatchObject({ verdict: 'act', stage: 'fast', rule: 'standing-policy' });
+    expect(failed.action).toContain('Handed to the Router');
     expect(bySummary(list, 'Comment by carol').filter).toMatchObject({ verdict: 'drop', stage: 'slow' });
     // Summaries carry facts, never what people wrote; the payload keeps it, as untrusted data.
     expect(list.map((t) => t.summary).join(' ')).not.toMatch(/IGNORE|Checkout broken|Safari/);
