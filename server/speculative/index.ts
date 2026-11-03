@@ -44,6 +44,7 @@ import { checkGit, disposeWorkspace, type Workspace } from '../workspaces';
 import { detectCheckCommand, normalizeProjectSpeculative } from './config';
 import { parsePull, parseRemotes, pullHeadRef, pushPlan, remoteFor } from './pr';
 import { speculativePrompt } from './prompts';
+import './recall';
 import { botRefusal, gateRefusal, judgeClaim, repoPath, SAME_SIGNAL_MS, type SignalInput, signalOf } from './rules';
 import { spentToday } from './spend';
 import { type CheckEnv, verifyFix } from './verify';
@@ -359,6 +360,7 @@ function factsText(sp: Speculation): string {
     `Reproduction: ${fileList(sp, true)}`,
     `Checks (${sp.checkCommand}): fail without the fix (exit code ${sp.checks?.before?.exitCode ?? '?'}), pass with it`,
     sp.claim?.summary ? `The run's summary: ${sp.claim.summary}` : '',
+    `Run: ${sp.id} (recall it for the verdict and the diff)`,
   ]
     .filter(Boolean)
     .join('\n');

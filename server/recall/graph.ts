@@ -34,7 +34,7 @@ export function registerRecall(prefix: string, resolver: RecallResolver) {
 const fail = (error: string): Resolved => ({ error });
 
 /** A project's root: a workspace (a chat's or a Worker's) counts as the project it came from. */
-function rootOf(projectId: string | null | undefined): string | null {
+export function rootOf(projectId: string | null | undefined): string | null {
   let p = projects.get(projectId);
   for (let i = 0; p?.workspace && i < 4; i++) {
     const parent = projects.get(p.workspace.parentId);
@@ -352,6 +352,6 @@ export function resolve(rawId: string, scope: RecallScope): Resolved {
     if (got) return got;
   }
   return fail(
-    `Unknown id "${id}". Ids look like #12 (a message here), chat, env, tg_… (a trigger), th_… (a thread), wk_… (a Worker), job_… (a background job), or the Watchdog's: watchdog, wa_… (an action), wt_… (a tick), ww_… (a watch).`,
+    `Unknown id "${id}". Ids look like #12 (a message here), chat, env, tg_… (a trigger), th_… (a thread), wk_… (a Worker), job_… (a background job), sp_… (a speculative fix), or the Watchdog's: watchdog, wa_… (an action), wt_… (a tick), ww_… (a watch).`,
   );
 }
