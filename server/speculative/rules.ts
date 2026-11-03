@@ -88,8 +88,11 @@ export interface GateInput {
   /** Why the member it would run as cannot, if it cannot. */
   bot: string | null;
   git: boolean;
-  /** A GitHub check's head commit (ADR 011): the state to reproduce, and whether the local repository has it. */
-  head?: { sha: string; present: boolean };
+  /**
+   * A GitHub check's head commit (ADR 011): the state to reproduce, whether the local repository
+   * has it, and if not, the remote it can be fetched from (ADR 110).
+   */
+  head?: { sha: string; present: boolean; fetchFrom?: string };
   /** A run on the same fingerprint within SAME_SIGNAL_MS: its id. */
   duplicateOf?: string;
   inFlight: number;
@@ -106,7 +109,9 @@ export function gateRefusal(g: GateInput): string | null {
   if (!g.chat) return 'No chat works on this project, so there is nowhere to surface a fix';
   if (g.bot) return g.bot;
   if (!g.git) return "The project isn't a git repository with a commit, so there is no throwaway workspace";
-  if (g.head && !g.head.present) return `The pull request's head commit ${g.head.sha.slice(0, 7)} is not in the local repository (fetch it), so the state the check failed in cannot be reproduced`;
+  // Not local, and no remote here reaches the pull request's repository: the user can fetch it.
+  if (g.head && !g.head.present && !g.head.fetchFrom)
+    return `The pull request's head commit ${g.head.sha.slice(0, 7)} is not in the local repository (fetch it), so the state the check failed in cannot be reproduced`;
   if (g.duplicateOf) return `The same signal was speculated on in the last 24 hours (${g.duplicateOf})`;
   if (g.inFlight >= g.settings.maxConcurrent) return `${g.inFlight} speculative run${g.inFlight === 1 ? ' is' : 's are'} already going (at most ${g.settings.maxConcurrent})`;
   if (g.inFlightHere) return 'A speculative run is already going in this project';

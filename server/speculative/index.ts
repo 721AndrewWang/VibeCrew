@@ -8,6 +8,7 @@
 // Behind settings.superAgent.enabled (the Trigger bus) and each project's own switch: with either
 // off, the listener returns at once, nothing is recorded and no folder is created.
 
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_PROJECT_SPECULATIVE } from '../../shared/defaults';
@@ -17,11 +18,13 @@ import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { parseNumstat } from '../autoChallenge';
 import { bus, notify } from '../bus';
 import { asyncRefusal, shapeAsync } from '../channels/profiles';
-import { DATA, FAKE_AGENT } from '../config';
+import { cleanEnv, DATA, FAKE_AGENT } from '../config';
 import { createDraft, discardDraft } from '../drafts';
 import { asyncBody } from '../github/gates';
+import { ghApi } from '../github/gh';
 import { autoCommit, gitError } from '../gitops';
-import { redactDeep } from '../hardening/redactor';
+import { hookFreeEnv, riskyConfigKeys } from '../hardening/draftChecks';
+import { redact, redactDeep } from '../hardening/redactor';
 import { getJob } from '../jobs';
 import { groupGone, reapOrphan } from '../jobs/orphans';
 import { leadOf, routerEvent, routerMode } from '../layers';
@@ -39,6 +42,7 @@ import { chatThread, detailText, onTrigger, publishTrigger, superAgentOn, target
 import { overMonthlyBudget } from '../usage';
 import { checkGit, disposeWorkspace, type Workspace } from '../workspaces';
 import { detectCheckCommand, normalizeProjectSpeculative } from './config';
+import { parsePull, parseRemotes, pullHeadRef, pushPlan, remoteFor } from './pr';
 import { speculativePrompt } from './prompts';
 import { botRefusal, gateRefusal, judgeClaim, repoPath, SAME_SIGNAL_MS, type SignalInput, signalOf } from './rules';
 import { spentToday } from './spend';
@@ -171,18 +175,17 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
   );
   // A GitHub check failed at its pull request's head: that commit is the observed state (ADR 011).
   const gh = t.source === 'github' && t.github?.check ? { repo: t.github.repo, number: t.github.number, check: t.github.check.name, head: t.github.check.head } : undefined;
-  const head =
-    gh && git
-      ? {
-          sha: gh.head,
-          present:
-            /^[0-9a-f]{7,64}$/i.test(gh.head) &&
-            (await gitIn(folder.path, ['cat-file', '-e', `${gh.head}^{commit}`]).then(
-              () => true,
-              () => false,
-            )),
-        }
-      : undefined;
+  const present =
+    !!gh &&
+    git &&
+    /^[0-9a-f]{7,64}$/i.test(gh.head) &&
+    (await gitIn(folder.path, ['cat-file', '-e', `${gh.head}^{commit}`]).then(
+      () => true,
+      () => false,
+    ));
+  // Not local: the run fetches the pull request's head read-only from the remote that reaches its repository (ADR 110).
+  const fetchFrom = gh && git && !present && /^[0-9a-f]{40}$/i.test(gh.head) ? remoteFor(await remotesOf(folder.path), gh.repo) : undefined;
+  const head = gh && git ? { sha: gh.head, present, fetchFrom } : undefined;
   const live = speculationLog.all().filter((s) => SPECULATION_IN_FLIGHT.has(s.status));
   const twin = speculationLog.recent(1, (s) => s.fingerprint === t.fingerprint && s.status !== 'skipped' && now - s.at < SAME_SIGNAL_MS)[0];
   const refused = gateRefusal({
@@ -213,7 +216,7 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
     chatId: chat?.id ?? null,
     status: 'skipped',
     costUsd: 0,
-    ...(gh ? { github: gh } : {}),
+    ...(gh ? { github: { ...gh, ...(fetchFrom && gh.number > 0 ? { fetch: { remote: fetchFrom, ref: pullHeadRef(gh.number) } } : {}) } } : {}),
   };
   if (refused) {
     const again = speculationLog.recent(1, (s) => s.status === 'skipped' && s.fingerprint === t.fingerprint && s.why === refused && now - s.at < SKIP_REPEAT_MS)[0];
@@ -243,6 +246,10 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
 const host: SpeculativeHost = {
   source: (w) => projects.get(byWorker(w)?.target),
   baseCommit: (w) => byWorker(w)?.github?.head,
+  async fetchBase(w, source) {
+    const gh = byWorker(w)?.github;
+    if (gh?.fetch) await fetchHead(source.path, gh.head, gh.fetch);
+  },
   checkCommand: (w) => byWorker(w)?.checkCommand || '',
   model: (_w, chat) => settings.get().superAgent.speculative.model || (chat.model !== undefined ? chat.model : settings.get().superAgent.router.workerModel),
   prompt(w, project, context) {
@@ -379,7 +386,11 @@ function surface(sp: Speculation, w: Worker) {
   record(sp, { status: 'ready', triggerOut: t?.id, messageId: msg.id });
   notify('Crew found a fix', sp.summary.slice(0, 140), { chatId: chat.id, level: 'success' });
   // From a GitHub check: the pull request hears of it in GitHub's register, as a draft the user posts (ADR 011).
-  if (sp.github) void draftForGithub(sp, chat).catch((e) => log.warn(`${sp.id}: could not draft the pull request comment:`, e));
+  if (sp.github)
+    void draftForGithub(sp, chat)
+      .catch((e) => log.warn(`${sp.id}: could not draft the pull request comment:`, e))
+      .then(() => draftPush(speculationLog.get(sp.id) ?? sp, chat))
+      .catch((e) => log.warn(`${sp.id}: could not draft the push:`, e));
   // The Router may mention it; as an environment event it cannot merge it or start work from it.
   if (routerMode(chat))
     routerEvent(chat.id, {
@@ -427,6 +438,80 @@ async function draftForGithub(sp: Speculation, chat: Chat) {
   record(sp, { draftId: d.id });
 }
 
+// ---------------------------------------------------------------- pull requests (ADR 110)
+
+/** git with the user's own environment (their credentials reach the remote), hooks off, never a prompt. */
+function gitAsUser(cwd: string, args: string[], timeout = 60_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { cwd, env: hookFreeEnv(cleanEnv({ GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '' })), timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(redact(`${stderr || ''}`.trim().split('\n').slice(-2).join(' ') || err.message).slice(0, 300)));
+      else resolve(stdout);
+    });
+  });
+}
+
+async function remotesOf(dir: string) {
+  return parseRemotes(await gitIn(dir, ['remote', '-v']).catch(() => ''));
+}
+
+/**
+ * Makes a pull request's head commit local: one read-only fetch of its pull request ref, which
+ * adds objects to the repository's store and changes no branch, tag or FETCH_HEAD of the user's.
+ * Refused when the repository's own config could run a program or redirect the fetch (an agent may
+ * have planted it, and this runs unattended with the user's credentials), and when the ref no
+ * longer points at the commit the check failed on.
+ */
+async function fetchHead(dir: string, sha: string, from: { remote: string; ref: string }) {
+  const listing = await Promise.all([['--local'], ['--worktree']].map((scope) => gitIn(dir, ['config', ...scope, '--list']).catch(() => '')));
+  const risky = riskyConfigKeys(listing.join('\n'));
+  if (risky.length) throw new Error(`Crew did not fetch the pull request's head: this repository's own git config sets ${risky.join(', ')}`);
+  try {
+    await gitAsUser(dir, ['fetch', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', from.remote, from.ref]);
+  } catch (e) {
+    throw new Error(`Could not fetch ${from.ref} from ${from.remote}: ${(e as Error).message}`);
+  }
+  const there = await gitIn(dir, ['cat-file', '-e', `${sha}^{commit}`]).then(
+    () => true,
+    () => false,
+  );
+  if (!there) throw new Error(`The pull request moved on: ${from.ref} on ${from.remote} no longer has ${sha.slice(0, 12)}`);
+  log.info(`fetched ${from.ref} from ${from.remote} for ${sha.slice(0, 12)}`);
+}
+
+/**
+ * A verified fix for a pull request is offered as a push to its branch (ADR 110): a git-push draft
+ * (ADR 007) run from the run's worktree, whose HEAD is the fix on top of the pull request's head, so
+ * it is a fast-forward. Nothing is pushed until the user approves the draft. Not offered (the
+ * reason is kept) for a fork the user cannot push to, a closed pull request, or no remote for it.
+ */
+async function draftPush(sp: Speculation, chat: Chat) {
+  const gh = sp.github;
+  const worktree = projects.get(workers.get(sp.workerId)?.projectId)?.workspace?.worktree;
+  if (!gh || !worktree) return;
+  const facts = await ghApi(`repos/${gh.repo}/pulls/${gh.number}`, worktree).then(parsePull, (e) => {
+    log.warn(`${sp.id}: could not read ${gh.repo}#${gh.number}:`, e);
+    return null;
+  });
+  const plan = pushPlan(gh.repo, gh.number, facts, await remotesOf(worktree));
+  if ('refused' in plan) {
+    record(sp, { github: { ...gh, push: { refused: plan.refused } } });
+    return;
+  }
+  const d = await createDraft(
+    { kind: 'git-push', remote: plan.remote, branch: plan.branch, why: `Push the verified fix ${sp.id} to the branch of pull request #${gh.number} in ${gh.repo}` },
+    { chatId: chat.id, botId: sp.botId ?? null, workerId: sp.workerId, cwd: worktree },
+  );
+  // Read again: the comment's draft may have been recorded in the meantime.
+  const now = speculationLog.get(sp.id) ?? sp;
+  record(now, { github: { ...(now.github ?? gh), push: { remote: plan.remote, branch: plan.branch, draftId: d.id } } });
+}
+
+/** The fix's drafts that still wait (its comment, its push), discarded by Crew with why: the fix they speak of is gone. */
+function discardDrafts(sp: Speculation, why: string) {
+  const push = sp.github?.push && 'draftId' in sp.github.push ? sp.github.push.draftId : undefined;
+  for (const id of [sp.draftId, push]) if (id && drafts.get(id)?.status === 'pending') discardDraft(id, why);
+}
+
 // ---------------------------------------------------------------- merging and discarding
 
 /** Removes the run's worktree and branch (it was never anyone's work) and dismisses its Worker. */
@@ -443,8 +528,8 @@ export async function discard(sp: Speculation, why: string) {
   if (sp.status === 'merged' || sp.status === 'discarded' || sp.status === 'skipped') return sp;
   details.delete(sp.id);
   record(sp, { status: 'discarded', why, decidedAt: Date.now() });
-  // Its pull request comment speaks of a fix that is gone now.
-  if (sp.draftId && drafts.get(sp.draftId)?.status === 'pending') discardDraft(sp.draftId, `The speculative fix ${sp.id} was discarded: ${why}`);
+  // Its pull request comment and push speak of a fix that is gone now.
+  discardDrafts(sp, `The speculative fix ${sp.id} was discarded: ${why}`);
   await dispose(sp);
   log.info(`${sp.id}: discarded: ${why}`);
   return sp;
@@ -508,6 +593,9 @@ export async function mergeSpeculation(id: string): Promise<Speculation> {
   systemMessage(chat, `Merged a speculative fix (${sp.id}) into ${where}. Changed: ${(sp.files || []).map((f) => f.path).join(', ')}. It was made for: ${sp.summary}`);
   record(sp, { status: 'merged', decidedAt: Date.now() });
   details.delete(sp.id);
+  // The push ran from the run's worktree, which goes now; the fix is in the user's folder instead.
+  const push = sp.github?.push && 'draftId' in sp.github.push ? sp.github.push.draftId : undefined;
+  if (push && drafts.get(push)?.status === 'pending') discardDraft(push, `The speculative fix ${sp.id} was merged into ${where}; push it from there`);
   await dispose(sp);
   return sp;
 }

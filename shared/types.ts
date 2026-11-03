@@ -925,7 +925,7 @@ export interface Speculation {
   /** When it was merged or discarded. */
   decidedAt?: number;
   /** A failing GitHub check it acted on (ADR 011): the pull request, the check and the head commit the run started from. */
-  github?: { repo: string; number: number; check: string; head: string };
+  github?: SpeculationGithub;
   /** The comment Crew drafted on that pull request when the fix was verified: posted only on the user's click. */
   draftId?: ID;
   /** The check command Crew is running now, by process group: a restart stops it before the run is discarded (ADR 011). */
@@ -1213,6 +1213,21 @@ export interface Trigger {
   action?: string;
   /** A GitHub event's facts (ADR 102), for code that acts on them: which issue or pull request, and a check's outcome. */
   github?: TriggerGithub;
+}
+
+/** A speculative run's pull request (ADR 011, ADR 110). */
+export interface SpeculationGithub {
+  repo: string;
+  number: number;
+  check: string;
+  head: string;
+  /** The head was not local: fetched read-only from this remote's pull request ref into the run's repository (ADR 110). */
+  fetch?: { remote: string; ref: string };
+  /**
+   * Pushing a verified fix back to the pull request's branch (ADR 110): the draft that would do it,
+   * or why it is not offered (a fork the user cannot push to, no remote for it, an unreadable pull request).
+   */
+  push?: { remote: string; branch: string; draftId: string } | { refused: string };
 }
 
 export interface TriggerGithub {
