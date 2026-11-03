@@ -41,6 +41,8 @@ export interface MockProvider {
   requests: MockRequest[];
   /** Contents of the tool results Claude Code sent back, in order. */
   toolResults: string[];
+  /** The same contents by the id of the tool call they answer. */
+  toolResultsById: Map<string, string>;
   close(): Promise<void>;
 }
 
@@ -48,6 +50,7 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
   const requests: MockRequest[] = [];
   let n = 0;
   const toolResults: string[] = [];
+  const toolResultsById = new Map<string, string>();
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => (raw += c));
@@ -82,6 +85,7 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
           if (c.type !== 'tool_result') continue;
           const text = typeof c.content === 'string' ? c.content : JSON.stringify(c.content);
           if (!toolResults.includes(text)) toolResults.push(text);
+          if (c.tool_use_id) toolResultsById.set(c.tool_use_id, text);
         }
       }
       const reply = opts.reply?.(r) ?? { text: 'Connected' };
@@ -113,7 +117,7 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
-  return { url: `http://127.0.0.1:${port}`, requests, toolResults, close: () => new Promise((resolve) => server.close(() => resolve())) };
+  return { url: `http://127.0.0.1:${port}`, requests, toolResults, toolResultsById, close: () => new Promise((resolve) => server.close(() => resolve())) };
 }
 
 /** An account that is out of quota: every request is answered 429, as a provider does once a quota runs out. */

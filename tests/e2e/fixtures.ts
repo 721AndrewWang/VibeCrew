@@ -20,7 +20,8 @@ export const test = base.extend<{ crew: CrewServer }>({
   page: async ({ page, crew: _crew }, use) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    // With the URL, so a failed resource ("Failed to load resource: ... 404") says which one.
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.location().url ? `${m.text()} (${m.location().url})` : m.text()));
     // A server error during a flow is a bug even when the UI copes with it.
     page.on('response', async (r) => {
       if (r.status() >= 500) errors.push(`${r.status()} ${r.request().method()} ${r.url()}: ${await r.text().catch(() => '')}`);
