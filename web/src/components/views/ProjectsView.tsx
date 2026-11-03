@@ -225,11 +225,11 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
           )}
           <div className="setting-row" data-testid="project-speculative">
             <div>
-              <div className="sr-title">Speculative fixes (silent reproduce-and-fix)</div>
+              <div className="sr-title">Speculative fixes</div>
               <div className="hint">
                 When a check fails, the preview logs an error, or someone describes a problem without asking for the fix yet, Crew may start a background run in a throwaway worktree that tries to
                 reproduce it and find a small fix. You only hear about it when the check command below fails without the fix and passes with it; then the chat shows the diff with a one-click merge.
-                Anything else is thrown away quietly. Needs the Super-agent on; budget and limits are in Settings → Super-agent.
+                Anything else is thrown away quietly. Needs Triggers on; the budget and limits all projects share are in Settings → Super-agent → Speculative fixes.
               </div>
             </div>
             <Toggle label="Speculative fixes" on={spec.enabled} onChange={(enabled) => setSpec({ ...spec, enabled })} />

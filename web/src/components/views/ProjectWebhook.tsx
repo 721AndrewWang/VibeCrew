@@ -48,7 +48,7 @@ export function ProjectWebhook({ project }: { project: Project }) {
 
   return (
     <div className="field span-all webhook-block" data-testid="project-webhook">
-      <label>Router notifications (webhook)</label>
+      <span className="field-label">Router notifications (webhook)</span>
       <div className="hint">
         Sends the chat's Router replies of the kinds you pick to a Slack incoming webhook or a Feishu bot. Only the reply's words go out: never Workers' reports, code, tool output or file contents.
         Off until you turn it on.
@@ -58,11 +58,13 @@ export function ProjectWebhook({ project }: { project: Project }) {
           className="input mono"
           style={{ flex: 1, minWidth: 220 }}
           value={url}
+          aria-label="Webhook URL"
           placeholder={info.configured ? `Saved: ${info.masked} (paste a new URL to replace it)` : 'https://hooks.slack.com/services/…'}
           onChange={(e) => setUrl(e.target.value)}
         />
         <select
           className="input"
+          aria-label="Webhook format"
           value={info.format}
           disabled={!info.configured && !url.trim()}
           onChange={(e) => void save({ ...(url.trim() ? { url: url.trim() } : {}), format: e.target.value as WebhookFormat })}
