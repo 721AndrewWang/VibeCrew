@@ -161,10 +161,12 @@ describe('the Super-agent flow, every switch on (demo mode)', () => {
   it('notices a stuck Worker and stops it with a note it resumes from', async () => {
     const sent = await send(group, 'Make a slow change to the header');
     const w = await workerWhere((x) => x.related.includes(sent.id) && x.status === 'running');
-    // Past its first steps it goes quiet; then its last progress is minutes ago, by the server's clock.
-    await new Promise((r) => setTimeout(r, 2500));
-    crew.shiftClock(10 * 60_000);
-    await new Promise((r) => setTimeout(r, 200));
+    // Past its first step (a finished tool call) it goes quiet; then its last progress is minutes ago, by the server's clock.
+    await waitFor(async () => {
+      const log = await crew.api('GET', `/workers/${w.id}/messages`);
+      return log.worker?.status === 'running' && log.messages.some((m: any) => (m.parts || []).some((p: any) => p.type === 'tool' && p.status !== 'running'));
+    }, 30_000);
+    await crew.shiftClock(10 * 60_000);
     const tick = (await crew.api('POST', '/watchdog/tick')).tick;
     expect(tick).toMatchObject({ outcome: 'ran' });
     expect(tick.flags).toContain(`stuck:${w.id}`);
@@ -177,7 +179,7 @@ describe('the Super-agent flow, every switch on (demo mode)', () => {
     const log = (await crew.api('GET', `/workers/${w.id}/messages`)).messages;
     expect(log.map((m: any) => m.status)).toEqual(['stopped', 'done']);
     expect(stop.text).toContain('Refocus on your task');
-    crew.shiftClock(0);
+    await crew.shiftClock(0);
     await settle();
   });
 

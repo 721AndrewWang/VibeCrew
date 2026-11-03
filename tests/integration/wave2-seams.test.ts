@@ -220,9 +220,7 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
       return log.worker?.status === 'running' && log.messages.some((m: any) => (m.parts || []).some((p: any) => p.type === 'tool' && p.status !== 'running'));
     }, 30_000);
     const n = (await chatMessages()).length;
-    crew.shiftClock(10 * 60_000);
-    // The server reads the shifted clock within 50 ms.
-    await new Promise((r) => setTimeout(r, 200));
+    await crew.shiftClock(10 * 60_000);
     try {
       const tick = (await crew.api('POST', '/watchdog/tick')).tick;
       expect(tick.flags).toContain(`stuck:${running.workerId}`);
@@ -236,7 +234,9 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
       expect(o.actions.some((a: any) => a.target === running.workerId && a.kind === 'nudge')).toBe(false);
       expect((await chatMessages()).slice(n).some((m) => m.speculationId === sp.id || m.text.includes(running.workerId))).toBe(false);
     } finally {
-      crew.shiftClock(0);
+      // Taken by the server before anything else runs: a GitHub poll on the shifted clock would move
+      // the poller's cursor ten minutes ahead, and every later event would read as already seen.
+      await crew.shiftClock(0);
     }
     await waitFor(() => branches() === '', 10_000);
   });

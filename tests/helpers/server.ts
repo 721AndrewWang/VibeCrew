@@ -71,8 +71,11 @@ export interface CrewServer {
   stop(): Promise<void>;
   /** Ends the process at once, as a crash would, and keeps the folder for a restart. */
   kill(): Promise<void>;
-  /** With StartOptions.clock: moves the server's Date.now() this many ms ahead of real time. */
-  shiftClock(ms: number): void;
+  /**
+   * With StartOptions.clock: moves the server's Date.now() this many ms ahead of real time. Resolves
+   * once the server has taken the new offset, so the next request already sees the moved clock.
+   */
+  shiftClock(ms: number): Promise<void>;
 }
 
 export interface StartOptions {
@@ -187,9 +190,26 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  const shiftClock = (ms: number) => {
+  /** Writes a file whole (rename), so the server never reads it half-written. */
+  const writeWhole = (file: string, text: string) => {
+    fs.writeFileSync(`${file}.tmp`, text);
+    fs.renameSync(`${file}.tmp`, file);
+  };
+  const shiftClock = async (ms: number) => {
     if (!opts.clock) throw new Error('start the server with { clock: true } to shift its clock');
-    fs.writeFileSync(clockFile, String(ms));
+    writeWhole(clockFile, String(ms));
+    // The server takes the offset within 50 ms and acknowledges it (helpers/clock.ts).
+    await waitFor(
+      () => {
+        try {
+          return fs.readFileSync(`${clockFile}.ack`, 'utf8') === String(ms);
+        } catch {
+          return false;
+        }
+      },
+      10_000,
+      10,
+    );
   };
   return { base, port, dir, home: env.CREW_HOME ?? path.join(env.HOME ?? os.homedir(), '.crew'), env, api, log: () => out, stop, kill, shiftClock };
 }
