@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
+import { actingTools, type MockProvider, mcpTools, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
 const consoleError = (projectId: string, chatId: string, text: string, level = 'error') => ({ projectId, chatId, page: '/', entries: [{ level, text, ts: Date.now() }] });
@@ -204,7 +204,8 @@ describe.skipIf(!claudeCli())('slow path with a model', () => {
     const d = await decided(crew, r.trigger.id);
     expect(d.trigger.filter).toMatchObject({ verdict: 'act', rule: 'policy', reason: 'A TypeError in the app.', slow: { backend: 'haiku', batch: 1 } });
     const ask = mock.requests.find((q) => JSON.stringify(q.body.messages ?? []).includes(r.trigger.id))!;
-    expect(ask.tools).toEqual([]);
+    expect(mcpTools(ask)).toEqual([]);
+    expect(actingTools(ask)).toEqual([]);
     expect(JSON.stringify(ask.body.system)).toContain('event filter');
     const prompt = JSON.stringify(ask.body.messages);
     expect(prompt).toContain('Tell me about TypeErrors from my own code.');

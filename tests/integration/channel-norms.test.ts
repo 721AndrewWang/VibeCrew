@@ -11,7 +11,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { toolOutputIn } from '../../server/channels/profiles';
 import { wordCount } from '../../server/layers/prompts';
-import { type MockProvider, type MockRequest, startMockProvider } from '../helpers/mockProvider';
+import { fromCrewSession, type MockProvider, type MockRequest, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, git, gitEnv, startServer, waitFor } from '../helpers/server';
 
 /** What only the file the Worker reads contains: it must never reach the chat or the webhook. */
@@ -57,7 +57,7 @@ describe.skipIf(!claudeCli())('channel norms, measured (real Claude Code, mock m
     mock = await startMockProvider({
       token: TOKEN,
       reply: (r) => {
-        if (!r.tools.length) return { text: 'OK' };
+        if (!fromCrewSession(r)) return { text: 'OK' };
         const system = JSON.stringify(r.body.system || '');
         const last = lastUser(r);
         const done = (id: string) => last.results.find((x) => x.id === id);

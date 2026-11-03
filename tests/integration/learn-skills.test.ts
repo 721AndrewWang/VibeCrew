@@ -1,7 +1,7 @@
 // Learning skills from experience, gated: complex finished turns become candidates, a draft is
 // written on request and becomes a pending proposal; only accepting it saves the skill.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
+import { fromCrewSession, type MockProvider, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, waitTurn } from '../helpers/server';
 
 describe('in demo mode', () => {
@@ -165,7 +165,7 @@ describe.skipIf(!claudeCli())('the memory nudge, with a model', () => {
     mock.requests.length = 0;
     const sent = await crew.api('POST', `/chats/${dm}/messages`, { text });
     await waitTurn(crew.api, dm, sent.seq, 120_000);
-    return lastUserText(mock.requests.find((r) => r.tools.length && lastUserText(r.body).includes(text))!.body);
+    return lastUserText(mock.requests.find((r) => fromCrewSession(r) && lastUserText(r.body).includes(text))!.body);
   };
 
   it('reminds the bot to remember after a complex turn, once', async () => {

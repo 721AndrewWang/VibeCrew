@@ -14,6 +14,26 @@ export interface MockRequest {
   body: any;
 }
 
+/**
+ * Claude Code's own tools that read, run or change something. A session Crew starts with no built-in
+ * tools (`tools: []`, `--tools ''`) must be offered none of them. Which other tools the installed CLI
+ * adds by itself (ToolSearch, DeferredToolPlaceholder, …) changes from version to version, so tests
+ * assert on these and on Crew's own tools, never on the CLI's whole list.
+ */
+export const ACTING_TOOLS = ['Bash', 'Read', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'Agent'];
+
+/** The MCP tools of a request: Crew's own servers (and plugins) add these; the CLI never does. */
+export const mcpTools = (r: MockRequest): string[] => r.tools.filter((t) => t.startsWith('mcp__'));
+
+/** The built-in tools of a request that act (see ACTING_TOOLS). */
+export const actingTools = (r: MockRequest): string[] => r.tools.filter((t) => ACTING_TOOLS.includes(t));
+
+/**
+ * Whether a request comes from one of Crew's agent sessions (it offers Crew's own tools), rather than
+ * from a side call Claude Code makes by itself (a title, a summary), which offers none of Crew's.
+ */
+export const fromCrewSession = (r: MockRequest): boolean => r.tools.some((t) => t.startsWith('mcp__crew'));
+
 export type Reply = { text: string } | { tool: { id: string; name: string; input: Record<string, unknown> } };
 
 export interface MockProvider {

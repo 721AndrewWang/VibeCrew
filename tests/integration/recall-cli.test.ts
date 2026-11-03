@@ -2,7 +2,7 @@
 // the crew server offers recall instead of chat_history, prompts carry message ids, the environment
 // spills behind recall id=env, and a recall call returns the object with its next hops.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, type MockRequest, startMockProvider } from '../helpers/mockProvider';
+import { fromCrewSession, type MockProvider, type MockRequest, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, waitTurn } from '../helpers/server';
 
 const TOKEN = 'mock-secret-token';
@@ -50,7 +50,7 @@ describe.skipIf(!claudeCli())('chain of recall through Claude Code', () => {
     const sent = await crew.api('POST', `/chats/${chatId}/messages`, { text });
     const r = await waitTurn(crew.api, chatId, sent.seq, 120_000);
     expect(r.status).toBe('done');
-    const main = mock.requests.find((q) => q.tools.length && lastUserText(q.body).includes(text))!;
+    const main = mock.requests.find((q) => fromCrewSession(q) && lastUserText(q.body).includes(text))!;
     // The system prompt is this session's own; earlier turns in the history may name older tools.
     return { prompt: lastUserText(main.body), request: JSON.stringify(main.body), system: JSON.stringify(main.body.system), reply: r };
   };
