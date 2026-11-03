@@ -172,7 +172,7 @@ export function ActivityView() {
   const stopAll = async () => {
     const ok = await confirmDialog({
       title: 'Stop everything running in the background?',
-      body: `${a.running} item${a.running === 1 ? '' : 's'} stop: Workers and background jobs end their current step, speculative fixes are discarded, and Routers drop their queued events. Drafts and fixes waiting for you are kept.`,
+      body: `${a.running} item${a.running === 1 ? '' : 's'} stop: Workers, background jobs and the chats' current turns end their current step, speculative fixes are discarded, and Routers drop their queued events. Drafts and fixes waiting for you are kept.`,
       ok: 'Stop all',
       danger: true,
     });
@@ -337,7 +337,7 @@ export function ActivityView() {
               onOpen={() => openModal({ kind: 'agentLog', chatId: r.chatId })}
               why={[r.queued ? `${r.queued} event${r.queued === 1 ? '' : 's'} waiting` : 'deciding on a batch of events', `since ${fmtRelative(r.since)}`, r.detail?.replace(/_/g, ' ') || '']}
               status={ROUTER_STATE[r.state]}
-              stopLabel={`Stop the Router and Workers of ${chats[r.chatId]?.title || 'this chat'}`}
+              stopLabel={`Stop all work in ${chats[r.chatId]?.title || 'this chat'}: its Router, Workers, background jobs and current turn`}
               onStop={() => act(() => api.stop(r.chatId), "Couldn't stop it")}
             />
           ))}
