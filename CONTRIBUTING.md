@@ -36,7 +36,7 @@ tests/
   integration/  Start a real server (demo mode, or real claude + a local fake model API) and test over HTTP
   e2e/          Drive the UI in Chrome
   desktop/      Launch the packaged desktop app
-  helpers/      startServer, fake model API, git helpers
+  helpers/      startServer, fake model API, fake gh, test clock, git helpers
 ```
 
 - **Never touch real data.** `startServer()` gives each server a temporary `CREW_HOME` and clears the `CLAUDE*`, `ANTHROPIC_*` and `CREW_*` environment variables. Any new test you write must do the same.
