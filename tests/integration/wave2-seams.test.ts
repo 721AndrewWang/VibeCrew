@@ -296,8 +296,11 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
         created_at: new Date().toISOString(),
       },
     ]);
-    await poll();
-    const t = await waitFor(async () => (await crew.api('GET', '/triggers?source=github')).triggers.find((x: any) => x.summary.startsWith('Comment by carol on issue #12')), 20_000);
+    // Polled until it shows up: a poll joined while the poller's own start-up poll runs may have read the comments already.
+    const t = await waitFor(async () => {
+      await poll();
+      return (await crew.api('GET', '/triggers?source=github')).triggers.find((x: any) => x.summary.startsWith('Comment by carol on issue #12'));
+    }, 20_000);
     expect(w.threads).toContain(t.threadId);
     expect(t.filter.rule).not.toBe('subscribed');
   });
