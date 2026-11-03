@@ -48,6 +48,9 @@ Crew works in two ways, and you choose per switch:
 │  gateway/      Local model gateway (127.0.0.1): provider/model groups, │
 │                failover, spend windows, masking; off unless enabled    │
 │  bench/        Offline ablation bench (npm run bench); no runtime part │
+│  text, time,   Pure helpers the parts share: counting and cutting      │
+│  normalize     words, "N min ago", reading stored settings;            │
+│                agents/toolResult: what Crew's own tools return         │
 │  preview       Preview server (static / reverse proxy + injected       │
 │                script)                                                 │
 │  store         JSON storage under ~/.crew                              │
@@ -60,7 +63,9 @@ Crew works in two ways, and you choose per switch:
 │  components/   Chat, composer, the right-hand "computer" (preview,     │
 │                files, terminal, changes)                               │
 └────────────────────────────────────────────────────────────────────────┘
-shared/  Types (types.ts) and logo definitions (logos.ts) shared by server and UI
+shared/  Types (types.ts), logo definitions (logos.ts), and what server and UI must
+         agree on: settings defaults (defaults.ts), status checks (status.ts),
+         skill families (families.ts)
 ```
 
 Every line marked "off unless" above is a part of Super-agent mode; [below](#super-agent-mode) is how they fit together.
