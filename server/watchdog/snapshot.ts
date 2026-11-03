@@ -7,6 +7,7 @@
 // <untrusted> wrapper as everywhere else in Crew (ADR 007), so it reads as data, never instructions.
 
 import type { AuditEntry } from '../../shared/types';
+import { WORKER_ACTIVE } from '../../shared/workers';
 import { defuse } from '../layers/prompts';
 import { firstWords } from '../text';
 import { untrustedLine } from '../untrusted';
@@ -115,7 +116,6 @@ export interface Snapshot {
 export const STUCK_APPROVAL_MS = 10 * 60_000;
 /** The guard refusing the same agent this often since the last look: it keeps trying to get around a hard rule. */
 export const GUARD_REPEATS = 2;
-const ACTIVE = new Set(['starting', 'running', 'waiting']);
 
 /** Who an audit entry's agent is, for grouping and flags: a Worker, a background job, else the bot in its chat. */
 const auditKey = (e: AuditEntry) => e.actor.workerId || e.actor.jobId || (e.actor.chatId ? `${e.actor.botId || e.actor.botName || 'agent'}@${e.actor.chatId}` : e.actor.botName || 'agent');
@@ -159,7 +159,7 @@ const auditSubject = (a: AuditSnap) => a.workerId || a.jobId || a.chatId || a.id
 /** The deterministic flags of one Worker. */
 export function workerFlags(w: WorkerSnap, s: Pick<Snapshot, 'at' | 'since' | 'stuckMinutes'>): string[] {
   const flags: string[] = [];
-  const active = ACTIVE.has(w.status);
+  const active = WORKER_ACTIVE.has(w.status);
   // Waiting for the user is not the Worker's lack of progress; the approval is flagged instead.
   if (active && w.status !== 'waiting' && s.at - w.lastProgressAt >= s.stuckMinutes * 60_000) flags.push('stuck');
   if (active && w.repeats >= LOOP_REPEATS) flags.push('looping');

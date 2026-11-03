@@ -33,6 +33,7 @@ import type {
   WatchdogInfo,
   Worker,
 } from '../../shared/types';
+import { WORKER_ACTIVE } from '../../shared/workers';
 import { api } from './api';
 import { desktop } from './desktop';
 
@@ -602,8 +603,6 @@ export async function loadLog(logId: string, request: Promise<{ messages: ChatMe
     toast("Couldn't load the transcript", (e as Error).message, 'error');
   }
 }
-
-export const WORKER_ACTIVE: ReadonlySet<string> = new Set(['starting', 'running', 'waiting']);
 
 /** The chat runs in two layers: its Router talks to the user and dispatches Workers. */
 export function routerModeOf(chat: Chat | null | undefined, settings: PublicSettings = get().settings): boolean {

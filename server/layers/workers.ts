@@ -8,6 +8,7 @@ import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { familyInfo } from '../../shared/families';
 import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
+import { WORKER_ACTIVE } from '../../shared/workers';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
@@ -38,7 +39,7 @@ import { checkGit, createSpeculativeWorkspace, createWorkerWorkspace, retireWork
 import { doCreate } from '../workspaces/create';
 import { deliveredNote, type WorkerLine, workerPrompt } from './prompts';
 import { leadOf, routerEvent } from './router';
-import { ACTIVE, pushInbox, subscriptionsOn } from './subscriptions';
+import { pushInbox, subscriptionsOn } from './subscriptions';
 import { runLogged } from './turn';
 
 const log = logger('workers');
@@ -79,7 +80,7 @@ const liveOf = (id: string): Live => {
   return l;
 };
 
-const isActive = (w: Worker) => ACTIVE.has(w.status) && !w.dismissedAt;
+const isActive = (w: Worker) => WORKER_ACTIVE.has(w.status) && !w.dismissedAt;
 
 /** A chat's Workers; speculative runs (ADR 008) are quiet, so they count only when asked for. */
 export function chatWorkers(chatId: string, opts: { all?: boolean; speculative?: boolean } = {}): Worker[] {
@@ -938,7 +939,7 @@ export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupt
       w.inbox = [];
       workers.set(w);
     }
-    if (!ACTIVE.has(w.status)) continue;
+    if (!WORKER_ACTIVE.has(w.status)) continue;
     w.status = 'stopped';
     w.detail = 'Crew restarted';
     w.report = { at: now, status: 'stopped', text: 'Interrupted by a restart of Crew; its work so far is kept on its branch.' };

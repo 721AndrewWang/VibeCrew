@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { Cron } from 'croner';
 import type { ChatMessage, WatchdogAction, WatchdogActionKind, WatchdogInfo, WatchdogOverview, WatchdogProposal, WatchdogTick, WatchdogWatch, Worker } from '../../shared/types';
+import { WORKER_ACTIVE } from '../../shared/workers';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
 import { NO_TOOL_SEARCH } from '../agents/toolSearch';
@@ -55,7 +56,6 @@ const MAX_WINDOW_MS = 6 * HOUR;
 const TRANSIENT_RECHECK_MIN = 5;
 const MAX_WORKERS = 12;
 const MAX_LIST = 10;
-const ACTIVE = new Set(['starting', 'running', 'waiting']);
 
 type Job = { kind: 'tick' | 'manual'; tick: WatchdogTick; reason: string; since: number } | { kind: 'maintainer'; tick: WatchdogTick; messageId: string; text: string };
 
@@ -197,7 +197,7 @@ export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().su
   const ws = workers
     .all()
     // Speculative runs (ADR 008) are in it too, marked: stuck or looping, the Watchdog may stop one (ADR 011).
-    .filter((w) => !w.dismissedAt && (ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
+    .filter((w) => !w.dismissedAt && (WORKER_ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_WORKERS);
   const title = (chatId?: string) => (chatId ? chats.get(chatId)?.title : undefined);

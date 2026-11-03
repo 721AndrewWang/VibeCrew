@@ -6,6 +6,7 @@
 // It is deliberately plain: it measures scheduling, not judgement. Each agent's choices are
 // listed in ADR 101.
 
+import { WORKER_ACTIVE } from '../../shared/workers';
 import type { Block, Message, ModelRequest, Policy, Reply } from './model';
 import { DELEGATE_MARK, FILTER_MARK, LEAD_MARK, SPECULATIVE_MARK, SUBTASK_MARK, WORKER_MARK } from './prompts';
 
@@ -179,8 +180,6 @@ export function parseEvents(batch: string): RouterEventSeen[] {
   }));
 }
 
-const ACTIVE = new Set(['starting', 'running', 'waiting']);
-
 function routerPolicy(req: ModelRequest): Reply {
   const max = Number(/at most (\d+) Workers at once/.exec(req.system)?.[1] ?? 3);
   const start = turnStart(req.messages);
@@ -197,7 +196,7 @@ function routerPolicy(req: ModelRequest): Reply {
   // With channel norms (ADR 103) the system prompt says a Worker's report goes under Details; a Router
   // without them relays what the report says.
   const norms = req.system.includes('under Details');
-  let active = [...workers.values()].filter((w) => ACTIVE.has(w.status)).length;
+  let active = [...workers.values()].filter((w) => WORKER_ACTIVE.has(w.status)).length;
   const resumed = new Set<string>();
   for (const e of events) {
     if (e.kind === 'worker') {
@@ -226,7 +225,7 @@ function routerPolicy(req: ModelRequest): Reply {
       if (w && w.status !== 'stopped') {
         actions.push({ name: TOOLS.message, input: { id: w.id, text: `${text} (${e.id})` }, task: intent.task });
         ack.followed.push(intent.task);
-        if (!ACTIVE.has(w.status) && !resumed.has(w.id)) {
+        if (!WORKER_ACTIVE.has(w.status) && !resumed.has(w.id)) {
           resumed.add(w.id);
           active++;
         }
@@ -234,7 +233,7 @@ function routerPolicy(req: ModelRequest): Reply {
     } else {
       const i = queue.findIndex((x) => x.task === intent.task);
       if (i >= 0) queue.splice(i, 1);
-      if (w && (ACTIVE.has(w.status) || resumed.has(w.id))) {
+      if (w && (WORKER_ACTIVE.has(w.status) || resumed.has(w.id))) {
         actions.unshift({ name: TOOLS.stopWorker, input: { id: w.id }, task: intent.task });
         active--;
       }

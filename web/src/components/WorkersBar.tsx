@@ -5,8 +5,9 @@
 import { ChevronDown, ChevronRight, GitBranch, Network, ScrollText, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Chat, Thread, Worker, WorkerStatus } from '../../../shared/types';
+import { WORKER_ACTIVE } from '../../../shared/workers';
 import { api } from '../api';
-import { loadLog, openModal, routerModeOf, toast, useStore, WORKER_ACTIVE } from '../store';
+import { loadLog, openModal, routerModeOf, toast, useStore } from '../store';
 import { cx, fmtRelative } from '../utils';
 import { BotMessage } from './Message';
 import { Avatar, Modal } from './ui';

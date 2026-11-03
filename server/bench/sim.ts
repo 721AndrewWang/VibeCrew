@@ -6,6 +6,7 @@
 
 import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
 import type { SuperAgentSettings, Thread, Trigger, Worker, WorkerDelivery } from '../../shared/types';
+import { WORKER_ACTIVE } from '../../shared/workers';
 import { REPLY_WORDS } from '../channels/profiles';
 import { DEFAULT_GITHUB } from '../github/config';
 import type { GhEvent } from '../github/events';
@@ -14,7 +15,7 @@ import { MAX_RUNNING, startRefusal } from '../jobs/gates';
 import { BatchQueue } from '../layers/batch';
 import { dispatchRefusal, messageRefusal, replyRefusal } from '../layers/gates';
 import { type DirectLine, deliveredNote, explicitEvent, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type WorkerLine, workerPrompt } from '../layers/prompts';
-import { ACTIVE, pushInbox, receivers } from '../layers/subscriptions';
+import { pushInbox, receivers } from '../layers/subscriptions';
 import { speculativePrompt } from '../speculative/prompts';
 import { gateRefusal, SAME_SIGNAL_MS, signalOf } from '../speculative/rules';
 import { wordCount } from '../text';
@@ -732,7 +733,7 @@ class Run {
           asked: input.bot ? String(input.bot) : undefined,
           member: { name: LEAD },
           spent: 0,
-          active: this.workers.filter((w) => ACTIVE.has(w.rec.status)).length,
+          active: this.workers.filter((w) => WORKER_ACTIVE.has(w.rec.status)).length,
           max: this.o.maxWorkers,
           sharedBusy: null,
           sinceUser: this.sinceUser,
@@ -755,7 +756,7 @@ class Run {
       },
       [TOOLS.stopWorker]: (input) => {
         const w = find(input.id);
-        if (!w || !ACTIVE.has(w.rec.status)) return { error: 'That Worker is not working.' };
+        if (!w || !WORKER_ACTIVE.has(w.rec.status)) return { error: 'That Worker is not working.' };
         this.stopWorker(w);
         return `Stopped ${w.rec.id}.`;
       },
