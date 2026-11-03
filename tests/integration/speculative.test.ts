@@ -258,8 +258,6 @@ describe.skipIf(!claudeCli())('a speculative run with Claude Code and a mock mod
     await crew.api('PATCH', '/settings', { superAgent: { enabled: true } });
   });
   afterAll(async () => {
-    // Claude Code may still be writing its session files for a moment after the run ends.
-    await new Promise((r) => setTimeout(r, 3000));
     await crew?.stop();
     await mock?.close();
   });

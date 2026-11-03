@@ -1,7 +1,7 @@
 // Shadow routing: for untargeted group messages a cheap model's guess is recorded beside what the
 // lead actually did; nothing about where the message goes changes.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
+import { actingTools, type MockProvider, mcpTools, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, waitFor } from '../helpers/server';
 
 async function sayInGroup(crew: CrewServer, groupId: string, text: string) {
@@ -99,7 +99,7 @@ describe.skipIf(!claudeCli())('with a model', () => {
     const asks = mock.requests.filter((q) => JSON.stringify(q.body.messages ?? []).includes('probabilities'));
     expect(asks, JSON.stringify(r)).toHaveLength(2);
     // Bare: no tools offered, Crew's own short system prompt.
-    expect(asks.every((q) => q.tools.length === 0)).toBe(true);
+    expect(asks.flatMap((q) => [...mcpTools(q), ...actingTools(q)])).toEqual([]);
     expect(JSON.stringify(asks[0].body.system)).toContain('classifier');
     // First and last listed each get (0.7 + 0.1) / 2; the middle two 0.1. Low confidence: escalate.
     expect(r.backend).toBe('haiku');

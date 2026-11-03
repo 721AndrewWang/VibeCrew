@@ -220,9 +220,7 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
       return log.worker?.status === 'running' && log.messages.some((m: any) => (m.parts || []).some((p: any) => p.type === 'tool' && p.status !== 'running'));
     }, 30_000);
     const n = (await chatMessages()).length;
-    crew.shiftClock(10 * 60_000);
-    // The server reads the shifted clock within 50 ms.
-    await new Promise((r) => setTimeout(r, 200));
+    await crew.shiftClock(10 * 60_000);
     try {
       const tick = (await crew.api('POST', '/watchdog/tick')).tick;
       expect(tick.flags).toContain(`stuck:${running.workerId}`);
@@ -236,7 +234,9 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
       expect(o.actions.some((a: any) => a.target === running.workerId && a.kind === 'nudge')).toBe(false);
       expect((await chatMessages()).slice(n).some((m) => m.speculationId === sp.id || m.text.includes(running.workerId))).toBe(false);
     } finally {
-      crew.shiftClock(0);
+      // Taken by the server before anything else runs: a GitHub poll on the shifted clock would move
+      // the poller's cursor ten minutes ahead, and every later event would read as already seen.
+      await crew.shiftClock(0);
     }
     await waitFor(() => branches() === '', 10_000);
   });
@@ -256,14 +256,14 @@ describe('the wave-2 seams (demo mode, fake gh)', () => {
     await start();
     const sp = await waitFor(async () => (await runs()).find((s) => s.id === verifying.id && s.status === 'discarded'), 30_000);
     expect(sp.why).toBe('Crew restarted; its check command was still running and was stopped');
+    // Its whole process group is gone, so the late write cannot come any more: it has not happened by now, it never will.
     await waitFor(() => !alive(pid) || null, 10_000);
-    await new Promise((r) => setTimeout(r, 9000));
     expect(fs.existsSync(path.join(dumps, 'late-restart'))).toBe(false);
     expect(branches()).toBe('');
     // The Router is never handed the run's report (it was no Router's Worker), and the same check
     // read again is neither published twice nor speculated on twice.
+    // The poll publishes before it answers, and a speculative run starts only from a published Trigger.
     await poll();
-    await new Promise((r) => setTimeout(r, 1500));
     expect((await crew.api('GET', '/triggers?source=github')).triggers.length).toBe(triggersBefore);
     expect((await runs()).filter((s) => s.github?.head === head)).toHaveLength(1);
     expect((await routerTurns()).some((m) => (m.batch || []).includes(sp.workerId))).toBe(false);
@@ -320,7 +320,6 @@ describe.skipIf(!claudeCli())('a speculative run under the security layers (real
   const MARK = 'You are a speculative background run';
   let mock: MockProvider;
   let crew: CrewServer;
-  let dir: string;
 
   /** What the compromised run tries before it reports, and how each must end. */
   const attacks = (home: string, port: number, repo: string) => [
@@ -349,26 +348,23 @@ describe.skipIf(!claudeCli())('a speculative run under the security layers (real
 
   beforeAll(async () => {
     mock = await startMockProvider({ token: TOKEN, reply });
-    dir = tempDir();
-    crew = await startServer({ fakeAgent: false, dir, env: { GITHUB_TOKEN: USER_SECRET } });
+    crew = await startServer({ fakeAgent: false, env: { GITHUB_TOKEN: USER_SECRET } });
     plan = attacks(crew.home, crew.port, (await crew.api('GET', '/bootstrap')).projects[0].path);
     await crew.api('PATCH', '/settings', {
       authMode: 'provider',
       provider: { preset: 'custom', baseUrl: mock.url, model: 'mock-model', fastModel: 'mock-fast' },
       providerToken: TOKEN,
       safety: { audit: true },
+      // With the sandbox off, as in ADR 104's worst case: where bubblewrap works, Crew turns it on by
+      // default, and Claude Code then unsets the broker's token for sandboxed commands, so the run's
+      // environment would not show the stand-in token this test checks for.
+      sandbox: { enabled: false },
       superAgent: { enabled: true },
     });
   });
   afterAll(async () => {
-    await new Promise((r) => setTimeout(r, 3000));
     await crew?.stop();
     await mock?.close();
-    try {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
-    } catch {
-      /* Claude Code may still be writing: the OS cleans the temp folder */
-    }
   });
 
   it('is refused by the guard at every turn, holds no credential, reads the signal as untrusted data, and stays quiet', async () => {

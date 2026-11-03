@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, type MockRequest, startMockProvider } from '../helpers/mockProvider';
+import { actingTools, type MockProvider, type MockRequest, mcpTools, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
 async function chatMessages(crew: CrewServer, chatId: string): Promise<any[]> {
@@ -259,7 +259,9 @@ describe.skipIf(!claudeCli())('with Claude Code and a mock model', () => {
     for (const r of router) {
       expect(r.model).toBe('mock-router');
       expect(r.tools).toEqual(expect.arrayContaining(['mcp__crew_router__dispatch_worker', 'mcp__crew_router__reply', 'mcp__crew_router__list_workers']));
-      expect(r.tools.filter((t) => !t.startsWith('mcp__crew_router__'))).toEqual([]);
+      // Nothing else of Crew's or of any MCP server, and none of Claude Code's tools that act.
+      expect(mcpTools(r).filter((t) => !t.startsWith('mcp__crew_router__'))).toEqual([]);
+      expect(actingTools(r)).toEqual([]);
     }
     expect(worker[0].model).toBe('mock-worker');
     expect(worker[0].tools).toEqual(expect.arrayContaining(['Bash', 'Edit', 'Write', 'mcp__crew__preview_screenshot']));

@@ -86,8 +86,8 @@ describe('in demo mode', () => {
 
   it('hands a message sent mid-turn to the bot after its current step, without a second turn', async () => {
     const sent = await send('Do a slow check of the project');
-    await waitFor(async () => (await crew.api('GET', '/bootstrap')).statuses[chief.id]?.state !== 'idle');
-    await new Promise((r) => setTimeout(r, 800));
+    // Into its steps (a tool call shows): its prompt is built, so what the user writes now arrives between steps.
+    await waitFor(async () => (await chatMessages(crew, chat.id)).some((m) => m.role === 'bot' && m.seq > sent.seq && (m.parts || []).some((p: any) => p.type === 'tool')));
     const extra = await send('also check the footer');
     const reply = await waitTurn(crew.api, chat.id, sent.seq);
     expect(reply.text).toBe('Heard you while working: "also check the footer". Done with the slow check too.');

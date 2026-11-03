@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
 import { type CrewServer, startServer, waitFor, waitTurn } from '../helpers/server';
 
 let crew: CrewServer;
@@ -16,9 +17,37 @@ beforeAll(async () => {
   project = b.projects[0];
   groupId = b.chats.find((c: any) => c.kind === 'group').id;
   chiefDm = b.chats.find((c: any) => c.kind === 'dm' && c.botIds[0] === b.bots.find((x: any) => x.name === 'Chief').id).id;
-  // Let the watcher settle on the fresh project.
-  await new Promise((r) => setTimeout(r, 1500));
+  await watcherReady();
 });
+
+/**
+ * Until the project's file watcher reports changes: touches a probe under .claude/ (which never makes
+ * a note) until the watcher's files_changed event names it.
+ */
+async function watcherReady() {
+  const ws = new WebSocket(`${crew.base.replace('http', 'ws')}/ws`);
+  let seen = false;
+  ws.on('message', (d) => {
+    const e = JSON.parse(String(d));
+    if (e.t === 'files_changed' && e.paths.includes('.claude/watch-probe')) seen = true;
+  });
+  await new Promise((r) => ws.once('open', r));
+  const probe = path.join(project.path, '.claude', 'watch-probe');
+  const made = fs.mkdirSync(path.dirname(probe), { recursive: true });
+  try {
+    await waitFor(
+      () => {
+        if (!seen) fs.writeFileSync(probe, String(Date.now()));
+        return seen;
+      },
+      15_000,
+      100,
+    );
+  } finally {
+    ws.close();
+    fs.rmSync(made ?? probe, { recursive: true, force: true });
+  }
+}
 afterAll(() => crew?.stop());
 
 const notes = async (chatId: string) => (await crew.api('GET', `/chats/${chatId}/messages?limit=60`)).messages.filter((m: any) => m.notice === 'outside-edit');

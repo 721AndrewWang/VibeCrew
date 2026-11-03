@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
+import { actingTools, type MockProvider, mcpTools, startMockProvider } from '../helpers/mockProvider';
 import { type CrewServer, claudeCli, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
 const consoleError = (projectId: string, chatId: string, text: string, level = 'error') => ({ projectId, chatId, page: '/', entries: [{ level, text, ts: Date.now() }] });
@@ -33,7 +33,7 @@ describe('in demo mode', () => {
   }
 
   beforeAll(async () => {
-    crew = await startServer();
+    crew = await startServer({ clock: true });
     const b = await crew.api('GET', '/bootstrap');
     group = b.chats.find((c: any) => c.kind === 'group');
     project = b.projects.find((p: any) => p.id === group.projectId) ?? b.projects[0];
@@ -83,8 +83,10 @@ describe('in demo mode', () => {
   });
 
   it('records edits made outside the chat on the workspace thread, with the note as payload', async () => {
-    // Files that change within seconds of a bot's turn are the bot's, not outside edits.
-    await new Promise((r) => setTimeout(r, 4500));
+    // Files that change within seconds of a bot's turn are the bot's, not outside edits: let the
+    // routine's turn end, then move the server's clock past those seconds.
+    await waitTurn(crew.api, group.id, 0);
+    await crew.shiftClock(5000);
     fs.writeFileSync(path.join(project.path, 'notes.txt'), 'hello\n');
     const edit = await waitFor(async () => (await triggers(crew, '?source=outside-edit')).triggers[0], 20_000);
     expect(edit.summary).toBe(`1 file changed outside the chat in ${project.name}: notes.txt`);
@@ -204,7 +206,8 @@ describe.skipIf(!claudeCli())('slow path with a model', () => {
     const d = await decided(crew, r.trigger.id);
     expect(d.trigger.filter).toMatchObject({ verdict: 'act', rule: 'policy', reason: 'A TypeError in the app.', slow: { backend: 'haiku', batch: 1 } });
     const ask = mock.requests.find((q) => JSON.stringify(q.body.messages ?? []).includes(r.trigger.id))!;
-    expect(ask.tools).toEqual([]);
+    expect(mcpTools(ask)).toEqual([]);
+    expect(actingTools(ask)).toEqual([]);
     expect(JSON.stringify(ask.body.system)).toContain('event filter');
     const prompt = JSON.stringify(ask.body.messages);
     expect(prompt).toContain('Tell me about TypeErrors from my own code.');
