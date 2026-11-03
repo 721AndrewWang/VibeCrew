@@ -88,13 +88,9 @@ function fmtLogs(logs: ConsoleEntry[], limit = 40): string {
   return lines.join('\n');
 }
 
-const device = z.enum(['desktop', 'tablet', 'mobile']).optional().describe('Device size: desktop 1280×800, tablet 820×1180, mobile 390×844. Defaults to desktop.');
-const colorScheme = z
-  .enum(['light', 'dark'])
-  .optional()
-  .describe(
-    'Color scheme: dark emulates the system dark mode (prefers-color-scheme: dark), so a page with a dark theme switches to it. Defaults to light. To check dark mode, always look with this; do not just infer it from the CSS.',
-  );
+// Shared by four tools: every word here is sent once per tool on every call of every session.
+const device = z.enum(['desktop', 'tablet', 'mobile']).optional().describe('desktop 1280×800 (default), tablet 820×1180, mobile 390×844');
+const colorScheme = z.enum(['light', 'dark']).optional().describe('dark emulates prefers-color-scheme: dark (default light). Check dark mode with this, not by reading the CSS.');
 
 const attempt = (fn: () => string) => {
   try {
@@ -133,6 +129,10 @@ export function crewServer(ctx: CrewContext) {
     return id;
   };
   const pagePath = (p?: string) => p || ctx.currentPage() || '/';
+  // browser_debug_target hands the page to another MCP tool (REA's web tools): offered only to a bot
+  // that has one, since its definition costs every call of every other session.
+  const owner = bots.get(ctx.botId);
+  const attachable = !!owner && (!!owner.plugins?.length || Object.keys(owner.mcpServers || {}).length > 0);
 
   const jobs = ctx.jobs ? jobTools(ctx.jobs) : null;
   const call = (h: JobHandler) => async (args: Record<string, unknown>) => {
@@ -178,7 +178,7 @@ export function crewServer(ctx: CrewContext) {
           ),
       tool(
         'preview_screenshot',
-        'Open the project preview in a real browser and take a screenshot. Returns the image and a summary of console errors. Use it after changing the UI to check how it really looks. You can pick the page, the device size, a full-page shot, or just one element.',
+        'Screenshot a project preview page in a real browser: the image and a summary of console errors. Pick the page, the device size, a full-page shot, or one element.',
         {
           path: z.string().optional().describe('Page path, such as / or /about. Defaults to the page the user is looking at.'),
           device,
@@ -230,7 +230,7 @@ export function crewServer(ctx: CrewContext) {
       ),
       tool(
         'browser_act',
-        'Use the project preview like a real user: open pages, click, type, press keys, select, check, hover, wait, scroll, run scripts, and confirm the page contains some text. The page and login state are kept between calls. On a failure it stops and attaches a screenshot.',
+        'Use the project preview like a user: run steps in order (open, click, type, press, select, check, hover, wait, scroll, eval, expect a text). Page and login state are kept between calls; a failing step stops the run and attaches a screenshot.',
         {
           path: z.string().optional().describe('Open this page path first. If empty, continue on the current page (the first call opens the page the user is looking at).'),
           steps: z
@@ -239,7 +239,7 @@ export function crewServer(ctx: CrewContext) {
                 action: z.enum(['goto', 'click', 'fill', 'press', 'select', 'check', 'hover', 'wait', 'scroll', 'eval', 'expect_text']),
                 selector: z.string().optional().describe('CSS selector'),
                 text: z.string().optional().describe('Find the element by visible text, label, or placeholder (instead of selector). For expect_text, the text to confirm.'),
-                value: z.string().optional().describe('The text for fill, the option for select, the path for goto, top/bottom/pixels for scroll, the JS expression for eval, true/false for check'),
+                value: z.string().optional().describe('fill: the text; select: the option; goto: the path; scroll: top, bottom or pixels; eval: the JS expression; check: true/false'),
                 key: z.string().optional().describe('The key for press, such as Enter, Escape, Tab'),
                 ms: z.number().optional().describe('Milliseconds to wait, or the timeout'),
               }),
@@ -277,27 +277,31 @@ export function crewServer(ctx: CrewContext) {
           }
         },
       ),
-      tool(
-        'browser_debug_target',
-        'Get a DevTools protocol (CDP) endpoint and target id for your browser_act page, so analysis tools such as REA (mcp__rea__inspect_web_page, analyze_web_bundle, observe_web_session) can attach to it. It is the same page and state browser_act left; use browser_act first to get the page where you want it.',
-        {
-          path: z.string().optional().describe('Open this page path first. If empty, keep the current browser_act page (or open the page the user is looking at).'),
-          device,
-          colorScheme,
-        },
-        async (args) => {
-          try {
-            const r = await debugTarget({ key: ctx.actKey ?? `${ctx.chatId}:${ctx.botId}`, projectId: projectId(), path: args.path, device: args.device, colorScheme: args.colorScheme });
-            const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-            return text(
-              `cdp_endpoint: ${r.endpoint}\ntarget_id: ${r.targetId}\nPage: ${where} (${r.title || 'untitled'})\nScripts and requests under /__crew/ (such as /__crew/inject.js) are Crew's preview helper, not the project's code: leave them out of your analysis.\nThe endpoint changes if the browser restarts (it closes after 10 idle minutes); call this again if attaching fails.`,
-            );
-          } catch (e) {
-            return fail(`Could not open the page: ${(e as Error).message}`);
-          }
-        },
-        { annotations: { readOnlyHint: true } },
-      ),
+      ...(attachable
+        ? [
+            tool(
+              'browser_debug_target',
+              'Get a DevTools protocol (CDP) endpoint and target id for your browser_act page, so analysis tools such as REA (mcp__rea__inspect_web_page, analyze_web_bundle, observe_web_session) can attach to it. It is the same page and state browser_act left; use browser_act first to get the page where you want it.',
+              {
+                path: z.string().optional().describe('Open this page path first. If empty, keep the current browser_act page (or open the page the user is looking at).'),
+                device,
+                colorScheme,
+              },
+              async (args) => {
+                try {
+                  const r = await debugTarget({ key: ctx.actKey ?? `${ctx.chatId}:${ctx.botId}`, projectId: projectId(), path: args.path, device: args.device, colorScheme: args.colorScheme });
+                  const where = r.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+                  return text(
+                    `cdp_endpoint: ${r.endpoint}\ntarget_id: ${r.targetId}\nPage: ${where} (${r.title || 'untitled'})\nScripts and requests under /__crew/ (such as /__crew/inject.js) are Crew's preview helper, not the project's code: leave them out of your analysis.\nThe endpoint changes if the browser restarts (it closes after 10 idle minutes); call this again if attaching fails.`,
+                  );
+                } catch (e) {
+                  return fail(`Could not open the page: ${(e as Error).message}`);
+                }
+              },
+              { annotations: { readOnlyHint: true } },
+            ),
+          ]
+        : []),
       tool(
         'dev_server',
         "Manage the project's dev server (the preview depends on it): start (installs missing dependencies automatically), stop, restart, status, or logs for recent output.",
@@ -409,7 +413,7 @@ export function crewServer(ctx: CrewContext) {
         : [
             tool(
               'draft_external_action',
-              `Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields and shows it to the user, who approves or discards it with one click; it never runs on its own. This is the only way to do these things: Crew's command guard refuses git push, gh pr create and the like. ${asyncGuide()}`,
+              `Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields; the user approves or discards it with one click, and it never runs on its own. The only way to do these things: the command guard refuses git push, gh pr create and the like. ${asyncGuide()}`,
               {
                 kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'review-reply', 'message']).describe('What to do'),
                 remote: z.string().optional().describe('git-push: the remote (default origin)'),

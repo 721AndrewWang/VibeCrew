@@ -251,7 +251,7 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
     tools: [
       tool(
         'reply',
-        `Post a message to the user in the chat, as you. The only way the user hears from you. At most ${REPLY_WORDS} words and ${CHAT_PROFILE.maxLines} lines, no code blocks, logs, diffs or other tool output. Say what kind it is: a decision (what you decided or started, and what came of it), a question (something only the user can answer), or an acceptance request (finished work for the user to check). Workers' full reports are attached under Details by themselves.`,
+        `Post a message to the user in the chat, as you: at most ${REPLY_WORDS} words and ${CHAT_PROFILE.maxLines} lines, no code blocks, logs, diffs or other tool output. Your instructions say what each kind is for.`,
         {
           text: z.string().describe('The message, in the language the user writes in'),
           kind: z.enum(['decision', 'question', 'acceptance']).optional().describe('decision (default), question, or acceptance'),
@@ -261,7 +261,7 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
       ),
       tool(
         'dispatch_worker',
-        "Start a Worker on one task, in the background. It runs as a member of the chat (default: you), with that member's role and permissions, in its own copy of the project, and sees only your task plus the user's messages from this batch. Returns its id at once; its report arrives later as an event.",
+        "Start a Worker on one task, in the background, as a member of the chat (default: you) with that member's role and permissions. Returns its id at once; its report arrives later as an event.",
         {
           title: z.string().max(80).describe('A few words naming the task, shown to the user'),
           task: z.string().describe('A self-contained brief: the goal, the files or pages involved, what counts as done'),

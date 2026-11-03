@@ -39,8 +39,9 @@ export const RECALL_TOOL =
   'Read an object by its id, under the same Inline & Spill rules as your prompt: its facts, the start of its text, its neighbours, and the ids of related objects you can recall next. Ids: #12 (a message in this conversation), chat (the latest messages), env (the whole environment), tg_… (a trigger), th_… (a thread), wk_… (a Worker), job_… (a background job). Where a text was cut it says "recall id=… from=N": pass from to read on.';
 
 /** The system prompt's line about recall, in place of chat_history's. */
+/** The kinds of ids are listed in the tool's own description (RECALL_TOOL), not again here. */
 export const RECALL_PROMPT_LINE =
-  '  - recall: everything in your prompt carries an id (#12 for a message, tg_… a trigger, th_… a thread, wk_… a Worker, job_… a background job, env the environment, chat this conversation); long texts are cut with a "recall id=… from=N" handle. recall an id to read it, and follow the ids in its result to walk to related objects, one hop at a time. Look things up when you need the details, and not otherwise.';
+  '  - recall: everything in your prompt carries an id, and a long text is cut with a "recall id=… from=N" handle. recall an id to read it, and follow the ids in its result to related objects, one hop at a time. Look things up when you need the details, and not otherwise.';
 
 /**
  * A resumed session keeps the system prompt it started with, which may still list chat_history: its

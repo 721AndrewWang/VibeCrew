@@ -11,7 +11,7 @@ import { contextLines } from '../orchestrator/turnContext';
 import { chatProjectId } from '../projects';
 import { bots, chats, jobs, messages, projects, threads, triggerLog, watchdogActions, watchdogWatches, workers } from '../store';
 import { detailText } from '../triggers';
-import { MAX_LINKS } from './spill';
+import { MAX_LINKS, oneLine } from './spill';
 
 export interface RecallScope {
   chatId: string;
@@ -264,7 +264,9 @@ function workerNode(w: Worker, chat: Chat): RecallNode {
   ];
   if (w.landing) attrs.push(['landing', w.landing.error || (w.landing.conflicts?.length ? `conflicts in ${w.landing.conflicts.join(', ')}` : `${w.landing.files.length} files merged`)]);
   const report = w.report ? `\n\nLast report (${w.report.status}, ${ago(w.report.at)}):\n${w.report.text || '(no text)'}` : '\n\nNo report yet.';
-  return { id: w.id, kind: 'worker', title: w.title, attrs, body: `Task: ${w.task}${report}`, around: [], links };
+  // A Worker's report event points here for "the full report": the task (the Router's own words,
+  // already in its context) is a one-line reference, so the inline budget goes to the report.
+  return { id: w.id, kind: 'worker', title: w.title, attrs, body: `Task: ${oneLine(w.task)}${report}`, around: [], links };
 }
 
 /**

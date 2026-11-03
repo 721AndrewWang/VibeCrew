@@ -216,6 +216,14 @@ export function renderSnapshot(s: Snapshot, opts: { reason: string }): string {
   if (!s.workers.length) out.push('(No Workers active or ended since the last tick.)');
   for (const w of s.workers) {
     const f = workerFlags(w, s);
+    // A Worker that finished and is flagged for nothing needs nothing from the Watchdog (it never
+    // restarts finished work): one line, the rest behind inspect.
+    if (w.status === 'done' && !f.length) {
+      out.push(
+        `<worker id="${w.id}" chat="${w.chatId}" chat_title="${attr(w.chatTitle)}" bot="${attr(w.bot)}" status="done" age="${span(now - w.createdAt)}" turns="${w.turns}" cost="$${w.costUsd.toFixed(2)}">Title: ${defuseSnap(w.title)} (inspect ${w.id})</worker>`,
+      );
+      continue;
+    }
     out.push(
       `<worker id="${w.id}" chat="${w.chatId}" chat_title="${attr(w.chatTitle)}" bot="${attr(w.bot)}" status="${w.status}" age="${span(now - w.createdAt)}" last_progress="${ago(w.lastProgressAt, now)}" turns="${w.turns}" cost="$${w.costUsd.toFixed(2)}"${w.speculative ? ' speculative="true"' : ''}${f.length ? ` flags="${f.join(',')}"` : ''} nudges_today="${w.nudgesToday}" restarts_today="${w.restartsToday}">`,
     );
