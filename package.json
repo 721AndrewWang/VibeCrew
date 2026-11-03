@@ -36,6 +36,7 @@
     "test:desktop": "npm run desktop:pack && playwright test -c tests/desktop/playwright.config.ts",
     "check": "npm run typecheck && npm run lint && npm test",
     "bench": "tsx scripts/bench.ts",
+    "bench:cost": "tsx scripts/cost.ts",
     "ci": "npm run check && npm run test:e2e"
   },
   "overrides": {
