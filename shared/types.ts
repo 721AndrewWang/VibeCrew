@@ -281,7 +281,7 @@ export interface ReportDetail {
   workerId: ID;
   title: string;
   bot: string;
-  status: 'done' | 'error' | 'stopped';
+  status: WorkerOutcome;
   /** At most 30 words, without code or tool output. */
   gist: string;
   /** The full report, capped. */
@@ -309,6 +309,14 @@ export interface WebhookInfo {
   kinds: ReplyKind[];
   approvedAt?: number;
   deliveries: WebhookDelivery[];
+}
+
+/** What the user changes about a project's webhook; a new URL or format turns it off again. */
+export interface WebhookPatch {
+  url?: string;
+  format?: WebhookFormat;
+  enabled?: boolean;
+  kinds?: ReplyKind[];
 }
 
 export interface WebhookDelivery {
@@ -698,7 +706,27 @@ export interface GatewayReport {
   byProvider: Record<string, GatewayTotals>;
   byScope: Record<string, GatewayTotals>;
   /** What each window has used now. */
-  windows: { id: string; usedUsd: number; usedTokens: number; spent: boolean; retryAfterSec?: number }[];
+  windows: GatewayWindowState[];
+}
+
+export interface GatewayWindowState {
+  id: string;
+  usedUsd: number;
+  usedTokens: number;
+  spent: boolean;
+  /** Seconds until enough of the window's oldest calls leave it for the next call to go through. */
+  retryAfterSec?: number;
+}
+
+/** The answer to one tiny test prompt through the running gateway. */
+export interface GatewayTest {
+  ok: boolean;
+  text: string;
+  status: number;
+  provider?: string;
+  model?: string;
+  tries: GatewayTry[];
+  ms: number;
 }
 
 export interface SafetySettings {
@@ -1078,6 +1106,8 @@ export interface WorkerDelivery {
 }
 
 export type WorkerStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'stopped';
+/** How a Worker's turn ended. */
+export type WorkerOutcome = Extract<WorkerStatus, 'done' | 'error' | 'stopped'>;
 
 /** One task a Router dispatched: its own session with full tools, in its own workspace, reporting back to the Router. */
 export interface Worker {
@@ -1105,7 +1135,7 @@ export interface Worker {
   landedHead?: string;
   /** Its last turn's report to the Router. */
   /** quiet: the user stopped the whole chat, so the Router was not told (nor is it after a restart, ADR 105). */
-  report?: { at: number; status: 'done' | 'error' | 'stopped'; text: string; quiet?: boolean };
+  report?: { at: number; status: WorkerOutcome; text: string; quiet?: boolean };
   /** What Crew did with its changes after its last turn. */
   landing?: { at: number; files: string[]; commit?: string; conflicts?: string[]; error?: string };
   turns: number;

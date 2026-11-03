@@ -8,7 +8,7 @@ import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { familyInfo } from '../../shared/families';
 import { WORKER_ACTIVE } from '../../shared/status';
-import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
+import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerOutcome, WorkerStatus } from '../../shared/types';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
@@ -126,7 +126,7 @@ export interface SpeculativeHost {
   /** Its throwaway workspace exists (base: the observed state). */
   launched(w: Worker, ws: Project, base: string): void;
   /** The turn (or the start) ended; its work is committed. Verification and surfacing are the host's. */
-  ended(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string): void;
+  ended(w: Worker, outcome: WorkerOutcome, detail?: string): void;
 }
 
 let host: SpeculativeHost | null = null;
@@ -762,7 +762,7 @@ function publishLanding(w: Worker, chat: Chat, bot: Bot, landing: NonNullable<Wo
 }
 
 /** Records how the turn (or the start) ended and tells the Router, unless the whole chat was stopped. */
-function finish(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string, text?: string) {
+function finish(w: Worker, outcome: WorkerOutcome, detail?: string, text?: string) {
   const l = liveOf(w.id);
   const report = { at: Date.now(), status: outcome, text: text ?? (detail ? `${outcome === 'error' ? 'Failed' : 'Stopped'}: ${detail}` : ''), ...(l.quiet ? { quiet: true } : {}) };
   save(w, { status: outcome, detail, report });

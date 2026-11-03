@@ -3,7 +3,7 @@
 // fixing: spending a Worker session is a deterministic, budgeted decision. Also the rules a run's
 // claim must pass before Crew spends time running the checks. Pure.
 
-import type { ProjectSpeculative, SpeculativeSettings, SpeculativeSignal } from '../../shared/types';
+import type { ProjectSpeculative, Speculation, SpeculativeSettings, SpeculativeSignal } from '../../shared/types';
 import { clip } from '../text';
 import { isConsoleNoise } from '../triggers/fastPath';
 
@@ -127,11 +127,7 @@ export function botRefusal(b: { name: string; blindReview?: boolean; level: stri
 /** A fix may touch at most this many files. */
 export const MAX_FIX_FILES = 10;
 
-export interface ChangedFile {
-  path: string;
-  added: number;
-  removed: number;
-}
+export type ChangedFile = Omit<NonNullable<Speculation['files']>[number], 'test'>;
 
 /** A claimed path, as git names it from the repository's top: relative to the run's folder (prefix) unless it already starts there. */
 export function repoPath(p: string, prefix: string, worktree: string): string {

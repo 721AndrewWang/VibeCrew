@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { GatewayCall, GatewayProvider, GatewayReport, GatewayTotals, GatewayTry } from '../../shared/types';
+import type { GatewayCall, GatewayProvider, GatewayReport, GatewayTest, GatewayTotals } from '../../shared/types';
 import { DATA } from '../config';
 import { MODEL_OPTIONS } from '../data/catalog';
 import { providerPreset } from '../data/providers';
@@ -177,16 +177,6 @@ export function gatewayReport(limit = 100, now = Date.now()): GatewayReport {
   };
 }
 
-export interface GatewayTest {
-  ok: boolean;
-  text: string;
-  status: number;
-  provider?: string;
-  model?: string;
-  tries: GatewayTry[];
-  ms: number;
-}
-
 /** One tiny prompt through the running listener, as a background call would go. */
 export async function testGateway(target: string): Promise<GatewayTest> {
   const t0 = Date.now();
@@ -203,12 +193,12 @@ export async function testGateway(target: string): Promise<GatewayTest> {
   } catch (e) {
     return { ok: false, text: (e as Error).message, status: 0, tries: [], ms: Date.now() - t0 };
   }
-  const body = (await r.json().catch(() => ({}))) as Record<string, any>;
+  const body = (await r.json().catch(() => ({}))) as { content?: { type: string; text?: string }[]; error?: { message?: string } };
   const call = callLog().get(r.headers.get('x-crew-call'));
   const text = r.ok
     ? (body.content || [])
-        .filter((b: { type: string }) => b.type === 'text')
-        .map((b: { text: string }) => b.text)
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
         .join('')
         .trim() || '(no text)'
     : String(body.error?.message || `HTTP ${r.status}`);

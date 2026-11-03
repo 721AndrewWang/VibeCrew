@@ -5,7 +5,7 @@
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { WatchdogActionKind, Worker } from '../../shared/types';
+import type { WatchdogAction, WatchdogActionKind, WatchdogProposal, Worker } from '../../shared/types';
 import { fail, mcpResult, ok, str, type ToolHandler, type ToolResult } from '../agents/toolResult';
 import { jobLine, jobSource } from '../jobs/spill';
 import { auditLog, bots, chats, jobs, messages, projects, settings, triggerLog, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
@@ -33,13 +33,13 @@ export interface WatchdogEffects {
   stop(w: Worker, why: string): Promise<boolean>;
   restart(w: Worker, recap: string): void;
   notify(chatId: string, text: string, actionId: string): void;
-  record(a: { kind: WatchdogActionKind; target: string; chatId?: string; text: string; refused?: string }): string;
+  record(a: Pick<WatchdogAction, 'kind' | 'target' | 'chatId' | 'text' | 'refused'>): string;
   /** Today's (not refused) actions of a kind on a target. */
   countToday(kind: WatchdogActionKind | WatchdogActionKind[], target: string): number;
   /** Opens a watch; returns its id. */
   watch(subject: string, note: string, minutes: number): string;
   resolveWatch(id: string, why: string): boolean;
-  propose(p: { target: 'policies' | 'bot'; botId?: string; botName?: string; before: string; after: string; rationale: string }): string;
+  propose(p: Omit<WatchdogProposal, 'id' | 'at' | 'status' | 'decidedAt'>): string;
 }
 
 const workerState = (w: Worker | undefined) => (w ? { status: w.status, dismissed: !!w.dismissedAt } : null);

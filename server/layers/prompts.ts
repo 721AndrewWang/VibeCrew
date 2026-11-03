@@ -5,6 +5,7 @@
 // full (they are what the work is for), a Worker's report only its first words with the handle that
 // reads the rest, and environment events their summary, fenced and marked as data.
 
+import type { WorkerOutcome } from '../../shared/types';
 import { REPLY_WORDS } from '../channels/profiles';
 import { type Budget, handle, spill } from '../recall/spill';
 import { firstWords, wordCount } from '../text';
@@ -28,7 +29,7 @@ export interface HandedBack {
 export type RouterEvent =
   | { kind: 'user'; id: string; at: number; seq: number; text: string; to?: string; attachments?: number; triggerId?: string; resumed?: Resumed }
   | { kind: 'routine'; id: string; at: number; seq: number; text: string; routine: string; bot?: string; triggerId?: string; threadId?: string; handedBack?: HandedBack; resumed?: Resumed }
-  | { kind: 'worker'; id: string; at: number; bot: string; title: string; status: 'done' | 'error' | 'stopped'; report: string; landing?: string; resumed?: Resumed }
+  | { kind: 'worker'; id: string; at: number; bot: string; title: string; status: WorkerOutcome; report: string; landing?: string; resumed?: Resumed }
   | { kind: 'environment'; id: string; at: number; source: string; summary: string; reason: string; handedBack?: HandedBack; thread?: string; github?: string };
 
 /**

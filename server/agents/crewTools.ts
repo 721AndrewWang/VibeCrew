@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { ConsoleEntry } from '../../shared/types';
+import type { ConsoleEntry, Speculation } from '../../shared/types';
 import { act, consoleCheck, debugTarget, screenshot } from '../browser';
 import { notify } from '../bus';
 import { asyncGuide, asyncProfileFor, asyncRefusal, shapeAsync } from '../channels/profiles';
@@ -42,11 +42,7 @@ export interface CrewContext {
   speculative?: { result(args: SpeculativeClaimArgs): string };
 }
 
-export interface SpeculativeClaimArgs {
-  reproduced: boolean;
-  testFiles: string[];
-  summary: string;
-}
+export type SpeculativeClaimArgs = NonNullable<Speculation['claim']>;
 
 /** draft_external_action's handler (also the demo agent's): saves a draft; nothing runs until the user clicks. */
 export async function draftAction(ctx: Pick<CrewContext, 'botId' | 'chatId' | 'projectId' | 'workerId'>, args: DraftFields): Promise<{ text: string; isError?: boolean }> {

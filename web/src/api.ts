@@ -14,7 +14,7 @@ import type {
   FrictionReport,
   GatewayProvider,
   GatewayReport,
-  GatewayTry,
+  GatewayTest,
   GithubStatus,
   GuardVerdict,
   Improvement,
@@ -25,7 +25,6 @@ import type {
   Project,
   PublicSettings,
   RecordedStep,
-  ReplyKind,
   Routine,
   RoutingReport,
   Skill,
@@ -43,8 +42,8 @@ import type {
   WatchdogTick,
   WatchdogWatch,
   WebhookDelivery,
-  WebhookFormat,
   WebhookInfo,
+  WebhookPatch,
   Worker,
   WorkspaceMergeResult,
   WorkspaceStatus,
@@ -67,13 +66,13 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     credentials: 'same-origin',
   });
   const text = await res.text();
-  let data: any = null;
+  let data: unknown = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
     data = text;
   }
-  if (!res.ok) throw new ApiError(res.status, data?.error || `Request failed (${res.status})`);
+  if (!res.ok) throw new ApiError(res.status, (data as { error?: string } | null)?.error || `Request failed (${res.status})`);
   return data as T;
 }
 
@@ -134,7 +133,7 @@ export const api = {
   testConnection: (p: Record<string, unknown>) => post<{ ok: boolean; text: string; models?: string[]; ms: number }>('/api/settings/test-connection', p),
   /** The model gateway: running state, recent calls, totals and windows. */
   gateway: (limit = 100) => get<GatewayReport>(`/api/gateway?limit=${limit}`),
-  testGateway: (target: string) => post<{ ok: boolean; text: string; status: number; provider?: string; model?: string; tries: GatewayTry[]; ms: number }>('/api/gateway/test', { target }),
+  testGateway: (target: string) => post<GatewayTest>('/api/gateway/test', { target }),
   /** Adds the current model connection (key included, server side) as a gateway provider. */
   importConnection: () => post<{ provider: GatewayProvider; settings: PublicSettings }>('/api/gateway/import-connection'),
   friction: (days = 7) => get<FrictionReport>(`/api/friction?days=${days}`),
@@ -254,7 +253,7 @@ export const api = {
   audit: (limit = 200) => get<{ enabled: boolean; entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),
   // ADR 103: a project's Router-notification webhook (the URL itself never comes back).
   projectWebhook: (projectId: string) => get<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`),
-  saveProjectWebhook: (projectId: string, body: { url?: string; format?: WebhookFormat; enabled?: boolean; kinds?: ReplyKind[] }) => put<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`, body),
+  saveProjectWebhook: (projectId: string, body: WebhookPatch) => put<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`, body),
   deleteProjectWebhook: (projectId: string) => del<WebhookInfo>(`/api/projects/${q(projectId)}/webhook`),
   testProjectWebhook: (projectId: string) => post<{ delivery: WebhookDelivery }>(`/api/projects/${q(projectId)}/webhook/test`),
   guardCheck: (command: string, projectId?: string | null) => post<{ enabled: boolean; verdict: GuardVerdict }>('/api/guard/check', { command, projectId: projectId || null }),

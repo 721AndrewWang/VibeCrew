@@ -7,7 +7,7 @@
 // <untrusted> wrapper as everywhere else in Crew (ADR 007), so it reads as data, never instructions.
 
 import { WORKER_ACTIVE } from '../../shared/status';
-import type { AuditEntry } from '../../shared/types';
+import type { AuditEntry, SpeculativeSpend } from '../../shared/types';
 import { defuse } from '../layers/prompts';
 import { firstWords } from '../text';
 import { ago } from '../time';
@@ -110,7 +110,7 @@ export interface Snapshot {
   /** Empty while the audit log is off (Settings → Safety). */
   audit: AuditSnap[];
   /** Speculative runs today, when any project speculates (ADR 011). */
-  speculative?: { running: number; spentTodayUsd: number; dailyBudgetUsd: number };
+  speculative?: SpeculativeSpend;
 }
 
 /** An approval waiting this long is stuck. */

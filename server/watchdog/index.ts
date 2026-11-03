@@ -42,7 +42,7 @@ import { registerWatchdogRecall } from './recall';
 import { recoverWatchdog } from './recovery';
 import { isTransient, nextCheck, progressOf, WATCH_MAX_CHECKS } from './signals';
 import { auditSnaps, isQuiet, renderSnapshot, type Snapshot, snapshotFlags, type WorkerSnap } from './snapshot';
-import { type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
+import { type WatchdogEffects, type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
 
 const log = logger('watchdog');
 
@@ -264,12 +264,12 @@ function tellChat(chatId: string, text: string, actionId: string) {
 
 let currentTick = '';
 
-const effects = {
+const effects: WatchdogEffects = {
   nudge: (w: Worker, note: string) => void messageWorker(w, note),
   stop: (w: Worker, why: string) => stopWorker(w.id, { why: `The Watchdog stopped it: ${why}` }),
   restart: (w: Worker, recap: string) => restartWorker(w, recap),
   notify: tellChat,
-  record(a: { kind: WatchdogActionKind; target: string; chatId?: string; text: string; refused?: string }) {
+  record(a) {
     const rec: WatchdogAction = { id: uid('wa_'), at: Date.now(), tickId: currentTick, ...a, text: a.text.slice(0, 600) };
     watchdogActions.append(rec);
     if (!a.refused) log.info(`${a.kind} ${a.target}: ${rec.text}`);
@@ -279,7 +279,7 @@ const effects = {
   countToday,
   watch: (subject: string, note: string, minutes: number) => openWatch(subject, note, minutes, 'watchdog'),
   resolveWatch,
-  propose(p: Omit<WatchdogProposal, 'id' | 'at' | 'status'>) {
+  propose(p) {
     const rec: WatchdogProposal = { id: uid('wp_'), at: Date.now(), status: 'pending', ...p };
     watchdogProposals.set(rec);
     notify('The Watchdog proposes a change', p.target === 'bot' ? `${p.botName}'s role description` : 'Trigger policies', { level: 'info' });

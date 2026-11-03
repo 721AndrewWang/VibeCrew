@@ -325,12 +325,23 @@ export async function handleGateway(req: http.IncomingMessage, res: http.ServerR
   }
 }
 
+/** The fields Crew reads off a stream event's data; the rest passes through as it came. */
+interface StreamData {
+  type?: string;
+  index: number;
+  message?: { usage?: unknown };
+  usage?: unknown;
+  error?: { message?: string; type?: string };
+  content_block?: { type: string; text?: string };
+  delta?: { type: string; text?: string; partial_json?: string };
+}
+
 /** Tokens from a stream's message_start and message_delta; an error event after the start. */
 class StreamUsage {
   tokens: TurnTokens | undefined;
   error: string | undefined;
   see(ev: SseEvent) {
-    const d = ev.data as Record<string, any> | undefined;
+    const d = ev.data as StreamData | undefined;
     if (!d || typeof d !== 'object') return;
     if (d.type === 'message_start') this.tokens = mergeTokens(this.tokens, tokensOf(d.message?.usage));
     else if (d.type === 'message_delta') this.tokens = mergeTokens(this.tokens, tokensOf(d.usage));
@@ -344,7 +355,7 @@ class StreamRewriter {
   constructor(private map: Map<string, string>) {}
 
   rewrite(ev: SseEvent): string {
-    const d = ev.data as Record<string, any> | undefined;
+    const d = ev.data as StreamData | undefined;
     if (!d || typeof d !== 'object') return ev.raw;
     if (d.type === 'content_block_start' && d.content_block) {
       const b = d.content_block;
