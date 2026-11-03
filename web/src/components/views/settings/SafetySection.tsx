@@ -140,7 +140,7 @@ export function SafetySection() {
             once, listing what it changes.
           </div>
         </div>
-        <Toggle on={safety.guard} onChange={(v) => void save({ guard: v }, v ? 'Command guard on' : 'Command guard off')} />
+        <Toggle label="Command guard" on={safety.guard} onChange={(v) => void save({ guard: v }, v ? 'Command guard on' : 'Command guard off')} />
       </div>
       <div className="setting-row">
         <div>
@@ -150,14 +150,18 @@ export function SafetySection() {
             pass a variable through by name in its settings.
           </div>
         </div>
-        <Toggle on={safety.stripCredentials} onChange={(v) => void save({ stripCredentials: v }, v ? 'Credentials kept out' : 'Credentials passed through')} />
+        <Toggle
+          label="Keep credentials out of agent sessions"
+          on={safety.stripCredentials}
+          onChange={(v) => void save({ stripCredentials: v }, v ? 'Credentials kept out' : 'Credentials passed through')}
+        />
       </div>
       <div className="setting-row">
         <div>
           <div className="sr-title">Audit log</div>
           <div className="hint">Every drafted action, your decision, what ran (with how to undo it), and every refusal of the guard, appended to audit.jsonl in Crew's data folder.</div>
         </div>
-        <Toggle on={safety.audit} onChange={(v) => void save({ audit: v }, v ? 'Audit log on' : 'Audit log off')} />
+        <Toggle label="Audit log" on={safety.audit} onChange={(v) => void save({ audit: v }, v ? 'Audit log on' : 'Audit log off')} />
       </div>
 
       <div className="field span-all">

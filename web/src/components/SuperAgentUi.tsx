@@ -3,7 +3,7 @@
 // one way to show a cost, and the short explanation of Router, Workers and Triggers.
 
 import { AlertTriangle, Network, Radio, RefreshCw, ShieldCheck, Workflow } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { cloneElement, isValidElement, type ReactElement, type ReactNode, useId } from 'react';
 import { openModal, setView } from '../store';
 import { fmtCost, PART, type PartId, partAnchor, type StatusInfo, TONE_CLASS } from '../superagent';
 import { cx } from '../utils';
@@ -13,6 +13,24 @@ export function StatusBadge({ status, title, className }: { status: StatusInfo; 
     <span className={cx('badge', TONE_CLASS[status.tone], className)} data-tone={status.tone} title={title}>
       {status.label}
     </span>
+  );
+}
+
+/** A labelled form field: the label names the control for screen readers, and the hint describes it. */
+export function Field({ label, hint, children, testId }: { label: ReactNode; hint?: ReactNode; children: ReactElement<{ id?: string; 'aria-describedby'?: string }>; testId?: string }) {
+  const id = useId();
+  const hintId = `${id}-hint`;
+  const control = isValidElement(children) ? cloneElement(children, { id, 'aria-describedby': hint ? hintId : undefined }) : children;
+  return (
+    <div className="field" data-testid={testId}>
+      <label htmlFor={id}>{label}</label>
+      {control}
+      {hint && (
+        <div className="hint" id={hintId}>
+          {hint}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -53,7 +71,7 @@ export function ErrorState({ message, onRetry, compact }: { message: string; onR
 /** Opens Settings (or Projects, for a per-project part) and puts focus on the part's switch. */
 export function goToPart(id: PartId) {
   const part = PART[id];
-  setView(part.scope === 'project' ? 'projects' : 'settings');
+  setView(part.scope === 'project' ? 'projects' : part.scope === 'bot' ? 'bots' : 'settings');
   if (part.scope === 'project' || part.scope === 'bot') return;
   const anchor = part.scope === 'gateway' ? 'settings-gateway' : partAnchor(id);
   // The page renders on the next frames; look for the block for a moment.

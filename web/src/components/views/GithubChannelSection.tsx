@@ -68,7 +68,7 @@ export function GithubChannelSection({ projectId, value, onChange }: { projectId
             instructions. Nothing is posted to GitHub until you approve a draft.{superAgent ? '' : ' Needs the Super-agent (Settings → Super-agent).'}
           </div>
         </div>
-        <Toggle on={value.enabled} onChange={(enabled) => onChange({ ...value, enabled })} />
+        <Toggle label="GitHub channel" on={value.enabled} onChange={(enabled) => onChange({ ...value, enabled })} />
       </div>
       {value.enabled && (
         <div className="form-grid">

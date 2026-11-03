@@ -104,8 +104,8 @@ export interface Part {
   name: string;
   /** What turning it on does, in a sentence. */
   does: string;
-  /** What it costs while on: processes, files and model calls. */
-  cost: string;
+  /** What it costs while on (processes, files and model calls), with the user's current limits. */
+  cost: (s: PublicSettings) => string;
   /** The part that has to be on first. */
   needs?: PartId;
   scope: PartScope;
@@ -122,7 +122,10 @@ export const PARTS: Part[] = [
     id: 'triggers',
     name: 'Triggers',
     does: 'Every message, routine run, turn result, outside edit and preview console error becomes a Trigger on a Thread; rules settle most of them and a cheap model judges the rest against your policies.',
-    cost: 'About $0.002 per batch of up to 8 events the rules leave open, at most 30 batches an hour. Keeps at most 2,000 Triggers for 14 days.',
+    cost: (s) =>
+      s.superAgent.maxCandidatesPerHour > 0
+        ? `About $0.002 per batch of up to 8 events the rules leave open, at most ${s.superAgent.maxCandidatesPerHour} batches an hour. Keeps at most 2,000 Triggers for 14 days.`
+        : 'No model call: everything is settled by the rules (0 model decisions an hour). Keeps at most 2,000 Triggers for 14 days.',
     scope: 'global',
     core: true,
   },
@@ -130,7 +133,8 @@ export const PARTS: Part[] = [
     id: 'router',
     name: 'Router and Workers',
     does: 'Each group chat gets a Router that answers you in a few words and dispatches Workers; each Worker does one task in its own session and git worktree, and its work is merged into the chat’s branch.',
-    cost: 'One Router process per group chat (a lighter model), one session and worktree per Worker (the strongest model), closed after 15 idle minutes.',
+    cost: (s) =>
+      `A Router turn per batch of events (a lighter model), and each Worker's turns (the strongest model), at most ${s.superAgent.router.maxWorkers} Workers at once per chat. One process per Router and per Worker, closed after 15 idle minutes, and a git worktree per Worker.`,
     needs: 'triggers',
     scope: 'global',
     core: true,
@@ -139,7 +143,7 @@ export const PARTS: Part[] = [
     id: 'direct',
     name: 'Direct routing',
     does: 'Workers subscribe to the Threads of their task; later events there go straight to them, without a Router decision.',
-    cost: 'Nothing extra: fewer Router turns, a few short events in Workers’ context.',
+    cost: () => 'Nothing extra: fewer Router turns, a few short events in Workers’ context.',
     needs: 'router',
     scope: 'global',
     core: true,
@@ -148,7 +152,7 @@ export const PARTS: Part[] = [
     id: 'recall',
     name: 'Chain of recall',
     does: 'Prompts carry ids and only the first words of older objects; agents read the rest with a recall tool.',
-    cost: 'Nothing extra: usually smaller prompts, sometimes one extra lookup.',
+    cost: () => 'Nothing extra: usually smaller prompts, sometimes one extra lookup. Idle sessions restart when you switch it.',
     needs: 'triggers',
     scope: 'global',
     core: true,
@@ -157,7 +161,7 @@ export const PARTS: Part[] = [
     id: 'watchdog',
     name: 'Watchdog',
     does: 'A timer outside the chats flags stuck, looping or failed work; only then does a light model look, and it may nudge, stop or restart a Worker or tell a chat.',
-    cost: 'No model call while nothing is flagged; at most 4 looks an hour and $1 a day.',
+    cost: (s) => `No model call while nothing is flagged; at most ${s.superAgent.watchdog.maxTicksPerHour} looks an hour and ${fmtCost(s.superAgent.watchdog.dailyBudgetUsd)} a day.`,
     needs: 'triggers',
     scope: 'global',
   },
@@ -165,7 +169,8 @@ export const PARTS: Part[] = [
     id: 'speculative',
     name: 'Speculative fixes',
     does: 'A failing check, a console error or a bug report may start a quiet Worker in a throwaway worktree; only a fix the project’s check command proves is shown, with a one-click merge.',
-    cost: 'A full Worker session per run, at most 2 at once, 20 minutes each and $2 a day in all.',
+    cost: (s) =>
+      `A full Worker session per run, at most ${s.superAgent.speculative.maxConcurrent} at once, ${s.superAgent.speculative.maxMinutes} minutes each and ${fmtCost(s.superAgent.speculative.dailyBudgetUsd)} a day across projects.`,
     needs: 'triggers',
     scope: 'project',
   },
@@ -173,7 +178,7 @@ export const PARTS: Part[] = [
     id: 'github',
     name: 'GitHub channel',
     does: 'Polls the repositories a project watches with your gh CLI for issues, comments, review comments and check results. It only reads; nothing is posted until you approve a draft.',
-    cost: 'Read-only gh calls every 5 minutes; no model call of its own.',
+    cost: () => 'Read-only gh calls every few minutes (5 by default); no model call of its own.',
     needs: 'triggers',
     scope: 'project',
   },
@@ -181,7 +186,7 @@ export const PARTS: Part[] = [
     id: 'webhook',
     name: 'Router notifications',
     does: 'Sends the Router’s replies of the kinds you pick to a Slack or Feishu webhook.',
-    cost: 'One request per approved reply; no model call.',
+    cost: () => 'One request per approved reply; no model call.',
     needs: 'router',
     scope: 'project',
   },
@@ -189,14 +194,14 @@ export const PARTS: Part[] = [
     id: 'jobs',
     name: 'Background jobs',
     does: 'A bot marked full duplex runs long commands and sub-tasks in the background and keeps talking; the result comes back as a new event.',
-    cost: 'Up to 4 background processes per chat; sub-tasks are the bot’s own spend.',
+    cost: () => 'Up to 4 background processes per chat; sub-tasks are the bot’s own spend.',
     scope: 'bot',
   },
   {
     id: 'gateway',
     name: 'Model gateway',
     does: 'Every session’s calls go out under its role (Router, Worker, Watchdog, speculative run), with failover between providers and spend windows.',
-    cost: 'One local listener; no model call of its own.',
+    cost: () => 'One local listener; no model call of its own.',
     scope: 'gateway',
   },
 ];

@@ -187,6 +187,7 @@ export function GatewaySection() {
   return (
     <Section
       icon={<Route size={18} />}
+      id="settings-gateway"
       title="Model gateway (preview)"
       extra={saved.enabled ? <span className={cx('badge', report?.running ? 'green' : 'red')}>{report?.running ? 'Running' : 'Not running'}</span> : undefined}
     >
@@ -200,7 +201,7 @@ export function GatewaySection() {
           </div>
           {saved.enabled && report?.error && <div className="callout error">{report.error}</div>}
         </div>
-        <Toggle on={saved.enabled} disabled={saving} onChange={(v) => void apply({ gateway: { enabled: v } }, v ? 'Model gateway on' : 'Model gateway off')} />
+        <Toggle label="Model gateway" on={saved.enabled} disabled={saving} onChange={(v) => void apply({ gateway: { enabled: v } }, v ? 'Model gateway on' : 'Model gateway off')} />
       </div>
 
       <div className="gateway-block" data-testid="gateway-providers">
@@ -349,7 +350,7 @@ export function GatewaySection() {
             shapes can slip through.
           </div>
         </div>
-        <Toggle on={form.masking} onChange={(v) => setForm({ ...form, masking: v })} />
+        <Toggle label="Mask secrets in prompts" on={form.masking} onChange={(v) => setForm({ ...form, masking: v })} />
       </div>
 
       <div className="row">

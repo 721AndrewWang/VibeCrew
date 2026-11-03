@@ -81,7 +81,7 @@ export function ProjectWebhook({ project }: { project: Project }) {
               <div className="sr-title">Send Router notifications to {info.host}</div>
               <div className="hint">{info.enabled && info.approvedAt ? `On since ${fmtRelative(info.approvedAt)}. ` : ''}A new URL or format turns this off again until you approve it.</div>
             </div>
-            <Toggle on={info.enabled} disabled={busy} onChange={(enabled) => void save({ enabled })} />
+            <Toggle label="Send Router notifications" on={info.enabled} disabled={busy} onChange={(enabled) => void save({ enabled })} />
           </div>
           <div className="family-chips">
             {KINDS.map((k) => (
