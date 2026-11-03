@@ -6,12 +6,13 @@ import { notify } from '../bus';
 import { asyncGuide, asyncProfileFor, asyncRefusal, shapeAsync } from '../channels/profiles';
 import { devServer } from '../devserver';
 import { createDraft, type DraftFields, showCommand } from '../drafts';
-import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
+import { type JobHost, jobTools } from '../jobs/tools';
 import { ANSI } from '../procs';
 import { RECALL_TOOL, recallText } from '../recall';
 import { bots, messages, projects } from '../store';
 import { untrusted } from '../untrusted';
 import { appendMemory } from './prompts';
+import type { ToolHandler } from './toolResult';
 
 export interface CrewContext {
   botId: string;
@@ -135,7 +136,7 @@ export function crewServer(ctx: CrewContext) {
   const pagePath = (p?: string) => p || ctx.currentPage() || '/';
 
   const jobs = ctx.jobs ? jobTools(ctx.jobs) : null;
-  const call = (h: JobHandler) => async (args: Record<string, unknown>) => {
+  const call = (h: ToolHandler) => async (args: Record<string, unknown>) => {
     const r = await h(args);
     return r.isError ? fail(r.text) : text(r.text);
   };

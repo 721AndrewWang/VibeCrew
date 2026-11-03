@@ -6,6 +6,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { WatchdogActionKind, Worker } from '../../shared/types';
+import { fail, mcpResult, ok, str, type ToolHandler, type ToolResult } from '../agents/toolResult';
 import { jobLine, jobSource } from '../jobs/spill';
 import { auditLog, bots, chats, jobs, messages, projects, settings, triggerLog, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
 import { firstWords } from '../text';
@@ -41,21 +42,14 @@ export interface WatchdogEffects {
   propose(p: { target: 'policies' | 'bot'; botId?: string; botName?: string; before: string; after: string; rationale: string }): string;
 }
 
-type Result = { text: string; isError?: boolean };
-type Handler = (args: Record<string, unknown>) => Promise<Result>;
-
-const ok = (text: string): Result => ({ text });
-const fail = (text: string): Result => ({ text, isError: true });
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-
 const workerState = (w: Worker | undefined) => (w ? { status: w.status, dismissed: !!w.dismissedAt } : null);
 
 /** A speculative run (ADR 008) is silent and one-shot: the Watchdog may stop it, not steer it (ADR 011). */
 const SPECULATIVE_NOTE = 'This is a silent speculative run: it takes no notes and is never redirected. Stop it without a redirect if it is stuck or looping.';
 
-export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffects): Record<string, Handler> {
+export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffects): Record<string, ToolHandler> {
   /** Runs an action through the per-turn limit, its own gate, and the ledger. */
-  const act = async (kind: WatchdogActionKind, target: string, text: string, gate: () => string | null, run: (actionId: string) => Promise<string> | string, chatId?: string): Promise<Result> => {
+  const act = async (kind: WatchdogActionKind, target: string, text: string, gate: () => string | null, run: (actionId: string) => Promise<string> | string, chatId?: string): Promise<ToolResult> => {
     const t = ctx();
     if (!t) return fail('No turn is in progress.');
     const max = settings.get().superAgent.watchdog.maxActionsPerTick;
@@ -288,11 +282,8 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
 }
 
 /** The handlers as Claude Code sees them. */
-export function watchdogMcpServer(h: Record<string, Handler>) {
-  const wrap = (name: string) => async (args: Record<string, unknown>) => {
-    const r = await h[name](args);
-    return { content: [{ type: 'text' as const, text: r.text }], isError: r.isError || undefined };
-  };
+export function watchdogMcpServer(h: Record<string, ToolHandler>) {
+  const wrap = (name: string) => async (args: Record<string, unknown>) => mcpResult(await h[name](args));
   return createSdkMcpServer({
     name: 'crew_watchdog',
     version: '1.0.0',

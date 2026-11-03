@@ -6,6 +6,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { FAMILY_IDS, isFamily } from '../../shared/families';
 import type { Bot, ChatMessage, ReplyKind, SkillFamily } from '../../shared/types';
+import { fail, mcpResult, ok, str, type ToolHandler } from '../agents/toolResult';
 import { bus, notify } from '../bus';
 import { reportDetail } from '../channels/details';
 import { CHAT_PROFILE, isReplyKind, REPLY_WORDS } from '../channels/profiles';
@@ -41,14 +42,7 @@ export interface TurnCtx {
   attached?: Set<string>;
 }
 
-type Result = { text: string; isError?: boolean };
-type Handler = (args: Record<string, unknown>) => Promise<Result>;
-
-const ok = (text: string): Result => ({ text });
-const fail = (text: string): Result => ({ text, isError: true });
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-
-export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> {
+export function routerTools(ctx: () => TurnCtx | null): Record<string, ToolHandler> {
   const turn = () => {
     const c = ctx();
     const chat = c && chats.get(c.chatId);
@@ -234,11 +228,8 @@ export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> 
 }
 
 /** The handlers as Claude Code sees them. */
-export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?: boolean; recall?: boolean; github?: boolean } = {}) {
-  const wrap = (name: string) => async (args: Record<string, unknown>) => {
-    const r = await h[name](args);
-    return { content: [{ type: 'text' as const, text: r.text }], isError: r.isError || undefined };
-  };
+export function routerMcpServer(h: Record<string, ToolHandler>, o: { subscriptions?: boolean; recall?: boolean; github?: boolean } = {}) {
+  const wrap = (name: string) => async (args: Record<string, unknown>) => mcpResult(await h[name](args));
   return createSdkMcpServer({
     name: 'crew_router',
     version: '1.0.0',

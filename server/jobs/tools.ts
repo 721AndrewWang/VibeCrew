@@ -2,18 +2,11 @@
 // run here, in code. The same handlers serve the `crew` MCP server and the demo agent.
 
 import type { PermissionLevel } from '../../shared/types';
+import { fail, num, ok, str, type ToolHandler } from '../agents/toolResult';
 import { untrusted } from '../untrusted';
 import { DEFAULT_TIMEOUT_MIN, startRefusal, timeoutFor } from './gates';
 import { type CommandSpec, getJob, isRunning, type JobBase, jobLog, listJobs, outputOf, runningJobs, startCommand, startTask, stopJob, type TaskSpec } from './index';
 import { defuse, fmtDuration, jobLine, jobSource, resultText } from './spill';
-
-type Result = { text: string; isError?: boolean };
-export type JobHandler = (args: Record<string, unknown>) => Promise<Result>;
-
-const ok = (text: string): Result => ({ text });
-const fail = (text: string): Result => ({ text, isError: true });
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 
 /** What the tools need from the turn and the bot they serve. */
 export interface JobHost {
@@ -37,7 +30,7 @@ export interface JobHost {
 
 const titleOf = (args: Record<string, unknown>, what: string) => (str(args.title).trim() || what.replace(/\s+/g, ' ').trim()).slice(0, 80);
 
-export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', JobHandler> {
+export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', ToolHandler> {
   const own = (id: unknown) => {
     const j = getJob(str(id).trim());
     return j && j.chatId === host.chatId ? j : undefined;

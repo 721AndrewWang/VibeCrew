@@ -4,6 +4,7 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { Bot, Chat, GithubChannel, Project } from '../../shared/types';
+import type { ToolResult } from '../agents/toolResult';
 import { asyncProfileFor, asyncRefusal, shapeAsync } from '../channels/profiles';
 import { createDraft, showCommand } from '../drafts';
 import { chatProjectId } from '../projects';
@@ -12,8 +13,6 @@ import { ensureThread } from '../triggers';
 import { activeChannel, parseIssueRef } from './config';
 import { asyncBody, canonicalRepo, GITHUB_DRAFT_KINDS, type GithubDraftArgs, githubDraftRefusal } from './gates';
 import { githubThread } from './threads';
-
-type Result = { text: string; isError?: boolean };
 
 /** The chat's project (a workspace counts as its parent). */
 function rootProject(chat: Chat): Project | undefined {
@@ -39,7 +38,7 @@ export function issueThread(chat: Chat, ref: string): { threadId: string; ref: s
 }
 
 /** draft_github's handler: a structured write-up stored as a draft; nothing is posted until the user approves it. */
-export async function draftGithub(c: { chatId: string; lead: Bot; explicit: boolean }, chat: Chat, args: GithubDraftArgs): Promise<Result> {
+export async function draftGithub(c: { chatId: string; lead: Bot; explicit: boolean }, chat: Chat, args: GithubDraftArgs): Promise<ToolResult> {
   const ch = githubChannelOf(chat);
   if (!ch) return { text: "This chat's project does not watch GitHub.", isError: true };
   const refused = githubDraftRefusal(args, { explicit: c.explicit, repos: ch.conf.repos });

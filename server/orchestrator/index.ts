@@ -7,6 +7,7 @@ import { buildSystemAppend, buildTurnPrompt, contextDelta, type NewInput, newInp
 import { summarize, TurnRecorder } from '../agents/recorder';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import { TurnStream } from '../agents/stream';
+import type { ToolHandler } from '../agents/toolResult';
 import { autoChallengeReasons, findSkeptic, resetAutoChallenge } from '../autoChallenge';
 import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
@@ -17,7 +18,7 @@ import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { type Delivery, forgetChatJobs, jobsRunningIn, onJobDone, outputOf, runningJobs, stopChatJobs } from '../jobs';
 import { jobLine, tailDigest } from '../jobs/spill';
-import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
+import { type JobHost, jobTools } from '../jobs/tools';
 import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
 import { subscriptionsOn } from '../layers/subscriptions';
 import { logger } from '../log';
@@ -207,7 +208,7 @@ function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { su
     env: agentEnv({ role: 'bot', botId: bot.id }, eff.model || settings.get().defaultModel || undefined, project),
     midTurnNote: duplex ? () => drainInbox(chat.id, bot.id) : undefined,
     fakeTools: {
-      ...(handlers as Record<string, JobHandler> | undefined),
+      ...(handlers as Record<string, ToolHandler> | undefined),
       draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields),
     },
   };
