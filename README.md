@@ -232,6 +232,8 @@ npm run bench -- --reduced --arms all   # plus speculation, the GitHub channel a
 
 `--arms` adds configuration (a) again with one later feature switched each: speculative runs on failing CI, CI as GitHub checks on each task's pull request, and the Router without per-channel output. `npm run bench -- --help` lists the options. Design and assumptions: [ADR 101](docs/adr/101-ablation-bench.md) and, for the arms, [ADR 011](docs/adr/011-wave2-integration.md).
 
+`npm run bench:cost` prints what each role's model calls cost on the bench's scenarios (calls, prompt sizes, context read, a cost estimate), with Crew's real prompts and tool definitions; `--compare <cost.json>` shows the change against an earlier run. See [ADR 108](docs/adr/108-cost-and-latency.md).
+
 ## Contributing
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the architecture, [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, tests and code style, and [CHANGELOG.md](CHANGELOG.md) for version history. Before committing, run:
