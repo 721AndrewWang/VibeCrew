@@ -3,8 +3,7 @@
 // store can normalise it without pulling in the sender.
 
 import type { ReplyKind, WebhookFormat } from '../../shared/types';
-
-const isReplyKind = (v: unknown): v is ReplyKind => v === 'decision' || v === 'question' || v === 'acceptance';
+import { isReplyKind } from './profiles';
 
 export interface WebhookConfig {
   url: string;

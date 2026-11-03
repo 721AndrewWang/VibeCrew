@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- For developers: the Super-agent code keeps one definition of each shared helper, type and default (word counting, "N min ago", settings normalizers, tool results, status checks, every default in `shared/defaults.ts`, the default policy lines included), with no change in behaviour. See `docs/adr/109-code-consolidation.md`.
 - Muted text and the status colours are darker in the light theme and the muted grey lighter in the dark one, so hints, timestamps and badges reach WCAG AA contrast (4.5:1) everywhere. Dialogs take keyboard focus when they open, keep Tab inside and give focus back when they close; switches are announced as switches with their name.
 - The project is now English-only: UI, agent prompts, docs and code comments. The default UI language is English, and `@all` (or `@everyone`) mentions everyone in a group chat.
 - The desktop build downloads Electron and the AppImage tools from their official sources; set `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` to use a mirror.

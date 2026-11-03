@@ -1,9 +1,8 @@
 // Thread subscriptions (ADR 003): which Workers a Trigger goes straight to, and the bound on what
 // waits in a Worker's inbox. Pure, so the rules are easy to test.
 
-import type { SuperAgentSettings, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
-
-export const ACTIVE: ReadonlySet<WorkerStatus> = new Set(['starting', 'running', 'waiting']);
+import { WORKER_ACTIVE } from '../../shared/status';
+import type { SuperAgentSettings, Worker, WorkerDelivery } from '../../shared/types';
 
 /** At most this many delivered Triggers wait in a Worker's inbox; the oldest go first. */
 export const INBOX_MAX = 20;
@@ -29,7 +28,7 @@ export interface ReceiverQuery {
  */
 export function isReceiver(w: Worker, q: ReceiverQuery): boolean {
   if (w.dismissedAt || w.id === q.origin || !w.threads?.includes(q.threadId) || !q.live(w)) return false;
-  return ACTIVE.has(w.status) || (q.explicit && w.status === 'done');
+  return WORKER_ACTIVE.has(w.status) || (q.explicit && w.status === 'done');
 }
 
 export function receivers(all: Worker[], q: ReceiverQuery): Worker[] {

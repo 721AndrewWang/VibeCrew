@@ -3,7 +3,9 @@
 // thread titles are built from facts only (kind, number, login, file); everything people wrote stays
 // in the payload, which every prompt shows inside the <untrusted> wrapper.
 
-export type GhKind = 'issue' | 'comment' | 'review-comment' | 'check';
+import type { TriggerGithub } from '../../shared/types';
+
+export type GhKind = TriggerGithub['kind'];
 
 export interface GhCheck {
   name: string;

@@ -11,7 +11,9 @@
 import type { Trigger } from '../../shared/types';
 import { logger } from '../log';
 import { oneShot } from '../oneShot';
-import { UNTRUSTED_RULE, untrusted } from '../untrusted';
+import { firstWords, modelJson } from '../text';
+import { ago } from '../time';
+import { attr, tagDefuser, UNTRUSTED_RULE, untrusted } from '../untrusted';
 
 const log = logger('triggers');
 
@@ -43,22 +45,10 @@ export interface SlowResult {
 export type Decide = (items: SlowItem[], policies: string) => Promise<SlowResult>;
 
 /** The first `words` words, marked when cut: the rest is a "read more" away. */
-export function excerpt(text: string, words = EXCERPT_WORDS): string {
-  const parts = text.split(/\s+/).filter(Boolean);
-  return parts.length > words ? `${parts.slice(0, words).join(' ')} …` : parts.join(' ');
-}
+export const excerpt = (text: string, words = EXCERPT_WORDS) => firstWords(text, words).text;
 
 /** Defuses anything inside event text that looks like the prompt's own fences. */
-export function fenceSafe(s: string): string {
-  return s.replace(/<(\s*\/?\s*)(event|policies)\b/gi, '‹$1$2');
-}
-
-const ago = (at: number, now: number) => {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
-
-const attr = (s: string) => s.replace(/["<>\n]/g, ' ').slice(0, 120);
+export const fenceSafe = tagDefuser('event', 'policies');
 
 export function slowPrompt(items: SlowItem[], policies: string, now = Date.now()): string {
   return [
@@ -85,11 +75,7 @@ export function slowPrompt(items: SlowItem[], policies: string, now = Date.now()
 
 /** Reads the model's decisions; ids it was not asked about and malformed entries are skipped. */
 export function parseDecisions(text: string, ids: string[]): Map<string, SlowVerdict> {
-  const body = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start < 0 || end < start) throw new Error('Not JSON');
-  const raw = JSON.parse(body.slice(start, end + 1));
+  const raw = modelJson(text);
   if (!Array.isArray(raw?.decisions)) throw new Error('No decisions list');
   const out = new Map<string, SlowVerdict>();
   for (const d of raw.decisions) {

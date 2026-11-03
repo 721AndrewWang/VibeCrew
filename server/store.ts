@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_SAFETY, DEFAULT_SUPER_AGENT } from '../shared/defaults';
 import { DEFAULT_LOGO, isLogoId, type LogoId } from '../shared/logos';
 import type {
   AuditEntry,
@@ -35,9 +36,9 @@ import { DATA, DEFAULT_PROJECTS_ROOT } from './config';
 import { DEFAULT_GATEWAY, normalizeGateway } from './gateway/config';
 import { redact } from './hardening/redactor';
 import { SCHEMA_VERSION } from './migrations';
-import { DEFAULT_SAFETY, normalizeSafety } from './safetyConfig';
+import { normalizeSafety } from './safetyConfig';
 import { DEFAULT_ALLOWED } from './sandbox';
-import { DEFAULT_SUPER_AGENT, normalizeSuperAgent } from './triggers/fastPath';
+import { normalizeSuperAgent } from './triggers/fastPath';
 
 export function uid(prefix = ''): string {
   return prefix + crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x');

@@ -4,6 +4,7 @@
 // by two names. Pure data: no React, no store, so it can be tested on its own.
 
 import type { BackgroundJob, ExternalDraft, PublicSettings, RouterInfo, SpeculationStatus, Trigger, WatchdogInfo, WatchdogTick, WorkerStatus } from '../../shared/types';
+import { fmtUsd } from './utils';
 
 // ---------------------------------------------------------------- status tones
 
@@ -83,12 +84,15 @@ export const TRIGGER_VERDICT: Record<Trigger['filter']['verdict'], StatusInfo> =
 
 // ---------------------------------------------------------------- money
 
-/** Every cost in the Super-agent views reads the same way: cents, and "<$0.01" for the fractions of a cent most calls cost. */
+/**
+ * Every cost in the Super-agent views reads the same way: the app's dollar format (`fmtUsd`), and
+ * "<$0.01" for the fractions of a cent most calls cost.
+ */
 export function fmtCost(usd: number | undefined): string {
   const n = usd || 0;
   if (n <= 0) return '$0.00';
   if (n < 0.01) return '<$0.01';
-  return n >= 10 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
+  return fmtUsd(n);
 }
 
 // ---------------------------------------------------------------- the parts

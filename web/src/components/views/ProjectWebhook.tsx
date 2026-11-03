@@ -4,10 +4,10 @@
 
 import { Send, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { Project, ReplyKind, WebhookFormat, WebhookInfo } from '../../../../shared/types';
+import type { Project, ReplyKind, WebhookFormat, WebhookInfo, WebhookPatch } from '../../../../shared/types';
 import { api } from '../../api';
 import { toast } from '../../store';
-import { fmtRelative } from '../../utils';
+import { fmtRelative, toggled } from '../../utils';
 import { confirmDialog, Toggle } from '../ui';
 
 const KINDS: { id: ReplyKind; label: string; hint: string }[] = [
@@ -43,8 +43,8 @@ export function ProjectWebhook({ project }: { project: Project }) {
   };
 
   if (!info) return null;
-  const save = (body: { url?: string; format?: WebhookFormat; enabled?: boolean; kinds?: ReplyKind[] }) => run(() => api.saveProjectWebhook(project.id, body));
-  const toggleKind = (k: ReplyKind) => void save({ kinds: info.kinds.includes(k) ? info.kinds.filter((x) => x !== k) : [...info.kinds, k] });
+  const save = (body: WebhookPatch) => run(() => api.saveProjectWebhook(project.id, body));
+  const toggleKind = (k: ReplyKind) => void save({ kinds: toggled(info.kinds, k) });
 
   return (
     <div className="field span-all webhook-block" data-testid="project-webhook">

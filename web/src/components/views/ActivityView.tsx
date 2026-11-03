@@ -5,19 +5,18 @@
 
 import { Activity, GitBranch, MessageCircle, Network, Send, ShieldCheck, Sparkles, Square, Timer } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { isJobRunning, SPECULATION_IN_FLIGHT, WORKER_ACTIVE } from '../../../../shared/status';
 import type { BackgroundJob, Chat, Speculation, Worker } from '../../../../shared/types';
 import { api } from '../../api';
-import { openChat, openModal, setView, toast, useStore, WORKER_ACTIVE } from '../../store';
+import { openChat, openModal, setView, toast, useStore } from '../../store';
 import { fmtCost, JOB_STATUS, PART, ROUTER_STATE, SPECULATION_STATUS, type StatusInfo, WATCHDOG_STATE, WORKER_STATUS } from '../../superagent';
 import { cx, fmtRelative } from '../../utils';
-import { fmtElapsed, jobActive } from '../JobsBar';
+import { fmtElapsed } from '../JobsBar';
 import { SIGNAL_LABEL } from '../SpeculativeBar';
 import { Cost, EmptyState, goToPart, StatusBadge, SuperAgentPrimer, TriggerLink } from '../SuperAgentUi';
 import { confirmDialog, useNow } from '../ui';
 import { triggerOf } from '../WorkersBar';
 import { PageHead } from './BotsView';
-
-const SPEC_ACTIVE = new Set(['running', 'verifying']);
 
 async function act(fn: () => Promise<unknown>, what: string, done?: string) {
   try {
@@ -127,10 +126,10 @@ export function useActivity() {
       .filter((x) => !x.speculation && WORKER_ACTIVE.has(x.status))
       .sort((a, b) => a.createdAt - b.createdAt);
     const j = Object.values(jobs)
-      .filter(jobActive)
+      .filter(isJobRunning)
       .sort((a, b) => a.startedAt - b.startedAt);
     const sp = Object.values(speculations)
-      .filter((x) => SPEC_ACTIVE.has(x.status))
+      .filter((x) => SPECULATION_IN_FLIGHT.has(x.status))
       .sort((a, b) => a.at - b.at);
     const r = Object.values(routers).filter((x) => x.state === 'thinking' || x.queued > 0);
     const waiting = {

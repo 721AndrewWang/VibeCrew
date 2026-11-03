@@ -6,7 +6,7 @@
 // after the previous turn of the same session. Turns saved before Crew kept the totals apart stored
 // the running total as their cost; they are told apart by the missing `sessionCostUsd`.
 
-import type { BotUsage, ChatMessage, TurnTokens, UsageSummary } from '../shared/types';
+import type { Bot, BotUsage, ChatMessage, TurnTokens, UsageSummary } from '../shared/types';
 import { chats, jobs, messages, routerLogId, workers } from './store';
 
 const noTokens = (): TurnTokens => ({ input: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
@@ -93,4 +93,9 @@ export function usageOf(now = new Date()): Record<string, UsageSummary> {
 
 export function monthSpend(botId: string, now = new Date()): number {
   return usageOf(now)[botId]?.month.costUsd || 0;
+}
+
+/** The bot has a monthly budget and has used it up: it takes no new work this month. */
+export function overMonthlyBudget<B extends Pick<Bot, 'id' | 'monthlyBudgetUsd'>>(bot: B): bot is B & { monthlyBudgetUsd: number } {
+  return !!bot.monthlyBudgetUsd && monthSpend(bot.id) >= bot.monthlyBudgetUsd;
 }

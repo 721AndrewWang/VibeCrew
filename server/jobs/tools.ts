@@ -1,19 +1,13 @@
 // The full-duplex tools a bot gets when fullDuplex is on: start, stop, status (ADR 004). The gates
 // run here, in code. The same handlers serve the `crew` MCP server and the demo agent.
 
+import { isJobRunning } from '../../shared/status';
 import type { PermissionLevel } from '../../shared/types';
+import { fail, num, ok, str, type ToolHandler } from '../agents/toolResult';
 import { untrusted } from '../untrusted';
 import { DEFAULT_TIMEOUT_MIN, startRefusal, timeoutFor } from './gates';
-import { type CommandSpec, getJob, isRunning, type JobBase, jobLog, listJobs, outputOf, runningJobs, startCommand, startTask, stopJob, type TaskSpec } from './index';
+import { type CommandSpec, getJob, type JobBase, jobLog, listJobs, outputOf, runningJobs, startCommand, startTask, stopJob, type TaskSpec } from './index';
 import { defuse, fmtDuration, jobLine, jobSource, resultText } from './spill';
-
-type Result = { text: string; isError?: boolean };
-export type JobHandler = (args: Record<string, unknown>) => Promise<Result>;
-
-const ok = (text: string): Result => ({ text });
-const fail = (text: string): Result => ({ text, isError: true });
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 
 /** What the tools need from the turn and the bot they serve. */
 export interface JobHost {
@@ -37,7 +31,7 @@ export interface JobHost {
 
 const titleOf = (args: Record<string, unknown>, what: string) => (str(args.title).trim() || what.replace(/\s+/g, ' ').trim()).slice(0, 80);
 
-export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', JobHandler> {
+export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', ToolHandler> {
   const own = (id: unknown) => {
     const j = getJob(str(id).trim());
     return j && j.chatId === host.chatId ? j : undefined;
@@ -75,7 +69,7 @@ export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', Job
     async stop(args) {
       const j = own(args.id);
       if (!j) return fail(`No job ${str(args.id) || '(no id)'} in this chat. Use status to list them.`);
-      if (!isRunning(j)) return ok(`${j.id} already ended.\n\n${resultText(j, outputOf(j))}`);
+      if (!isJobRunning(j)) return ok(`${j.id} already ended.\n\n${resultText(j, outputOf(j))}`);
       const after = (await stopJob(j.id, 'Stopped by the bot', { quiet: true })) ?? j;
       return ok(`Stopped.\n\n${resultText(after, outputOf(after))}`);
     },
@@ -98,7 +92,7 @@ export function jobTools(host: JobHost): Record<'start' | 'stop' | 'status', Job
         const more = to < slice.total ? `\n(lines ${slice.from}-${to} of ${slice.total}; next: status id=${j.id} from=${to + 1})` : `\n(lines ${slice.from}-${to} of ${slice.total})`;
         return ok(`${jobLine(j)}\n${untrusted(jobSource(j), defuse(slice.lines.join('\n')), { job: j.id, from: String(slice.from) })}${more}`);
       }
-      const running = isRunning(j) ? `\n(still running for ${fmtDuration(Date.now() - j.startedAt)}; its result arrives by itself when it ends)` : '';
+      const running = isJobRunning(j) ? `\n(still running for ${fmtDuration(Date.now() - j.startedAt)}; its result arrives by itself when it ends)` : '';
       return ok(`${resultText(j, outputOf(j))}${running}`);
     },
   };

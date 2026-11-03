@@ -10,6 +10,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_PROJECT_SPECULATIVE } from '../../shared/defaults';
+import { SPECULATION_IN_FLIGHT } from '../../shared/status';
 import type { Chat, Project, Speculation, SpeculativeSignal, Trigger, Worker } from '../../shared/types';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { parseNumstat } from '../autoChallenge';
@@ -34,9 +36,9 @@ import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, drafts, messages, projects, settings, speculationLog, uid, workers } from '../store';
 import { chatThread, detailText, onTrigger, publishTrigger, superAgentOn, targetChat } from '../triggers';
-import { monthSpend } from '../usage';
+import { overMonthlyBudget } from '../usage';
 import { checkGit, disposeWorkspace, type Workspace } from '../workspaces';
-import { DEFAULT_PROJECT_SPECULATIVE, detectCheckCommand, normalizeProjectSpeculative } from './config';
+import { detectCheckCommand, normalizeProjectSpeculative } from './config';
 import { speculativePrompt } from './prompts';
 import { botRefusal, gateRefusal, judgeClaim, repoPath, SAME_SIGNAL_MS, type SignalInput, signalOf } from './rules';
 import { spentToday } from './spend';
@@ -48,7 +50,6 @@ const log = logger('speculative');
 const READY_MS = 24 * 3600_000;
 /** The same refusal for the same signal is recorded once in this long (a noisy page repeats itself). */
 const SKIP_REPEAT_MS = 3600_000;
-const IN_FLIGHT = new Set<Speculation['status']>(['running', 'verifying']);
 const FAMILIES = ['triage', 'reproduce', 'draft-fix'] as const;
 
 /** The signal's text a run is given: in memory, since a restart discards runs in flight anyway. */
@@ -96,7 +97,7 @@ function folderOf(chat: Chat | undefined, t: Pick<Trigger, 'projectId'>): Projec
 }
 
 /** A project's check command: its own, else `npm test` when package.json has a real test script. */
-export function checkCommandOf(root: Project): string {
+function checkCommandOf(root: Project): string {
   const own = normalizeProjectSpeculative(root.speculative).checkCommand;
   if (own) return own;
   let pkg: string | null = null;
@@ -182,7 +183,7 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
             )),
         }
       : undefined;
-  const live = speculationLog.all().filter((s) => IN_FLIGHT.has(s.status));
+  const live = speculationLog.all().filter((s) => SPECULATION_IN_FLIGHT.has(s.status));
   const twin = speculationLog.recent(1, (s) => s.fingerprint === t.fingerprint && s.status !== 'skipped' && now - s.at < SAME_SIGNAL_MS)[0];
   const refused = gateRefusal({
     rules,
@@ -191,7 +192,7 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
     checkCommand,
     subscribed: t.filter.rule === 'subscribed',
     chat: !!chat,
-    bot: botRefusal(lead && { name: lead.name, blindReview: lead.blindReview, level, overBudget: !!lead.monthlyBudgetUsd && monthSpend(lead.id) >= lead.monthlyBudgetUsd }),
+    bot: botRefusal(lead && { name: lead.name, blindReview: lead.blindReview, level, overBudget: overMonthlyBudget(lead) }),
     git,
     head,
     duplicateOf: twin?.id,
@@ -514,11 +515,11 @@ export async function mergeSpeculation(id: string): Promise<Speculation> {
 // ---------------------------------------------------------------- lifetime
 
 /** Hourly: ready fixes nobody merged expire, and runs whose Worker or chat is gone are let go. */
-export async function sweepSpeculations(now = Date.now()) {
+async function sweepSpeculations(now = Date.now()) {
   speculationLog.prune(now);
   for (const sp of speculationLog.all()) {
     if (sp.status === 'ready' && now - sp.updatedAt > READY_MS) await discard(sp, 'Not merged within a day');
-    else if ((sp.status === 'ready' || IN_FLIGHT.has(sp.status)) && (!workers.get(sp.workerId) || !chats.get(sp.chatId))) await discard(sp, 'Its chat or Worker is gone');
+    else if ((sp.status === 'ready' || SPECULATION_IN_FLIGHT.has(sp.status)) && (!workers.get(sp.workerId) || !chats.get(sp.chatId))) await discard(sp, 'Its chat or Worker is gone');
   }
 }
 
@@ -528,7 +529,7 @@ export async function sweepSpeculations(now = Date.now()) {
  */
 export async function recoverSpeculations() {
   for (const sp of speculationLog.all()) {
-    if (!IN_FLIGHT.has(sp.status)) continue;
+    if (!SPECULATION_IN_FLIGHT.has(sp.status)) continue;
     // A check command Crew was running lives in its own process group and outlives a crash: stop it
     // before its worktree is removed, as for a background job (ADR 105 × 008, ADR 011).
     const reaped = sp.checking ? reapOrphan({ id: sp.id, pid: sp.checking.pid, startedAt: sp.checking.startedAt }) : false;

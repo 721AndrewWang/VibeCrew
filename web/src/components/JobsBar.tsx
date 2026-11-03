@@ -4,6 +4,7 @@
 
 import { ChevronDown, ChevronRight, ListTree, ScrollText, Square, TerminalSquare, Timer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { isJobRunning } from '../../../shared/status';
 import type { BackgroundJob } from '../../../shared/types';
 import { api } from '../api';
 import { loadLog, openModal, requestTerminal, toast, useStore } from '../store';
@@ -16,8 +17,7 @@ import { Avatar, Modal, useNow } from './ui';
 /** Finished jobs the bar keeps showing. */
 const RECENT = 4;
 
-export const jobActive = (j: BackgroundJob) => j.status === 'running' || j.status === 'waiting';
-
+/** How long something has run: "42s", "3m 5s", "1h 12m" (also the Activity page's). */
 export function fmtElapsed(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;
@@ -63,7 +63,7 @@ function JobRow({ j, now }: { j: BackgroundJob; now: number }) {
         </span>
       </button>
       <StatusBadge status={JOB_STATUS[j.status]} />
-      {jobActive(j) && (
+      {isJobRunning(j) && (
         <button className="icon-btn sm" title="Stop this job" aria-label={`Stop job ${j.title}`} onClick={() => void stop(j)}>
           <Square size={13} aria-hidden />
         </button>
@@ -83,9 +83,9 @@ export function JobsBar({ chatId }: { chatId: string }) {
   );
   const [open, setOpen] = useState(true);
   const now = useNow(1000);
-  const active = list.filter(jobActive);
+  const active = list.filter(isJobRunning);
   // Running jobs, and the last few that ended within the hour.
-  const recent = list.filter((j) => !jobActive(j) && now - (j.endedAt ?? 0) < 3600_000).slice(-RECENT);
+  const recent = list.filter((j) => !isJobRunning(j) && now - (j.endedAt ?? 0) < 3600_000).slice(-RECENT);
   const shown = [...recent, ...active].sort((a, b) => a.startedAt - b.startedAt);
   if (!shown.length) return null;
   return (
@@ -146,7 +146,7 @@ export function JobLogDialog({ jobId, onClose }: { jobId: string; onClose: () =>
     setTotal(r.total);
   };
   const bot = j ? bots[j.botId] : undefined;
-  const follow = j?.kind === 'command' && j.logFile && jobActive(j) && !j.sandboxed;
+  const follow = j?.kind === 'command' && j.logFile && isJobRunning(j) && !j.sandboxed;
   return (
     <Modal
       wide
@@ -161,7 +161,7 @@ export function JobLogDialog({ jobId, onClose }: { jobId: string; onClose: () =>
                 <TerminalSquare size={13} aria-hidden /> Follow in terminal
               </button>
             )}
-            {jobActive(j) && (
+            {isJobRunning(j) && (
               <button className="btn danger sm" onClick={() => void stop(j)}>
                 <Square size={13} aria-hidden /> Stop
               </button>

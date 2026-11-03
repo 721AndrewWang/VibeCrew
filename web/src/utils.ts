@@ -62,6 +62,11 @@ export function fmtDuration(ms: number) {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/** The list with `x` added, or without it when it was in. */
+export function toggled<T>(list: T[], x: T): T[] {
+  return list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
+}
+
 /** "1 file" / "3 files". */
 export function plural(n: number, one: string, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
@@ -74,6 +79,11 @@ export function fmtRelative(ts: number) {
   const n = Math.max(1, Math.round(abs / (unit[0] as number)));
   const label = `${n} ${unit[1]}${n === 1 ? '' : 's'}`;
   return diff >= 0 ? `in ${label}` : `${label} ago`;
+}
+
+/** Dollars: cents below $10, whole dollars from there. */
+export function fmtUsd(n: number) {
+  return n >= 10 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
 }
 
 /** Token counts: 950, 1.2k, 45k, 1.3M. */

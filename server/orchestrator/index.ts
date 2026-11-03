@@ -7,6 +7,7 @@ import { buildSystemAppend, buildTurnPrompt, contextDelta, type NewInput, newInp
 import { summarize, TurnRecorder } from '../agents/recorder';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import { TurnStream } from '../agents/stream';
+import type { ToolHandler } from '../agents/toolResult';
 import { autoChallengeReasons, findSkeptic, resetAutoChallenge } from '../autoChallenge';
 import { resetActSession } from '../browser';
 import { bus, internal, notify } from '../bus';
@@ -17,7 +18,7 @@ import { recordFriction } from '../friction';
 import { autoCommit, commitSubject, gitError } from '../gitops';
 import { type Delivery, forgetChatJobs, jobsRunningIn, onJobDone, outputOf, runningJobs, stopChatJobs } from '../jobs';
 import { jobLine, tailDigest } from '../jobs/spill';
-import { type JobHandler, type JobHost, jobTools } from '../jobs/tools';
+import { type JobHost, jobTools } from '../jobs/tools';
 import { closeLayerSessions, forgetLayers, layersBusy, refreshWorkerSessions, resetLayers, routerEvent, routerMode, sharedWorkerActive, stopLayers, workerWorkingIn } from '../layers';
 import { subscriptionsOn } from '../layers/subscriptions';
 import { logger } from '../log';
@@ -40,9 +41,9 @@ import { deniedReason, denyApprovals, expireApprovals, permissionGate } from './
 import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previewPageOf } from './turnContext';
 
 export { botStatuses } from './botStatus';
-export { parseMentions, systemMessage } from './chatLog';
+export { systemMessage } from './chatLog';
 export { resolveApproval } from './permissionGate';
-export { effectiveBot, setPreviewPage } from './turnContext';
+export { setPreviewPage } from './turnContext';
 
 const log = logger('orchestrator');
 
@@ -75,7 +76,8 @@ function throttle(ms: number, fn: () => void) {
 }
 
 const FAKE = FAKE_AGENT;
-const IDLE_CLOSE_MS = 15 * 60_000;
+/** Idle sessions (chat bots' and Workers') close after this long; the next turn resumes them from their transcript. */
+export const IDLE_CLOSE_MS = 15 * 60_000;
 
 interface Job {
   chatId: string;
@@ -207,7 +209,7 @@ function sessionConfig(chat: Chat, bot: Bot, project: Project | null, opts: { su
     env: agentEnv({ role: 'bot', botId: bot.id }, eff.model || settings.get().defaultModel || undefined, project),
     midTurnNote: duplex ? () => drainInbox(chat.id, bot.id) : undefined,
     fakeTools: {
-      ...(handlers as Record<string, JobHandler> | undefined),
+      ...(handlers as Record<string, ToolHandler> | undefined),
       draft_external_action: (args) => draftAction(crewCtx, args as unknown as DraftFields),
     },
   };

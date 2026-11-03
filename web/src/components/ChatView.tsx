@@ -16,9 +16,10 @@ import {
   Users,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { WORKER_ACTIVE } from '../../../shared/status';
 import type { Chat } from '../../../shared/types';
 import { api } from '../api';
-import { chatProjectId, listProjects, loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore, WORKER_ACTIVE } from '../store';
+import { chatProjectId, listProjects, loadMessages, openModal, requestTerminal, setComputer, setDraft, setView, toast, useStore } from '../store';
 import { cx, fmtDay, isSameDay, statusLabel } from '../utils';
 import { closeWorkspace, enableWorkspace, showWorkspaceChanges } from '../workspace';
 import { Composer } from './Composer';

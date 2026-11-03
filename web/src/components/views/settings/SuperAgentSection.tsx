@@ -4,7 +4,7 @@ import type { FilteredSource, RecallSettings, RouterSettings, SourceMode, Specul
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
 import { blockedBy, corePatch, fmtCost, PART, PARTS, type Part, type PartId, partAnchor, partPatch, SPECULATION_STATUS, type StatusInfo, switchOn } from '../../../superagent';
-import { cx, gatewayOptions } from '../../../utils';
+import { cx, gatewayOptions, toggled } from '../../../utils';
 import { SIGNAL_LABEL } from '../../SpeculativeBar';
 import { Field, goToPart, StatusBadge, SuperAgentPrimer } from '../../SuperAgentUi';
 import { confirmDialog, Toggle } from '../../ui';
@@ -250,7 +250,7 @@ function TriggerRulesBlock({ save, saving }: { save: SaveFn; saving: boolean }) 
   const [form, setForm] = useState(() => toForm(saved));
   const dirty = JSON.stringify(fromForm(form)) !== JSON.stringify(fromForm(toForm(saved)));
   const setSource = (id: FilteredSource, p: Partial<Form['sources'][FilteredSource]>) => setForm({ ...form, sources: { ...form.sources, [id]: { ...form.sources[id], ...p } } });
-  const toggleProject = (id: string) => setForm({ ...form, projects: form.projects.includes(id) ? form.projects.filter((x) => x !== id) : [...form.projects, id] });
+  const toggleProject = (id: string) => setForm({ ...form, projects: toggled(form.projects, id) });
   return (
     <details className="sa-details" data-testid="trigger-rules">
       <summary>

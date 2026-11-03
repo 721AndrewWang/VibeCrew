@@ -1,6 +1,6 @@
 // What the Router reads about the GitHub channel (ADR 102). Pure.
 
-import { REPLY_WORDS } from '../layers/prompts';
+import { REPLY_WORDS } from '../channels/profiles';
 
 export function githubRouterSection(repos: string[], subscriptions: boolean): string[] {
   return [

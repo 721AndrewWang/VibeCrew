@@ -5,11 +5,17 @@
 // full (they are what the work is for), a Worker's report only its first words with the handle that
 // reads the rest, and environment events their summary, fenced and marked as data.
 
+import type { WorkerOutcome } from '../../shared/types';
+import { REPLY_WORDS } from '../channels/profiles';
 import { type Budget, handle, spill } from '../recall/spill';
-import { UNTRUSTED_RULE, untrusted } from '../untrusted';
+import { firstWords, wordCount } from '../text';
+import { ago } from '../time';
+import { attr, tagDefuser, UNTRUSTED_RULE, untrusted } from '../untrusted';
 import { renderWatchdogNote, WATCHDOG_MARK } from '../watchdog/prompts';
 
-export const REPLY_WORDS = 100;
+/** Kept where the tests read it. */
+export { wordCount };
+
 const REPORT_WORDS = 80;
 const USER_CHARS = 4000;
 
@@ -23,7 +29,7 @@ export interface HandedBack {
 export type RouterEvent =
   | { kind: 'user'; id: string; at: number; seq: number; text: string; to?: string; attachments?: number; triggerId?: string; resumed?: Resumed }
   | { kind: 'routine'; id: string; at: number; seq: number; text: string; routine: string; bot?: string; triggerId?: string; threadId?: string; handedBack?: HandedBack; resumed?: Resumed }
-  | { kind: 'worker'; id: string; at: number; bot: string; title: string; status: 'done' | 'error' | 'stopped'; report: string; landing?: string; resumed?: Resumed }
+  | { kind: 'worker'; id: string; at: number; bot: string; title: string; status: WorkerOutcome; report: string; landing?: string; resumed?: Resumed }
   | { kind: 'environment'; id: string; at: number; source: string; summary: string; reason: string; handedBack?: HandedBack; thread?: string; github?: string };
 
 /**
@@ -87,31 +93,8 @@ export interface TeamMember {
   profile: string;
 }
 
-/** Scripts written without spaces between words (kana, CJK ideographs, Hangul): each character counts as a word. */
-
-const range = (from: number, to: number) => `${String.fromCharCode(from)}-${String.fromCharCode(to)}`;
-const CJK = new RegExp(`[${range(0x3040, 0x30ff)}${range(0x3400, 0x9fff)}${range(0xac00, 0xd7af)}${range(0xf900, 0xfaff)}]`, 'g');
-
-export function wordCount(text: string): number {
-  return text.replace(CJK, ' ').split(/\s+/).filter(Boolean).length + (text.match(CJK)?.length ?? 0);
-}
-
-export function firstWords(text: string, n: number): { text: string; rest: number } {
-  const words = text.split(/\s+/).filter(Boolean);
-  return words.length > n ? { text: `${words.slice(0, n).join(' ')} …`, rest: words.length - n } : { text: words.join(' '), rest: 0 };
-}
-
 /** Defuses anything inside event text that looks like the prompt's own tags. */
-export function defuse(s: string): string {
-  return s.replace(/<(\s*\/?\s*)(event|workers|direct)\b/gi, '‹$1$2');
-}
-
-const attr = (s: string) => s.replace(/["<>\n]/g, ' ').slice(0, 120);
-
-const ago = (at: number, now: number) => {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
+export const defuse = tagDefuser('event', 'workers', 'direct');
 
 /** A lifecycle family the chat's project enabled: the Router can hand its skills to a Worker. */
 export interface FamilyLine {

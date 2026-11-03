@@ -4,6 +4,7 @@ import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
 import { isLogoId } from '../shared/logos';
+import { WORKER_ACTIVE } from '../shared/status';
 import type { Attachment, AuditEntry, Bootstrap, FilteredSource, GatewayProvider, GatewaySettings, RecordedStep, SourceRule } from '../shared/types';
 import { memoryFile, readMemory } from './agents/prompts';
 import { listTurns, loadTurn, revertTurn, turnFileDiff } from './agents/recorder';
@@ -398,7 +399,7 @@ export function apiRouter() {
   });
   r.post('/workers/:id/dismiss', async (req, res) => {
     const w = worker(req.params.id);
-    if (['starting', 'running', 'waiting'].includes(w.status)) throw new HttpError(409, 'Stop the Worker first');
+    if (WORKER_ACTIVE.has(w.status)) throw new HttpError(409, 'Stop the Worker first');
     await dismissWorker(w);
     res.json(w);
   });

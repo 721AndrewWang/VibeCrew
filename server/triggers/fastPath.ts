@@ -4,34 +4,20 @@
 // Pure: everything it needs comes in as arguments, so it is cheap to run and easy to test.
 
 import crypto from 'node:crypto';
+import { DEFAULT_POLICIES, DEFAULT_SUPER_AGENT } from '../../shared/defaults';
 import type { FilteredSource, SourceRule, SuperAgentSettings, Thread, Trigger, TriggerFilter, TriggerSource } from '../../shared/types';
 import { glob } from '../agents/permissions';
-import { DEFAULT_ROUTER, normalizeRouter } from '../layers/config';
-import { DEFAULT_RECALL, normalizeRecall } from '../recall/config';
-import { DEFAULT_SPECULATIVE, normalizeSpeculative } from '../speculative/config';
-import { DEFAULT_WATCHDOG, normalizeWatchdog } from '../watchdog/config';
-import { POLICY_LINES, STANDING_RULE, standingRule } from './standing';
+import { normalizeRouter } from '../layers/config';
+import { bounded, fields } from '../normalize';
+import { normalizeRecall } from '../recall/config';
+import { normalizeSpeculative } from '../speculative/config';
+import { normalizeWatchdog } from '../watchdog/config';
+import { STANDING_RULE, standingRule } from './standing';
+
+/** Defined in shared/ for the settings forms (built from the standing rules' lines); re-exported where the tests read them. */
+export { DEFAULT_POLICIES, DEFAULT_SUPER_AGENT };
 
 export const FILTERED_SOURCES: FilteredSource[] = ['turn', 'outside-edit', 'preview-console'];
-
-// The lines live with the standing rules that apply them in code (standing.ts).
-export const DEFAULT_POLICIES = [POLICY_LINES.console, POLICY_LINES.turn, POLICY_LINES.outsideEdit, POLICY_LINES.github, '- When unsure, stay quiet.'].join('\n');
-
-export const DEFAULT_SUPER_AGENT: SuperAgentSettings = {
-  enabled: false,
-  sources: {
-    turn: { mode: 'candidate', allow: [] },
-    'outside-edit': { mode: 'candidate', allow: [] },
-    'preview-console': { mode: 'candidate', allow: [] },
-  },
-  projects: [],
-  policies: DEFAULT_POLICIES,
-  maxCandidatesPerHour: 30,
-  router: DEFAULT_ROUTER,
-  recall: DEFAULT_RECALL,
-  watchdog: DEFAULT_WATCHDOG,
-  speculative: DEFAULT_SPECULATIVE,
-};
 
 const MODES = new Set(['explicit', 'candidate', 'ignore']);
 
@@ -49,21 +35,20 @@ const strings = (v: unknown, max: number): string[] =>
 
 /** Fills in what a stored (or older, or partial) value lacks. */
 export function normalizeSuperAgent(raw: unknown): SuperAgentSettings {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<SuperAgentSettings>;
+  const r = fields<SuperAgentSettings>(raw);
   const given = (r.sources || {}) as Partial<Record<FilteredSource, Partial<SourceRule>>>;
   const sources = {} as Record<FilteredSource, SourceRule>;
   for (const s of FILTERED_SOURCES) {
     const v = given[s];
     sources[s] = { mode: v?.mode && MODES.has(v.mode) ? v.mode : DEFAULT_SUPER_AGENT.sources[s].mode, allow: strings(v?.allow, 50) };
   }
-  const max = Number(r.maxCandidatesPerHour);
   return {
     enabled: r.enabled === true,
     sources,
     projects: strings(r.projects, 200),
     // An emptied policy box stays empty: the user may want the model to see no policy at all.
     policies: typeof r.policies === 'string' ? r.policies.slice(0, 10_000) : DEFAULT_POLICIES,
-    maxCandidatesPerHour: Number.isFinite(max) ? Math.max(0, Math.min(1000, Math.round(max))) : DEFAULT_SUPER_AGENT.maxCandidatesPerHour,
+    maxCandidatesPerHour: bounded(r.maxCandidatesPerHour, 0, 1000, DEFAULT_SUPER_AGENT.maxCandidatesPerHour),
     router: normalizeRouter(r.router),
     recall: normalizeRecall(r.recall),
     watchdog: normalizeWatchdog(r.watchdog),

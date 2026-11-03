@@ -9,7 +9,7 @@ import { EmptyState, ErrorState, LoadingState, OffNotice, StatusBadge } from '..
 import { Modal, useNow } from '../ui';
 import { PageHead } from './BotsView';
 
-export const SOURCE_LABEL: Record<TriggerSource, string> = {
+const SOURCE_LABEL: Record<TriggerSource, string> = {
   user: 'User message',
   routine: 'Routine run',
   turn: 'Turn result',

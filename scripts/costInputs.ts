@@ -16,11 +16,10 @@ import { routerMcpServer, routerTools } from '../server/layers/tools';
 import { recallText } from '../server/recall';
 import { estimateTokens } from '../server/recall/spill';
 import { bots, chats, threads, triggerLog, triggerPayloadFile, workers } from '../server/store';
-import { DEFAULT_POLICIES } from '../server/triggers/fastPath';
 import { slowPrompt } from '../server/triggers/slowPath';
-import { DEFAULT_WATCHDOG } from '../server/watchdog/config';
 import { watchdogSystemPrompt } from '../server/watchdog/prompts';
 import { type WatchdogEffects, watchdogMcpServer, watchdogTools } from '../server/watchdog/tools';
+import { DEFAULT_POLICIES, DEFAULT_WATCHDOG } from '../shared/defaults';
 import type { Bot, Chat, Project, Thread, Trigger, Worker } from '../shared/types';
 
 const NOW = Date.now();

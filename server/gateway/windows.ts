@@ -1,7 +1,7 @@
 // Spend windows (ADR 009): rolling limits on what a role or one bot may spend. Pure: the caller
 // hands in the usage log.
 
-import type { GatewayCall, SpendWindow } from '../../shared/types';
+import type { GatewayCall, GatewayWindowState, SpendWindow } from '../../shared/types';
 import type { Scope } from './config';
 import { totalTokens } from './pricing';
 
@@ -11,17 +11,8 @@ export function covers(w: SpendWindow, scope: Scope): boolean {
 
 const counted = (c: GatewayCall) => c.outcome !== 'limited';
 
-export interface WindowState {
-  id: string;
-  usedUsd: number;
-  usedTokens: number;
-  spent: boolean;
-  /** Seconds until enough of the window's oldest calls leave it for the next call to go through. */
-  retryAfterSec?: number;
-}
-
 /** What a window has used at `now`, from calls oldest first. */
-export function windowState(w: SpendWindow, calls: GatewayCall[], now = Date.now()): WindowState {
+export function windowState(w: SpendWindow, calls: GatewayCall[], now = Date.now()): GatewayWindowState {
   const span = w.hours * 3_600_000;
   const inside = calls.filter((c) => counted(c) && c.at > now - span && covers(w, { role: c.role, botId: c.botId }));
   let usd = 0;
@@ -31,7 +22,7 @@ export function windowState(w: SpendWindow, calls: GatewayCall[], now = Date.now
     tokens += totalTokens(c.tokens);
   }
   const over = (u: number, t: number) => (w.maxUsd > 0 && u >= w.maxUsd) || (w.maxTokens > 0 && t >= w.maxTokens);
-  const state: WindowState = { id: w.id, usedUsd: Math.round(usd * 1e6) / 1e6, usedTokens: tokens, spent: over(usd, tokens) };
+  const state: GatewayWindowState = { id: w.id, usedUsd: Math.round(usd * 1e6) / 1e6, usedTokens: tokens, spent: over(usd, tokens) };
   if (!state.spent) return state;
   // The window reopens once the oldest calls that put it over have aged out.
   let u = usd;
@@ -49,7 +40,7 @@ export function windowState(w: SpendWindow, calls: GatewayCall[], now = Date.now
 }
 
 /** The first window covering this scope that is used up, if any. */
-export function spentWindow(windows: SpendWindow[], scope: Scope, calls: GatewayCall[], now = Date.now()): { window: SpendWindow; state: WindowState } | undefined {
+export function spentWindow(windows: SpendWindow[], scope: Scope, calls: GatewayCall[], now = Date.now()): { window: SpendWindow; state: GatewayWindowState } | undefined {
   for (const w of windows) {
     if (!covers(w, scope)) continue;
     const state = windowState(w, calls, now);

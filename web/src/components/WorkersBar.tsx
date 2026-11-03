@@ -4,9 +4,10 @@
 
 import { ChevronDown, ChevronRight, GitBranch, Network, ScrollText, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { WORKER_ACTIVE } from '../../../shared/status';
 import type { Chat, Thread, Worker } from '../../../shared/types';
 import { api } from '../api';
-import { loadLog, openModal, routerModeOf, toast, useStore, WORKER_ACTIVE } from '../store';
+import { loadLog, openModal, routerModeOf, toast, useStore } from '../store';
 import { fmtCost, WORKER_STATUS } from '../superagent';
 import { cx, fmtRelative } from '../utils';
 import { BotMessage } from './Message';

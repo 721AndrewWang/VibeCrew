@@ -7,7 +7,8 @@
 import os from 'node:os';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { familyInfo } from '../../shared/families';
-import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerStatus } from '../../shared/types';
+import { WORKER_ACTIVE } from '../../shared/status';
+import type { Bot, Chat, ChatMessage, Project, SkillFamily, Worker, WorkerDelivery, WorkerOutcome, WorkerStatus } from '../../shared/types';
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { type CrewContext, crewServer, draftAction } from '../agents/crewTools';
 import { permissionModeFor } from '../agents/permissions';
@@ -20,7 +21,7 @@ import { FAKE_AGENT } from '../config';
 import type { DraftFields } from '../drafts';
 import { autoCommit, commitSubject, gitError, isMerging, zList } from '../gitops';
 import { logger } from '../log';
-import { whenChatFree } from '../orchestrator';
+import { IDLE_CLOSE_MS, whenChatFree } from '../orchestrator';
 import { preview } from '../orchestrator/chatLog';
 import { deniedReason, denyStreamApprovals, expireApprovals, permissionGate } from '../orchestrator/permissionGate';
 import { agentEnv, contextLines, effectiveBot, imageBlocks, pluginServers, previewPageOf } from '../orchestrator/turnContext';
@@ -32,13 +33,13 @@ import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
 import { chatThread, deliveriesRead, deliveriesUnread, ensureThread, handBackTrigger, publishTrigger, type ThreadSpec, threadsOf, workspaceThread } from '../triggers';
-import { monthSpend } from '../usage';
+import { overMonthlyBudget } from '../usage';
 import { ensureWatch } from '../watcher';
 import { checkGit, createSpeculativeWorkspace, createWorkerWorkspace, retireWorkerWorkspace, runSetup, type Workspace, workspaceOf } from '../workspaces';
 import { doCreate } from '../workspaces/create';
 import { deliveredNote, type WorkerLine, workerPrompt } from './prompts';
 import { leadOf, routerEvent } from './router';
-import { ACTIVE, pushInbox, subscriptionsOn } from './subscriptions';
+import { pushInbox, subscriptionsOn } from './subscriptions';
 import { runLogged } from './turn';
 
 const log = logger('workers');
@@ -70,8 +71,6 @@ interface Live {
   recallNote?: boolean;
 }
 
-/** Idle Worker sessions close after this long; the next turn resumes them from their transcript. */
-const IDLE_CLOSE_MS = 15 * 60_000;
 const live = new Map<string, Live>();
 const liveOf = (id: string): Live => {
   const l = live.get(id) ?? { session: null, stream: null, running: false, stop: false, quiet: false };
@@ -79,7 +78,7 @@ const liveOf = (id: string): Live => {
   return l;
 };
 
-const isActive = (w: Worker) => ACTIVE.has(w.status) && !w.dismissedAt;
+const isActive = (w: Worker) => WORKER_ACTIVE.has(w.status) && !w.dismissedAt;
 
 /** A chat's Workers; speculative runs (ADR 008) are quiet, so they count only when asked for. */
 export function chatWorkers(chatId: string, opts: { all?: boolean; speculative?: boolean } = {}): Worker[] {
@@ -125,7 +124,7 @@ export interface SpeculativeHost {
   /** Its throwaway workspace exists (base: the observed state). */
   launched(w: Worker, ws: Project, base: string): void;
   /** The turn (or the start) ended; its work is committed. Verification and surfacing are the host's. */
-  ended(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string): void;
+  ended(w: Worker, outcome: WorkerOutcome, detail?: string): void;
 }
 
 let host: SpeculativeHost | null = null;
@@ -574,7 +573,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
   const chat = chats.get(w.chatId);
   const bot = bots.get(w.botId);
   if (!chat || !bot) return finish(w, 'error', 'The chat or its member no longer exists');
-  if (bot.monthlyBudgetUsd && monthSpend(bot.id) >= bot.monthlyBudgetUsd) return finish(w, 'error', `${bot.name} has used up this month's budget`);
+  if (overMonthlyBudget(bot)) return finish(w, 'error', `${bot.name} has used up this month's budget`);
   const project = projects.get(w.projectId) ?? null;
   // Never fall back to another folder (home) with full tools: no workspace, no turn.
   if (!project && !(w.shared && !w.projectId)) return finish(w, 'error', 'Its workspace is gone (or was never made); dispatch a new Worker');
@@ -761,7 +760,7 @@ function publishLanding(w: Worker, chat: Chat, bot: Bot, landing: NonNullable<Wo
 }
 
 /** Records how the turn (or the start) ended and tells the Router, unless the whole chat was stopped. */
-function finish(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string, text?: string) {
+function finish(w: Worker, outcome: WorkerOutcome, detail?: string, text?: string) {
   const l = liveOf(w.id);
   const report = { at: Date.now(), status: outcome, text: text ?? (detail ? `${outcome === 'error' ? 'Failed' : 'Stopped'}: ${detail}` : ''), ...(l.quiet ? { quiet: true } : {}) };
   save(w, { status: outcome, detail, report });
@@ -938,7 +937,7 @@ export function recoverWorkers(now = Date.now()): { live: Set<string>; interrupt
       w.inbox = [];
       workers.set(w);
     }
-    if (!ACTIVE.has(w.status)) continue;
+    if (!WORKER_ACTIVE.has(w.status)) continue;
     w.status = 'stopped';
     w.detail = 'Crew restarted';
     w.report = { at: now, status: 'stopped', text: 'Interrupted by a restart of Crew; its work so far is kept on its branch.' };

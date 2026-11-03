@@ -3,7 +3,7 @@
 // replies of the kinds the user approved, as the reply's text filtered once more (never code,
 // tool output, reports or file contents), and Crew posts it itself, not an agent.
 
-import type { Chat, ChatMessage, Project, ReplyKind, WebhookDelivery, WebhookFormat, WebhookInfo } from '../../shared/types';
+import type { Chat, ChatMessage, Project, ReplyKind, WebhookDelivery, WebhookFormat, WebhookInfo, WebhookPatch } from '../../shared/types';
 import { logger } from '../log';
 import { HttpError } from '../projects';
 import { bots, projects, settings } from '../store';
@@ -43,13 +43,6 @@ export function webhookInfo(projectId: string): WebhookInfo {
     ...(c?.approvedAt ? { approvedAt: c.approvedAt } : {}),
     deliveries: deliveries.get(projectId) ?? [],
   };
-}
-
-export interface WebhookPatch {
-  url?: string;
-  format?: WebhookFormat;
-  enabled?: boolean;
-  kinds?: ReplyKind[];
 }
 
 /**
@@ -139,7 +132,7 @@ export async function testWebhook(projectId: string): Promise<WebhookDelivery> {
 }
 
 /** What a Router reply would send, or null when it would send nothing (off, kind not approved, nothing left). */
-export function plannedNotification(chat: Chat, msg: ChatMessage): { projectId: string; config: WebhookConfig; text: string } | null {
+function plannedNotification(chat: Chat, msg: ChatMessage): { projectId: string; config: WebhookConfig; text: string } | null {
   const kind = msg.channel?.kind;
   if (!msg.router || !kind) return null;
   const project = rootProject(chat.projectId);

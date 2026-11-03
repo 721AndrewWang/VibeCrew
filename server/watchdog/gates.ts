@@ -1,10 +1,10 @@
 // The Watchdog's output is probabilistic; these checks are not. Each returns why a tick or an
 // action is refused (the model reads it as the tool's error), or null. Pure.
 
-import { wordCount } from '../layers/prompts';
+import { WORKER_ACTIVE } from '../../shared/status';
+import { wordCount } from '../text';
 import { NOTE_WORDS } from './prompts';
 
-export { NOTE_WORDS };
 export const NUDGES_PER_WORKER_PER_DAY = 2;
 export const RESTARTS_PER_WORKER_PER_DAY = 3;
 export const NOTICES_PER_CHAT_PER_DAY = 4;
@@ -33,19 +33,18 @@ export function noteRefusal(text: string): string | null {
 }
 
 type WorkerState = { status: string; dismissed: boolean } | null;
-const ACTIVE = new Set(['starting', 'running', 'waiting']);
 
 export function nudgeRefusal(w: WorkerState, nudgesToday: number): string | null {
   if (!w) return 'No such Worker. Use the ids from the snapshot.';
   if (w.dismissed) return 'That Worker was dismissed.';
-  if (!ACTIVE.has(w.status)) return `That Worker is not active (${w.status}). A failed or stopped Worker can be restarted instead; a finished one needs nothing.`;
+  if (!WORKER_ACTIVE.has(w.status)) return `That Worker is not active (${w.status}). A failed or stopped Worker can be restarted instead; a finished one needs nothing.`;
   if (nudgesToday >= NUDGES_PER_WORKER_PER_DAY) return `That Worker was already nudged ${nudgesToday} times today. Stop it, or notify its chat.`;
   return null;
 }
 
 export function stopRefusal(w: WorkerState): string | null {
   if (!w) return 'No such Worker. Use the ids from the snapshot.';
-  if (w.dismissed || !ACTIVE.has(w.status)) return `That Worker is not running (${w.dismissed ? 'dismissed' : w.status}).`;
+  if (w.dismissed || !WORKER_ACTIVE.has(w.status)) return `That Worker is not running (${w.dismissed ? 'dismissed' : w.status}).`;
   return null;
 }
 

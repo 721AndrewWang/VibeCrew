@@ -42,7 +42,7 @@ Tokens are Crew's `estimateTokens` (four characters per token); the numbers comp
 | Recall of a Worker leads with its report: the task (the Router's own words) is a one-line reference, so the inline budget goes to the report the Router's event pointed it to. | `recall/graph.ts` (`workerNode`) | One Worker result −9% |
 | **Standing rules**: a candidate whose outcome a default policy line states plainly is settled in code, without the cheap model. A failing check on a pull request and a changed dependency manifest or build config are acted on; a turn that failed on a passing network or provider error, and console errors that all come from extensions, ads or analytics, are dropped. Each rule holds only while the user's policies contain its line word for word; edit or remove the line and those events go to the model again. Anything a rule is unsure of (whether a turn failure needs the user, an ordinary file edit, an issue's text) stays a candidate. A standing decision comes after the cooldown and duplicate rules, takes no share of the hourly model budget, counts for the duplicate rule, and is delivered as a slow-path decision is (rule `standing-policy` in the Triggers view). | `triggers/standing.ts` (new), `triggers/fastPath.ts`, `triggers/index.ts`, `bench/sim.ts` | GitHub arm: slow-path calls 8 → 0 |
 
-`DEFAULT_POLICIES` is now built from the standing rules' lines (`POLICY_LINES`); its text is unchanged, so no migration.
+`DEFAULT_POLICIES` is now built from the standing rules' lines (`POLICY_LINES`); its text is unchanged, so no migration. (Since the merge with ADR 109, both live in `shared/defaults.ts`, so the UI's settings form reads the same text; `triggers/standing.ts` imports the lines from there.)
 
 ## Results
 

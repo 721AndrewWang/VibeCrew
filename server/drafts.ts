@@ -34,13 +34,8 @@ export interface DraftFields {
   why?: string;
 }
 
-export interface DraftOrigin {
-  chatId: string | null;
-  botId: string | null;
-  workerId?: string;
-  /** The folder the command will run in (the project or workspace). */
-  cwd: string;
-}
+/** Who drafts it, and the folder the command will run in (the project or workspace). */
+export type DraftOrigin = Pick<ExternalDraft, 'chatId' | 'botId' | 'workerId' | 'cwd'>;
 
 /** A git ref or remote name that cannot be read as an option or a revision expression. */
 const SAFE_REF = /^(?!-)(?!.*\.\.)(?!.*@\{)[A-Za-z0-9._/+-]{1,200}$/;

@@ -3,7 +3,7 @@ import { type ReactNode, useMemo } from 'react';
 import type { Bot, BotUsage, ModelOption } from '../../../../shared/types';
 import { api } from '../../api';
 import { dmOf, openChat, openModal, toast, useStore } from '../../store';
-import { cx, fmtTokens, PERMISSION_INFO, statusLabel } from '../../utils';
+import { cx, fmtTokens, fmtUsd, PERMISSION_INFO, statusLabel } from '../../utils';
 import { Avatar, confirmDialog, Glyph, MenuButton } from '../ui';
 import { ImprovementsPanel } from './ImprovementsPanel';
 
@@ -41,10 +41,6 @@ export function tierMark(models: ModelOption[], id: string) {
 export function tierTitle(models: ModelOption[], id: string) {
   const t = models.find((m) => m.id === id)?.tier;
   return t ? TIER[t].title : undefined;
-}
-
-export function fmtUsd(n: number) {
-  return n >= 10 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
 }
 
 export async function deleteBotFlow(bot: Bot): Promise<boolean> {

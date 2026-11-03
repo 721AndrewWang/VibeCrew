@@ -3,9 +3,8 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import type { Effort, FrictionReport, ImprovableField, Improvement, ImprovementEffect, PermissionLevel, SkillCandidate, SkillDraft } from '../../../../shared/types';
 import { api } from '../../api';
 import { openChat, toast, useStore } from '../../store';
-import { cx, EFFORT_OPTIONS, fmtWhen, PERMISSION_INFO } from '../../utils';
+import { cx, EFFORT_OPTIONS, fmtUsd, fmtWhen, PERMISSION_INFO } from '../../utils';
 import { Toggle } from '../ui';
-import { fmtUsd } from './BotsView';
 import { ModelPicker } from './bot-editor/ModelPicker';
 
 const FIELD_LABEL: Record<ImprovableField, string> = {

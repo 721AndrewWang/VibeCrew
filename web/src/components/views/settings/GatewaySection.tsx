@@ -1,6 +1,6 @@
 import { Check, Download, Plus, RefreshCw, Route, Save, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import type { GatewayReport, GatewayRole, GatewaySettings, GatewayTry, PublicGatewaySettings, SpendWindow } from '../../../../../shared/types';
+import type { GatewayProvider, GatewayReport, GatewayRole, GatewaySettings, GatewayTry, PublicGatewaySettings, SpendWindow } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { toast, useStore } from '../../../store';
 import { cx, fmtClock, fmtTokens, gatewayOptions } from '../../../utils';
@@ -28,7 +28,7 @@ interface ProviderForm {
   id: string;
   name: string;
   baseUrl: string;
-  auth: 'bearer' | 'x-api-key';
+  auth: GatewayProvider['auth'];
   models: string;
   priceIn: string;
   priceOut: string;

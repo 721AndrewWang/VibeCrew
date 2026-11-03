@@ -1,18 +1,12 @@
 // The Watchdog's settings (settings.superAgent.watchdog): defaults, and cleaning up what is stored.
 // Pure, so the trigger settings can normalise it without pulling in the Watchdog.
 
+import { DEFAULT_WATCHDOG } from '../../shared/defaults';
 import type { WatchdogSettings } from '../../shared/types';
+import { bounded, fields, modelName } from '../normalize';
 
-export const DEFAULT_WATCHDOG: WatchdogSettings = {
-  enabled: false,
-  // Judging progress from a compact snapshot: a lighter model is enough.
-  model: 'claude-sonnet-5',
-  everyMinutes: 15,
-  maxTicksPerHour: 4,
-  maxActionsPerTick: 3,
-  dailyBudgetUsd: 1,
-  stuckMinutes: 20,
-};
+/** Defined in shared/ for the settings forms; re-exported where the tests read it. */
+export { DEFAULT_WATCHDOG };
 
 export const WATCHDOG_BOUNDS = {
   everyMinutes: [1, 60],
@@ -22,24 +16,20 @@ export const WATCHDOG_BOUNDS = {
   stuckMinutes: [5, 240],
 } as const;
 
-const clamp = (v: unknown, [lo, hi]: readonly [number, number], fallback: number, round = true) => {
-  const n = Number(v);
-  if (v === undefined || v === null || v === '' || !Number.isFinite(n)) return fallback;
-  return Math.max(lo, Math.min(hi, round ? Math.round(n) : Math.round(n * 100) / 100));
-};
+const clamp = (v: unknown, [lo, hi]: readonly [number, number], fallback: number, step: 1 | 0.01 = 1) => bounded(v, lo, hi, fallback, { step, blank: 'fallback' });
 
 /** Fills in what a stored (or older, or partial) value lacks. */
 export function normalizeWatchdog(raw: unknown): WatchdogSettings {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<WatchdogSettings>;
+  const r = fields<WatchdogSettings>(raw);
   const d = DEFAULT_WATCHDOG;
   const b = WATCHDOG_BOUNDS;
   return {
     enabled: r.enabled === true,
-    model: typeof r.model === 'string' ? r.model.trim().slice(0, 200) : d.model,
+    model: modelName(r.model, d.model),
     everyMinutes: clamp(r.everyMinutes, b.everyMinutes, d.everyMinutes),
     maxTicksPerHour: clamp(r.maxTicksPerHour, b.maxTicksPerHour, d.maxTicksPerHour),
     maxActionsPerTick: clamp(r.maxActionsPerTick, b.maxActionsPerTick, d.maxActionsPerTick),
-    dailyBudgetUsd: clamp(r.dailyBudgetUsd, b.dailyBudgetUsd, d.dailyBudgetUsd, false),
+    dailyBudgetUsd: clamp(r.dailyBudgetUsd, b.dailyBudgetUsd, d.dailyBudgetUsd, 0.01),
     stuckMinutes: clamp(r.stuckMinutes, b.stuckMinutes, d.stuckMinutes),
   };
 }

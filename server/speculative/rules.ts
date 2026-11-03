@@ -3,7 +3,8 @@
 // fixing: spending a Worker session is a deterministic, budgeted decision. Also the rules a run's
 // claim must pass before Crew spends time running the checks. Pure.
 
-import type { ProjectSpeculative, SpeculativeSettings, SpeculativeSignal } from '../../shared/types';
+import type { ProjectSpeculative, Speculation, SpeculativeSettings, SpeculativeSignal } from '../../shared/types';
+import { clip } from '../text';
 import { isConsoleNoise } from '../triggers/fastPath';
 
 /** A command that reads like a project check: tests, type checks, linters, builds. */
@@ -39,30 +40,25 @@ export interface SignalMatch {
   reasons: string[];
 }
 
-const short = (s: string, n = 80) => {
-  const t = s.replace(/\s+/g, ' ').trim();
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
-};
-
 /** Whether the event is one of the three signals, and why; null when it is not. */
 export function signalOf(input: SignalInput): SignalMatch | null {
   if (input.source === 'job') {
     if (!input.failed || !input.command.trim()) return null;
     const cmd = input.command.trim();
     const check = input.checkCommand.trim();
-    if (check && (cmd === check || cmd.startsWith(`${check} `))) return { signal: 'failing-check', reasons: [`The project's check command failed: ${short(cmd)}`] };
+    if (check && (cmd === check || cmd.startsWith(`${check} `))) return { signal: 'failing-check', reasons: [`The project's check command failed: ${clip(cmd, 80)}`] };
     const word = cmd.match(CHECK_WORDS)?.[0];
-    return word ? { signal: 'failing-check', reasons: [`A check failed: ${short(cmd)} (it reads like a check: "${word}")`] } : null;
+    return word ? { signal: 'failing-check', reasons: [`A check failed: ${clip(cmd, 80)} (it reads like a check: "${word}")`] } : null;
   }
   if (input.source === 'github') {
     if (!GITHUB_FAILED.has(input.conclusion)) return null;
-    return { signal: 'failing-check', reasons: [`GitHub check "${short(input.check, 60)}" ${input.conclusion === 'timed_out' ? 'timed out' : 'failed'} on ${input.ref}`] };
+    return { signal: 'failing-check', reasons: [`GitHub check "${clip(input.check, 60)}" ${input.conclusion === 'timed_out' ? 'timed out' : 'failed'} on ${input.ref}`] };
   }
   if (input.source === 'preview-console') {
     if (QUIET_RULES.has(input.filterRule)) return null;
     const errors = input.errors.filter((e) => e.trim() && !isConsoleNoise(e));
     if (!errors.length) return null;
-    return { signal: 'console-error', reasons: [`The preview logged ${errors.length === 1 ? 'an error' : `${errors.length} errors`}: ${short(errors[0])}`] };
+    return { signal: 'console-error', reasons: [`The preview logged ${errors.length === 1 ? 'an error' : `${errors.length} errors`}: ${clip(errors[0], 80)}`] };
   }
   const text = input.text.trim();
   if (text.split(/\s+/).length < 3) return null;
@@ -131,11 +127,7 @@ export function botRefusal(b: { name: string; blindReview?: boolean; level: stri
 /** A fix may touch at most this many files. */
 export const MAX_FIX_FILES = 10;
 
-export interface ChangedFile {
-  path: string;
-  added: number;
-  removed: number;
-}
+export type ChangedFile = Omit<NonNullable<Speculation['files']>[number], 'test'>;
 
 /** A claimed path, as git names it from the repository's top: relative to the run's folder (prefix) unless it already starts there. */
 export function repoPath(p: string, prefix: string, worktree: string): string {
@@ -164,11 +156,4 @@ export function judgeClaim(claim: { reproduced: boolean; testFiles: string[] } |
   if (fix.length > MAX_FIX_FILES) return { ok: false, why: `The fix touches ${fix.length} files (at most ${MAX_FIX_FILES} are surfaced)` };
   if (fixLines > maxFixLines) return { ok: false, why: `The fix changes ${fixLines} lines (at most ${maxFixLines} are surfaced)` };
   return { ok: true, testFiles, fixFiles: fix.map((f) => f.path), fixLines };
-}
-
-/** Start of the local day, for the daily budget. */
-export function dayStart(now: number): number {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
 }

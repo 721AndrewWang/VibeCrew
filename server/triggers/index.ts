@@ -39,13 +39,14 @@ import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
 import { chatProjectId } from '../projects';
 import { bots, chats, messages, projects, routines, settings, TRIGGER_LIMITS, threads, triggerLog, triggerPayloadFile, uid, workers } from '../store';
+import { clip } from '../text';
+import { HOUR } from '../time';
 import { type FastInput, FILTERED_SOURCES, fastPath, fingerprintOf, reachedSlowPath } from './fastPath';
 import { type Decided, fakeDecide, modelDecide, type SlowItem, SlowQueue } from './slowPath';
 import { STANDING_RULE } from './standing';
 
 const log = logger('triggers');
 
-const HOUR = 3600_000;
 const DETAIL_MAX = 20_000;
 /** Words a notice may use: chat is a low-interruption channel. */
 const NOTICE_WORDS = 100;
@@ -91,11 +92,6 @@ export const routineThread = (r: Routine, chat: Chat | undefined): ThreadSpec =>
 
 export const workspaceThread = (p: Project): ThreadSpec => ({ key: `workspace:${p.id}`, kind: 'workspace', title: p.workspace ? `Workspace: ${p.name}` : p.name, projectId: p.id });
 
-const oneLine = (s: string, max: number) => {
-  const t = s.replace(/\s+/g, ' ').trim();
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
-};
-
 export function superAgentOn(): boolean {
   return settings.get().superAgent.enabled;
 }
@@ -132,7 +128,7 @@ function publish(input: TriggerInput, sa: SuperAgentSettings): Trigger {
     threadId: thread.id,
     projectId: input.projectId ?? null,
     chatId: input.chatId ?? null,
-    summary: oneLine(input.summary, 200),
+    summary: clip(input.summary, 200),
     ref: input.ref,
     related,
     explicit: !!input.explicit,
@@ -608,7 +604,7 @@ export function triggerDetail(id: string): TriggerDetail | null {
 // ---------------------------------------------------------------- retention
 
 /** Drops triggers past the limits, and threads none of the remaining triggers belong to and no Worker subscribes to. */
-export function pruneTriggers(now = Date.now()) {
+function pruneTriggers(now = Date.now()) {
   triggerLog.prune(now);
   const live = new Set(triggerLog.all().map((t) => t.threadId));
   for (const w of workers.all()) if (!w.dismissedAt) for (const id of w.threads || []) live.add(id);

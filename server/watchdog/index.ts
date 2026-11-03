@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { Cron } from 'croner';
+import { WORKER_ACTIVE } from '../../shared/status';
 import type { ChatMessage, WatchdogAction, WatchdogActionKind, WatchdogInfo, WatchdogOverview, WatchdogProposal, WatchdogTick, WatchdogWatch, Worker } from '../../shared/types';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
@@ -32,6 +33,7 @@ import { agentEnv } from '../orchestrator/turnContext';
 import { HttpError } from '../projects';
 import { speculativeSpend } from '../speculative/spend';
 import { auditLog, bots, chats, messages, settings, triggerLog, uid, WATCHDOG_LOG, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
+import { HOUR, startOfDay } from '../time';
 import { normalizeSuperAgent } from '../triggers/fastPath';
 import { cronExpr } from './config';
 import { tickRefusal } from './gates';
@@ -40,7 +42,7 @@ import { registerWatchdogRecall } from './recall';
 import { recoverWatchdog } from './recovery';
 import { isTransient, nextCheck, progressOf, WATCH_MAX_CHECKS } from './signals';
 import { auditSnaps, isQuiet, renderSnapshot, type Snapshot, snapshotFlags, type WorkerSnap } from './snapshot';
-import { type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
+import { type WatchdogEffects, type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
 
 const log = logger('watchdog');
 
@@ -48,24 +50,16 @@ const log = logger('watchdog');
 export const WATCHDOG_ID = 'watchdog';
 /** Who its model calls are for, in the model gateway's terms (ADR 009). */
 const WATCHDOG_SCOPE: Scope = { role: 'watchdog' };
-const HOUR = 3600_000;
 /** The snapshot never looks further back than this. */
 const MAX_WINDOW_MS = 6 * HOUR;
 /** A code-opened watch on a transient failure is first re-checked after this many minutes. */
 const TRANSIENT_RECHECK_MIN = 5;
 const MAX_WORKERS = 12;
 const MAX_LIST = 10;
-const ACTIVE = new Set(['starting', 'running', 'waiting']);
 
 type Job = { kind: 'tick' | 'manual'; tick: WatchdogTick; reason: string; since: number } | { kind: 'maintainer'; tick: WatchdogTick; messageId: string; text: string };
 
-const startOfToday = (now = Date.now()) => {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
-
-export function watchdogOn(): boolean {
+function watchdogOn(): boolean {
   const sa = settings.get().superAgent;
   return sa.enabled && sa.watchdog.enabled;
 }
@@ -78,7 +72,7 @@ function recordTick(t: WatchdogTick) {
 }
 
 function spentToday(now = Date.now()): number {
-  const from = startOfToday(now);
+  const from = startOfDay(now);
   return watchdogTicks.recent(Number.MAX_SAFE_INTEGER, (t) => t.at >= from).reduce((s, t) => s + (t.costUsd || 0), 0);
 }
 
@@ -87,7 +81,7 @@ function ticksLastHour(now = Date.now()): number {
 }
 
 function actionsToday(now = Date.now()): WatchdogAction[] {
-  const from = startOfToday(now);
+  const from = startOfDay(now);
   return watchdogActions.recent(Number.MAX_SAFE_INTEGER, (a) => a.at >= from);
 }
 
@@ -130,7 +124,7 @@ function resolveWatch(id: string, why: string): boolean {
  * Before each tick, in code: open watches for Workers that failed on something transient, close
  * the ones whose subject is healthy again, and give up on those checked too often.
  */
-export function housekeepWatches(now = Date.now()) {
+function housekeepWatches(now = Date.now()) {
   const open = openWatches();
   for (const w of workers.all()) {
     if (w.dismissedAt || w.speculation || w.status !== 'error' || !isTransient(w.detail || w.report?.text)) continue;
@@ -193,11 +187,11 @@ function workerSnap(w: Worker, now: number): WorkerSnap {
 }
 
 /** `since`: the window's start; by default the last tick that looked (the tick being run is already recorded, so it passes its own). */
-export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().superAgent.watchdog.maxActionsPerTick, since = lastLook(now)): Snapshot {
+function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().superAgent.watchdog.maxActionsPerTick, since = lastLook(now)): Snapshot {
   const ws = workers
     .all()
     // Speculative runs (ADR 008) are in it too, marked: stuck or looping, the Watchdog may stop one (ADR 011).
-    .filter((w) => !w.dismissedAt && (ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
+    .filter((w) => !w.dismissedAt && (WORKER_ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_WORKERS);
   const title = (chatId?: string) => (chatId ? chats.get(chatId)?.title : undefined);
@@ -270,12 +264,12 @@ function tellChat(chatId: string, text: string, actionId: string) {
 
 let currentTick = '';
 
-const effects = {
+const effects: WatchdogEffects = {
   nudge: (w: Worker, note: string) => void messageWorker(w, note),
   stop: (w: Worker, why: string) => stopWorker(w.id, { why: `The Watchdog stopped it: ${why}` }),
   restart: (w: Worker, recap: string) => restartWorker(w, recap),
   notify: tellChat,
-  record(a: { kind: WatchdogActionKind; target: string; chatId?: string; text: string; refused?: string }) {
+  record(a) {
     const rec: WatchdogAction = { id: uid('wa_'), at: Date.now(), tickId: currentTick, ...a, text: a.text.slice(0, 600) };
     watchdogActions.append(rec);
     if (!a.refused) log.info(`${a.kind} ${a.target}: ${rec.text}`);
@@ -285,7 +279,7 @@ const effects = {
   countToday,
   watch: (subject: string, note: string, minutes: number) => openWatch(subject, note, minutes, 'watchdog'),
   resolveWatch,
-  propose(p: Omit<WatchdogProposal, 'id' | 'at' | 'status'>) {
+  propose(p) {
     const rec: WatchdogProposal = { id: uid('wp_'), at: Date.now(), status: 'pending', ...p };
     watchdogProposals.set(rec);
     notify('The Watchdog proposes a change', p.target === 'bot' ? `${p.botName}'s role description` : 'Trigger policies', { level: 'info' });
@@ -628,10 +622,6 @@ export function dismissWatch(id: string): WatchdogWatch {
 }
 
 // ---------------------------------------------------------------- reading, lifecycle
-
-export function watchdogInfo(): WatchdogInfo {
-  return loop.info();
-}
 
 export function watchdogOverview(): WatchdogOverview {
   return {

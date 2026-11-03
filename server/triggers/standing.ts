@@ -5,19 +5,12 @@
 // A rule only settles what the line states plainly; anything it is unsure of stays a candidate.
 // Pure.
 
+import { POLICY_LINES } from '../../shared/defaults';
 import type { TriggerFilter } from '../../shared/types';
 import { isTransient } from '../watchdog/signals';
 
-/** The default policy lines, by source (the order of DEFAULT_POLICIES). */
-export const POLICY_LINES = {
-  console:
-    "- Preview console errors: act when the error comes from the app's own code (an uncaught exception, a module that fails to load, a failed request to the app's own server). Stay quiet about third-party scripts, browser extensions, ads and analytics.",
-  turn: '- Failed bot turns: act when the cause is something the user has to fix (login, budget, a missing tool, a broken setup command). Stay quiet about a one-off network blip that a retry would fix.',
-  outsideEdit:
-    '- Files changed outside the chat: act only when the change can break what the bots are working on, e.g. dependency manifests, build or framework config, or files a bot changed moments ago. Stay quiet about ordinary edits.',
-  github:
-    '- GitHub: act on a new issue that reports a bug or asks for a change, a review comment that asks for a change, and a failing check on an open pull request. Stay quiet about thanks, chatter and questions already answered.',
-} as const;
+/** The lines are defined with the other defaults (shared/defaults.ts); re-exported where the tests read them. */
+export { POLICY_LINES };
 
 /** The rule name every standing decision carries, in the Trigger log and the Triggers view. */
 export const STANDING_RULE = 'standing-policy';

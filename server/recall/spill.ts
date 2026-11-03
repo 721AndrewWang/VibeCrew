@@ -4,7 +4,11 @@
 // Pure: budgets, cutting, rendering and the token estimate, so they are cheap to test.
 
 import type { RecallLink, RecallNode } from '../../shared/types';
+import { CJK, wordCount, wordEnds } from '../text';
 import { untrusted } from '../untrusted';
+
+/** The tests' name for it. */
+export { wordCount as countWords };
 
 /** The latest message, the one that handed the turn over, the one replied to. */
 export const ADJACENT_WORDS = 300;
@@ -49,21 +53,6 @@ export const RECALL_PROMPT_LINE =
  */
 export const RECALL_RESUME_NOTE =
   '(Crew changed your tools: you now have recall, which takes the place of chat_history if you had it. Everything in your prompts carries an id (#12, tg_…, th_…, wk_…, env, chat); recall an id to read it and to see the ids of related objects.)';
-
-const range = (from: number, to: number) => `${String.fromCharCode(from)}-${String.fromCharCode(to)}`;
-// Scripts written without spaces between words (kana, CJK ideographs, Hangul): one character, one word.
-const CJK_CLASS = `${range(0x3040, 0x30ff)}${range(0x3400, 0x9fff)}${range(0xac00, 0xd7af)}${range(0xf900, 0xfaff)}`;
-const WORD = new RegExp(`[${CJK_CLASS}]|[^\\s${CJK_CLASS}]+`, 'g');
-const CJK = new RegExp(`[${CJK_CLASS}]`, 'g');
-
-/** Where each word ends, in characters. */
-function wordEnds(text: string): number[] {
-  const ends: number[] = [];
-  for (const m of text.matchAll(WORD)) ends.push((m.index ?? 0) + m[0].length);
-  return ends;
-}
-
-export const countWords = (text: string) => wordEnds(text).length;
 
 /** The read-more handle for an object, from a word on. */
 export const handle = (id: string, from?: number) => `recall id=${id}${from ? ` from=${from}` : ''}`;
@@ -113,7 +102,7 @@ export function renderNode(node: RecallNode, budget: Budget, from = 0): string {
   // Environment content (an event's payload, a job's output) is in the same wrapper wherever it is injected (ADR 007).
   const fence = (text: string) => (node.untrusted ? untrusted(node.kind, text, { id: node.id }) : text);
   if (from > 0) {
-    const total = countWords(body);
+    const total = wordCount(body);
     if (from >= total) out.push(`(The text has ${total} words; nothing after word ${from}.)`);
     else out.push(`Words ${from + 1}-${Math.min(total, from + budget.page)} of ${total}:`, fence(spill(body, budget.page, node.id, from)));
     return out.join('\n');
