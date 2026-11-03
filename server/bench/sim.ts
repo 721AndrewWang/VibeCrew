@@ -18,6 +18,7 @@ import { budgetOf } from '../recall/spill';
 import { speculativePrompt } from '../speculative/prompts';
 import { gateRefusal, SAME_SIGNAL_MS, signalOf } from '../speculative/rules';
 import { type FastInput, fastPath, fingerprintOf, normalizeSuperAgent, reachedSlowPath } from '../triggers/fastPath';
+import { STANDING_RULE } from '../triggers/standing';
 import { BENCH_EPOCH, VirtualClock } from './clock';
 import { DEFAULT_LATENCY, type LatencyModel, type ModelClient, type Role } from './model';
 import { TOOLS } from './policies';
@@ -561,6 +562,8 @@ class Run {
     this.count(`${input.source === 'landing' ? 'landing' : 'ci'}:${t.filter.rule}`);
     if (t.filter.rule === 'subscribed') this.deliverDirect(t, subs, thread);
     if (t.filter.verdict === 'candidate') this.toFilter(t);
+    // A standing rule acted in code (ADR 108): delivered as the slow path's act would be, without its call.
+    if (t.filter.rule === STANDING_RULE && t.filter.verdict === 'act') this.notice(t, t.filter.reason);
     return t;
   }
 
@@ -718,10 +721,15 @@ class Run {
       t.filter = { ...t.filter, verdict: d?.act ? 'act' : 'drop', stage: 'slow', rule: 'policy', reason: d?.reason || 'No usable answer' };
       this.count(`filter:${d?.act ? 'act' : 'quiet'}`);
       if (!d?.act) continue;
-      this.thread.lastNoticeAt = this.now;
-      if (this.twoLayer) this.toRouter({ kind: 'environment', id: t.id, at: t.at, source: 'ci', summary: t.summary, reason: d.reason });
-      else this.toLead({ line: ciLine(t.id, t.summary) });
+      this.notice(t, d.reason);
     }
+  }
+
+  /** Acting on an environment Trigger: an event for the Router, or a line in the lead's next input. */
+  private notice(t: SimTrigger, reason: string) {
+    this.thread.lastNoticeAt = this.now;
+    if (this.twoLayer) this.toRouter({ kind: 'environment', id: t.id, at: t.at, source: 'ci', summary: t.summary, reason });
+    else this.toLead({ line: ciLine(t.id, t.summary) });
   }
 
   // ---------------------------------------------------------------- Router
