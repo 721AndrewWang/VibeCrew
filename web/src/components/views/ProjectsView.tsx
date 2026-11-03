@@ -2,7 +2,8 @@ import { ArrowUp, Check, Copy, CornerDownLeft, ExternalLink, Folder, FolderGit2,
 import { useEffect, useMemo, useState } from 'react';
 import { defaultAutoChallenge } from '../../../../shared/challenge';
 import { SKILL_FAMILIES } from '../../../../shared/families';
-import type { DevServerState, Project, SkillFamily } from '../../../../shared/types';
+import { DEFAULT_PROJECT_SPECULATIVE } from '../../../../shared/speculative';
+import type { DevServerState, Project, ProjectSpeculative, SkillFamily } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
 import { copyText, cx, shortPath } from '../../utils';
@@ -46,6 +47,12 @@ function devBadge(st: DevServerState | undefined) {
 
 // ---------------------------------------------------------------- project card
 
+const SPEC_SIGNALS: { key: keyof ProjectSpeculative['signals']; label: string; hint: string }[] = [
+  { key: 'failingChecks', label: 'Failing checks', hint: "A full-duplex bot's background test, lint or build run that failed" },
+  { key: 'consoleErrors', label: 'Console errors', hint: "Errors the preview's page logs" },
+  { key: 'bugReports', label: 'Bug reports', hint: 'A message describing a problem that does not ask for the fix yet' },
+];
+
 function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: () => void }) {
   const [name, setName] = useState(project.name);
   const [devCommand, setDevCommand] = useState(project.devCommand || '');
@@ -60,6 +67,8 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const [autoPaths, setAutoPaths] = useState(auto.paths.join('\n'));
   const [families, setFamilies] = useState<SkillFamily[]>(project.skillFamilies || []);
   const [passEnv, setPassEnv] = useState((project.passEnv || []).join('\n'));
+  const [spec, setSpec] = useState<ProjectSpeculative>(project.speculative || DEFAULT_PROJECT_SPECULATIVE);
+  const setSignal = (k: keyof ProjectSpeculative['signals'], v: boolean) => setSpec({ ...spec, signals: { ...spec.signals, [k]: v } });
   const [saving, setSaving] = useState(false);
   const toggleFamily = (id: SkillFamily) => setFamilies(families.includes(id) ? families.filter((f) => f !== id) : [...families, id]);
 
@@ -85,6 +94,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
         allowedDomains: domains,
         requireChallenge,
         skillFamilies: families,
+        speculative: spec,
         passEnv: passEnv
           .split(/[\s,]+/)
           .map((x) => x.trim())
@@ -204,6 +214,49 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
                 <label>Or when at least this many lines change</label>
                 <input className="input num-input" type="number" min={0} step={10} value={auto.minLines} onChange={(e) => setAuto({ ...auto, minLines: Math.max(0, Number(e.target.value) || 0) })} />
                 <div className="hint">Added plus deleted lines. 0 means no line threshold.</div>
+              </div>
+            </div>
+          )}
+          <div className="setting-row" data-testid="project-speculative">
+            <div>
+              <div className="sr-title">Speculative fixes (silent reproduce-and-fix)</div>
+              <div className="hint">
+                When a check fails, the preview logs an error, or someone describes a problem without asking for the fix yet, Crew may start a background run in a throwaway worktree that tries to
+                reproduce it and find a small fix. You only hear about it when the check command below fails without the fix and passes with it; then the chat shows the diff with a one-click merge.
+                Anything else is thrown away quietly. Needs the Super-agent on; budget and limits are in Settings → Super-agent.
+              </div>
+            </div>
+            <Toggle on={spec.enabled} onChange={(enabled) => setSpec({ ...spec, enabled })} />
+          </div>
+          {spec.enabled && (
+            <div className="form-grid">
+              <div className="field">
+                <label>Check command</label>
+                <input className="input mono" value={spec.checkCommand} placeholder="e.g. npm test, or npm run lint && npm test" onChange={(e) => setSpec({ ...spec, checkCommand: e.target.value })} />
+                <div className="hint">Crew runs it in the throwaway worktree. Empty: npm test, when package.json has a real test script.</div>
+              </div>
+              <div className="field">
+                <label>Act on</label>
+                <div className="day-chips">
+                  {SPEC_SIGNALS.map((x) => (
+                    <button key={x.key} className={cx('preset-chip sm', spec.signals[x.key] && 'on')} title={x.hint} onClick={() => setSignal(x.key, !spec.signals[x.key])}>
+                      {x.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
+                <label>Largest fix to show (changed lines)</label>
+                <input
+                  className="input num-input"
+                  type="number"
+                  min={1}
+                  max={2000}
+                  step={10}
+                  value={spec.maxFixLines}
+                  onChange={(e) => setSpec({ ...spec, maxFixLines: Math.max(1, Math.min(2000, Number(e.target.value) || 1)) })}
+                />
+                <div className="hint">Outside the reproduction. A bigger fix is not something to merge on one click.</div>
               </div>
             </div>
           )}

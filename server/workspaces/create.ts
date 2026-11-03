@@ -145,3 +145,32 @@ export async function createWorkerWorkspace(chatWs: Workspace, worker: { id: str
   emitProject(ws);
   return { ws, base };
 }
+
+/**
+ * A speculative run's throwaway workspace (ADR 008): a worktree branched from the state the problem
+ * was observed in, without touching it. That is the source folder's uncommitted tracked changes as a
+ * commit object (`git stash create` changes no ref, index entry or file of the user's), else its
+ * HEAD. No chat lock is taken and the chat is not moved: a turn running there is not held up.
+ * Untracked files are not brought along (local files git ignores are, as for any workspace).
+ */
+export async function createSpeculativeWorkspace(source: Project, worker: { id: string; chatId: string; title: string }): Promise<{ ws: Workspace; base: string }> {
+  await checkGit(source.path);
+  const repo = (await gitIn(source.path, ['rev-parse', '--show-toplevel'])).trim();
+  const prefix = (await gitIn(source.path, ['rev-parse', '--show-prefix'])).trim();
+  const snapshot = (await gitIn(source.path, ['stash', 'create', 'Crew: the state a speculative run started from']).catch(() => '')).trim();
+  const base = snapshot || (await gitIn(source.path, ['rev-parse', 'HEAD'])).trim();
+  const branchName = (await gitIn(source.path, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => 'HEAD')).trim() || 'HEAD';
+  const { branch, worktree, path: wsPath } = await addWorktree(repo, base, prefix, worker.title);
+  const now = Date.now();
+  const ws: Workspace = {
+    id: uid('p_'),
+    name: source.name,
+    path: wsPath,
+    createdAt: now,
+    updatedAt: now,
+    framework: source.framework,
+    workspace: { parentId: source.workspace?.parentId ?? source.id, chatId: worker.chatId, workerId: worker.id, branch, baseBranch: branchName, repo, worktree, createdAt: now, speculative: true },
+  };
+  emitProject(ws);
+  return { ws, base };
+}

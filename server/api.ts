@@ -81,6 +81,7 @@ import {
   WorkerUnsubscribe,
 } from './schemas';
 import { recordingToSkillBody, skills } from './skills';
+import { bootSpeculations, discardSpeculation, getSpeculation, listSpeculations, mergeSpeculation, speculationDiff, spentToday } from './speculative';
 import { bots, chats, improvements, messages, projects, routerLogId, routines, type Settings, settings, WATCHDOG_LOG, workers } from './store';
 import { hasPty, listTerminals } from './terminal';
 import { turnTrace, turnTraceRaw } from './trace';
@@ -124,6 +125,7 @@ function bootstrap(): Bootstrap {
     routers: routerInfos(),
     jobs: listJobs(),
     drafts: listDrafts(),
+    speculations: bootSpeculations(),
     devServers: devServerStates(),
     previews: previewInfos(),
     models: MODEL_OPTIONS,
@@ -222,6 +224,7 @@ export function apiRouter() {
         router: { ...cur.superAgent.router, ...b.superAgent.router },
         recall: { ...cur.superAgent.recall, ...b.superAgent.recall },
         watchdog: { ...cur.superAgent.watchdog, ...b.superAgent.watchdog },
+        speculative: { ...cur.superAgent.speculative, ...b.superAgent.speculative },
       });
     }
     if (b.gateway || b.gatewayTokens) {
@@ -348,6 +351,19 @@ export function apiRouter() {
     const b = body(PreviewConsole, req.body);
     res.json({ trigger: publishConsole({ project: getProject(b.projectId), chatId: b.chatId, page: b.page, entries: b.entries }) });
   });
+
+  // ------------------------------------------------------------ speculative execution (ADR 008)
+  r.get('/speculations', (req, res) =>
+    res.json({ speculations: listSpeculations({ chatId: str(req.query.chatId) || undefined, projectId: str(req.query.projectId) || undefined }), spentTodayUsd: spentToday() }),
+  );
+  r.get('/speculations/:id', (req, res) => {
+    const sp = getSpeculation(req.params.id);
+    if (!sp) throw new HttpError(404, 'No such speculative run');
+    res.json({ speculation: sp });
+  });
+  r.get('/speculations/:id/diff', async (req, res) => res.json({ diff: await speculationDiff(req.params.id) }));
+  r.post('/speculations/:id/merge', async (req, res) => res.json({ speculation: await mergeSpeculation(req.params.id) }));
+  r.post('/speculations/:id/discard', async (req, res) => res.json({ speculation: await discardSpeculation(req.params.id) }));
 
   // ------------------------------------------------------------ two-layer mode (Router and Workers)
   r.get('/workers', (req, res) => res.json(listWorkers(str(req.query.chatId) || undefined)));

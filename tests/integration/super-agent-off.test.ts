@@ -10,7 +10,7 @@ import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
 import { type Api, type CrewServer, claudeCli, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
 /** What the milestones write in the data folder, each only once its feature is on. */
-const NEW_ENTRIES = ['triggers', 'workers.json', 'router', 'jobs', 'watchdog', 'gateway', 'drafts.json', 'audit.jsonl'];
+const NEW_ENTRIES = ['triggers', 'workers.json', 'router', 'jobs', 'watchdog', 'gateway', 'drafts.json', 'audit.jsonl', 'speculative'];
 /** Their logs beside the chats' in messages/: a Router's, a Worker's, a sub-task's, the Watchdog's. */
 const NEW_LOGS = /^(rt_|wk_|job_|watchdog)/;
 
@@ -34,6 +34,8 @@ async function expectNothingNew(crew: CrewServer) {
   expect(b.workers).toEqual([]);
   expect(b.jobs).toEqual([]);
   expect(b.drafts).toEqual([]);
+  expect(b.speculations).toEqual([]);
+  expect((await api('GET', '/speculations')).speculations).toEqual([]);
   expect((await api('GET', '/gateway')).running).toBe(false);
   const wd = await api('GET', '/watchdog');
   expect(wd).toMatchObject({ enabled: false, state: 'off', ticksLastHour: 0 });
@@ -62,7 +64,7 @@ describe('everything off (demo mode)', () => {
     expect(b.settings.gateway).toMatchObject({ enabled: false, masking: false });
     expect(b.settings.safety).toEqual({ guard: true, stripCredentials: true, audit: false });
     expect(b.bots.every((x: any) => !x.fullDuplex)).toBe(true);
-    expect(b.projects.every((p: any) => !p.skillFamilies?.length && !p.passEnv?.length)).toBe(true);
+    expect(b.projects.every((p: any) => !p.skillFamilies?.length && !p.passEnv?.length && !p.speculative)).toBe(true);
     await expectNothingNew(crew);
   });
 

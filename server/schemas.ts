@@ -94,6 +94,14 @@ export const ProjectPatch = z
     requireChallenge: z.boolean(),
     autoChallenge: z.object({ enabled: z.boolean(), paths: z.array(text(200)).max(50), minLines: z.number().int().min(0).max(100_000) }),
     skillFamilies: z.array(FAMILY).max(20),
+    speculative: z
+      .object({
+        enabled: z.boolean(),
+        checkCommand: text(500),
+        signals: z.object({ failingChecks: z.boolean(), consoleErrors: z.boolean(), bugReports: z.boolean() }).partial(),
+        maxFixLines: z.number().int().min(1).max(2000),
+      })
+      .partial(),
     passEnv: z
       .array(
         z
@@ -194,6 +202,14 @@ export const SettingsPatch = z
             maxActionsPerTick: z.number().int().min(0).max(10),
             dailyBudgetUsd: z.number().min(0).max(100),
             stuckMinutes: z.number().int().min(5).max(240),
+          })
+          .partial(),
+        speculative: z
+          .object({
+            model: text(200),
+            dailyBudgetUsd: z.number().min(0).max(100),
+            maxConcurrent: z.number().int().min(1).max(4),
+            maxMinutes: z.number().int().min(5).max(120),
           })
           .partial(),
       })

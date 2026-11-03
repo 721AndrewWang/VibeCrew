@@ -33,6 +33,17 @@ export interface CrewContext {
   jobs?: JobHost;
   /** The Worker's id, for drafts and the audit log (ADR 007). */
   workerId?: string;
+  /**
+   * A speculative run (ADR 008): it reports its claim through speculative_result, and gets no tool
+   * that reaches the user, writes long-term memory or drafts anything in the user's name.
+   */
+  speculative?: { result(args: SpeculativeClaimArgs): string };
+}
+
+export interface SpeculativeClaimArgs {
+  reproduced: boolean;
+  testFiles: string[];
+  summary: string;
 }
 
 /** draft_external_action's handler (also the demo agent's): saves a draft; nothing runs until the user clicks. */
@@ -312,15 +323,41 @@ export function crewServer(ctx: CrewContext) {
           }
         },
       ),
-      tool(
-        'remember',
-        "Save something worth keeping to your long-term memory (kept across conversations), such as the user's preferences, project conventions, or pitfalls you hit. One note at a time, short and specific.",
-        { note: z.string().describe('What to remember') },
-        async ({ note }) => {
-          appendMemory(ctx.botId, note);
-          return text('Saved.');
-        },
-      ),
+      ...(ctx.speculative
+        ? [
+            tool(
+              'speculative_result',
+              "Report how your speculative run went; call it once, at the end. Crew then checks it in code: the project's check command must pass with your fix, and must fail with your fix taken out and your reproduction kept. Only then does the user see your fix; otherwise it is discarded without a word.",
+              {
+                reproduced: z.boolean().describe('Whether you reproduced the problem (a check that fails because of it)'),
+                testFiles: z
+                  .array(z.string())
+                  .describe('The files of your reproduction: the failing test you added or changed (paths relative to your working directory). Everything else you changed counts as the fix.'),
+                summary: z.string().describe('For the user, at most 80 words: the cause, and what the fix changes'),
+              },
+              async (args) => {
+                try {
+                  return text(ctx.speculative!.result(args as SpeculativeClaimArgs));
+                } catch (e) {
+                  return fail((e as Error).message);
+                }
+              },
+            ),
+          ]
+        : []),
+      ...(ctx.speculative
+        ? []
+        : [
+            tool(
+              'remember',
+              "Save something worth keeping to your long-term memory (kept across conversations), such as the user's preferences, project conventions, or pitfalls you hit. One note at a time, short and specific.",
+              { note: z.string().describe('What to remember') },
+              async ({ note }) => {
+                appendMemory(ctx.botId, note);
+                return text('Saved.');
+              },
+            ),
+          ]),
       ...(ctx.threads ? threadTools(ctx.threads) : []),
       ...(jobs
         ? [
@@ -359,27 +396,31 @@ export function crewServer(ctx: CrewContext) {
             ),
           ]
         : []),
-      tool(
-        'draft_external_action',
-        "Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields and shows it to the user, who approves or discards it with one click; it never runs on its own. This is the only way to do these things: Crew's command guard refuses git push, gh pr create and the like.",
-        {
-          kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'message']).describe('What to do'),
-          remote: z.string().optional().describe('git-push: the remote (default origin)'),
-          branch: z.string().optional().describe('git-push: the branch on the remote to push HEAD to (default: the current branch)'),
-          number: z.number().int().optional().describe('pr-comment / issue-comment: the number'),
-          title: z.string().optional().describe('pr-open / issue-open: the title'),
-          body: z.string().optional().describe('The text: PR description, issue body, comment, or message'),
-          base: z.string().optional().describe('pr-open: the branch to merge into'),
-          head: z.string().optional().describe('pr-open: the branch with the changes'),
-          repo: z.string().optional().describe('owner/name, when it is not the current repository'),
-          channel: z.string().optional().describe('message: where it goes (a person, a channel, a mailing list)'),
-          why: z.string().optional().describe('One sentence for the user: why this should go out'),
-        },
-        async (args) => {
-          const r = await draftAction(ctx, args as DraftFields);
-          return r.isError ? fail(r.text) : text(r.text);
-        },
-      ),
+      ...(ctx.speculative
+        ? []
+        : [
+            tool(
+              'draft_external_action',
+              "Draft an action that would leave this machine in the user's name: push a branch, open a pull request or issue, comment on one, or send a message. Crew builds the exact command from these fields and shows it to the user, who approves or discards it with one click; it never runs on its own. This is the only way to do these things: Crew's command guard refuses git push, gh pr create and the like.",
+              {
+                kind: z.enum(['git-push', 'pr-open', 'pr-comment', 'issue-open', 'issue-comment', 'message']).describe('What to do'),
+                remote: z.string().optional().describe('git-push: the remote (default origin)'),
+                branch: z.string().optional().describe('git-push: the branch on the remote to push HEAD to (default: the current branch)'),
+                number: z.number().int().optional().describe('pr-comment / issue-comment: the number'),
+                title: z.string().optional().describe('pr-open / issue-open: the title'),
+                body: z.string().optional().describe('The text: PR description, issue body, comment, or message'),
+                base: z.string().optional().describe('pr-open: the branch to merge into'),
+                head: z.string().optional().describe('pr-open: the branch with the changes'),
+                repo: z.string().optional().describe('owner/name, when it is not the current repository'),
+                channel: z.string().optional().describe('message: where it goes (a person, a channel, a mailing list)'),
+                why: z.string().optional().describe('One sentence for the user: why this should go out'),
+              },
+              async (args) => {
+                const r = await draftAction(ctx, args as DraftFields);
+                return r.isError ? fail(r.text) : text(r.text);
+              },
+            ),
+          ]),
       ...(ctx.worker
         ? []
         : [

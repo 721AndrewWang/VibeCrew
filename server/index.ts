@@ -28,6 +28,7 @@ import { startOutsideEditNotes } from './outsideEdits';
 import { closeAllPreviews } from './preview';
 import { startRoutines } from './routines';
 import { guard, wsAllowed } from './security';
+import { recoverSpeculations } from './speculative';
 import { flushAll, settings } from './store';
 import { closeAllTerminals, closeTerminal, detachTerminals, openTerminal, terminalInput, terminalResize } from './terminal';
 import { startTriggers } from './triggers';
@@ -149,6 +150,8 @@ async function main() {
   await syncGateway();
   await syncBroker();
   const layers = recoverLayers();
+  // Speculative runs a restart cut off go first, branch and all, so reconciling does not keep their branches.
+  await recoverSpeculations().catch((e) => log.warn('recover speculative runs:', e));
   await reconcileWorkspaces(layers.live).catch((e) => log.warn('reconcile workspaces:', e));
   startTriggers();
   recoverDrafts();

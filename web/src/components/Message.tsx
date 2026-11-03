@@ -5,6 +5,7 @@ import { api } from '../api';
 import { chatProjectId, focusTurn, openFileInEditor, openModal, setView, toast, useStore } from '../store';
 import { cx, fmtClock, fmtDuration, modelLabel, plural, toolDuration, toolInfo, withoutUntrustedTags } from '../utils';
 import { Markdown } from './Markdown';
+import { SpeculationNotice } from './SpeculativeBar';
 import { Avatar, confirmDialog, Glyph } from './ui';
 
 // ---------------------------------------------------------------- attachments
@@ -591,6 +592,8 @@ export function SystemMessage({ msg }: { msg: ChatMessage }) {
     );
   }
   if (msg.notice === 'job') return <JobResult msg={msg} />;
+  // A verified speculative fix (ADR 008): its card, kept live; the text stands in once the run is gone.
+  if (msg.notice === 'speculative' && msg.speculationId) return <SpeculationNotice id={msg.speculationId} fallback={msg.text} />;
   return (
     <div className="msg-system">
       {/* An outside-edit note carries the agents' <untrusted> label (ADR 104); people read it without. */}

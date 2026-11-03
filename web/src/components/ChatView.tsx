@@ -27,6 +27,7 @@ import { DraftsBar } from './DraftsBar';
 import { JobsBar } from './JobsBar';
 import { BotMessage, SystemMessage, UserMessage } from './Message';
 import { chatMenuItems } from './Sidebar';
+import { SpeculativeBar } from './SpeculativeBar';
 import { Avatar, confirmDialog, Glyph, GroupAvatar, MenuButton, type MenuItem } from './ui';
 import { WorkersBar } from './WorkersBar';
 
@@ -396,6 +397,7 @@ export function ChatView() {
         <WorkersBar chat={chat} />
         <JobsBar chatId={chat.id} />
         <DraftsBar chat={chat} />
+        <SpeculativeBar chatId={chat.id} />
         <Composer chat={chat} />
       </section>
       {computer.open && <Resizer />}

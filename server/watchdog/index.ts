@@ -132,7 +132,7 @@ function resolveWatch(id: string, why: string): boolean {
 export function housekeepWatches(now = Date.now()) {
   const open = openWatches();
   for (const w of workers.all()) {
-    if (w.dismissedAt || w.status !== 'error' || !isTransient(w.detail || w.report?.text)) continue;
+    if (w.dismissedAt || w.speculation || w.status !== 'error' || !isTransient(w.detail || w.report?.text)) continue;
     const since = w.report?.at ?? w.updatedAt;
     if (watchdogWatches.all().some((x) => x.subject === w.id && x.createdAt >= since)) continue;
     openWatch(w.id, `Failed on what looks transient: ${(w.detail || '').slice(0, 200)}`, TRANSIENT_RECHECK_MIN, 'code', now);
@@ -194,7 +194,8 @@ function workerSnap(w: Worker, now: number): WorkerSnap {
 export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().superAgent.watchdog.maxActionsPerTick, since = lastLook(now)): Snapshot {
   const ws = workers
     .all()
-    .filter((w) => !w.dismissedAt && (ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
+    // Speculative runs (ADR 008) have their own time limit and never need the user: not the Watchdog's to steer.
+    .filter((w) => !w.dismissedAt && !w.speculation && (ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_WORKERS);
   const title = (chatId?: string) => (chatId ? chats.get(chatId)?.title : undefined);

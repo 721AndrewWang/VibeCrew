@@ -41,7 +41,7 @@ The demo agent (`FakeSession`) learned three small things so the seams can be ex
 
 ## Deferred
 
-- **Speculative execution (milestone 8)** is not built: no silent reproduce-and-fix Workers, no `skills.forFamily(…, 'speculative')` caller, and the gateway's `speculative` role and spend windows have no sessions using them yet.
+- **Speculative execution (milestone 8)** is not built: no silent reproduce-and-fix Workers, no `skills.forFamily(…, 'speculative')` caller, and the gateway's `speculative` role and spend windows have no sessions using them yet. (Since built on top of this integration: [ADR 008](008-speculative.md).)
 - **Guard refusals with the audit log off.** The Watchdog sees refusals only while `safety.audit` is on, since that log is opt-in (it writes commands to disk). Recording refusals in the always-on friction log would change what Crew writes with default settings; left for a decision.
 - **Credential brokering** (letting an agent use a token it cannot read, as yetone/magpie's gateway can): still only stripping and masking (ADR 007, ADR 009).
 - **Job results across projects.** A job's environment Trigger goes to the workspace thread of the exact folder it ran in. A job in a chat's own git workspace reaches only Workers of that chat (they subscribe to the chat's workspace thread); a job in the project's main folder does not reach Workers working in a chat workspace branched from it. Mapping "same files" across worktrees is left out.

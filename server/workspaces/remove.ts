@@ -91,7 +91,8 @@ export async function doRemove(chatId: string, deleteBranch: boolean) {
  * if that work cannot be committed, the worktree stays on disk and the user is told where.
  */
 async function retire(ws: Workspace) {
-  const keep = await hasUnmergedWork(ws.workspace);
+  // A speculative run's branch was never anyone's work (ADR 008).
+  const keep = !ws.workspace.speculative && (await hasUnmergedWork(ws.workspace));
   try {
     await disposeWorkspace(ws, !keep);
   } catch (e) {

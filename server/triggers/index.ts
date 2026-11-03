@@ -152,7 +152,22 @@ function publish(input: TriggerInput, sa: SuperAgentSettings): Trigger {
   if (t.filter.rule === 'subscribed') deliverDirect(t, thread, to, fast);
   save(t);
   if (t.filter.verdict === 'candidate') slow.push(slowItem(t, thread));
+  for (const fn of listeners) {
+    try {
+      fn(t);
+    } catch (e) {
+      log.warn('a trigger listener failed:', e);
+    }
+  }
   return t;
+}
+
+/** Called with each Trigger once it is recorded (speculative execution listens, ADR 008). It must not block. */
+type Listener = (t: Trigger) => void;
+const listeners: Listener[] = [];
+
+export function onTrigger(fn: Listener) {
+  listeners.push(fn);
 }
 
 const fastContext = (sa: SuperAgentSettings, thread: Thread, now: number) => ({
@@ -282,6 +297,7 @@ const NOTICED: Record<TriggerSource, string> = {
   'preview-console': 'a preview console error',
   landing: "a Worker's merge",
   job: 'a background job result',
+  speculative: 'a speculative fix',
 };
 
 export function noticeText(t: Trigger): string {
@@ -291,7 +307,7 @@ export function noticeText(t: Trigger): string {
 }
 
 /** The chat to tell: the trigger's own, else the most recently active chat working in its project. */
-function targetChat(t: Trigger): Chat | undefined {
+export function targetChat(t: Pick<Trigger, 'chatId' | 'projectId'>): Chat | undefined {
   const own = chats.get(t.chatId);
   if (own) return own;
   if (!t.projectId) return undefined;
@@ -343,6 +359,7 @@ const DIRECT_NAME: Record<TriggerSource, string> = {
   'preview-console': 'console error',
   landing: 'Worker merge',
   job: 'job result',
+  speculative: 'speculative fix',
 };
 
 /** The Workers a Trigger on this thread goes straight to: none while subscriptions are off, and never on a chat's thread (the Router's own). */

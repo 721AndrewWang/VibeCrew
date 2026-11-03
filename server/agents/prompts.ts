@@ -52,6 +52,8 @@ export interface WorkerRole {
   shared?: string;
   /** Thread subscriptions are on (ADR 003): events on its threads come to it, and it has tools to leave them. */
   subscriptions?: boolean;
+  /** A speculative run (ADR 008): nobody asked, nobody waits, and Crew verifies with this command. */
+  speculative?: { checkCommand: string };
 }
 
 export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project | null; team: Bot[]; skills: Skill[]; worker?: WorkerRole; subtask?: boolean; recall?: boolean }): string {
@@ -73,6 +75,15 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
       `You are running as a background sub-task that your own main session in the chat "${chat.title}" started. Nobody reads your messages but that session; the user sees your work only in the sub-task's transcript.`,
       '- Do the task, then end with a short report: the outcome first, what you checked and how, anything unresolved. Under 200 words.',
       '- You work in the same folder as your main session, which may be editing at the same time: change only what the task asks for, and say in your report which files you changed.',
+      '- Do not @mention anyone.',
+    );
+  } else if (worker?.speculative) {
+    lines.push(
+      '',
+      '## This task',
+      `You are a speculative background run: Crew noticed a sign of a problem in the project of the chat "${chat.title}" and started you, before anyone asked, to reproduce it and find a small fix. Nobody reads your messages, and nobody is there to approve anything: actions that would need approval are refused.`,
+      `- Your work reaches the user only if Crew can verify it: the project's check command (\`${worker.speculative.checkCommand}\`) must pass with your fix, and must fail with your fix taken out and your reproduction kept. Otherwise it is discarded without a word, which is a fine outcome: do not force a fix you are not sure of.`,
+      '- End by calling speculative_result once. Keep your final message to one line.',
       '- Do not @mention anyone.',
     );
   } else if (worker) {
@@ -126,7 +137,13 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
   }
 
   lines.push('', '## Your environment');
-  if (worker && project?.workspace?.workerId) {
+  if (worker?.speculative && project?.workspace?.workerId) {
+    lines.push(
+      `- Project: ${project.name}. You have a throwaway workspace: directory ${project.path} (your working directory), Git branch \`${project.workspace.branch}\`, made from the state the problem was seen in.`,
+      '- Edit freely here and only here. Do not switch branches, merge or push. Crew commits your changes when you finish; it never merges them by itself, and removes the workspace unless the user merges your fix.',
+    );
+    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
+  } else if (worker && project?.workspace?.workerId) {
     const { branch, baseBranch } = project.workspace;
     lines.push(
       `- Project: ${project.name}. You have your own workspace: directory ${project.path} (your working directory), Git branch \`${branch}\`, branched from the chat's branch \`${baseBranch}\`.`,
@@ -165,7 +182,9 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
         ]
       : []),
     '  - dev_server: start, stop, or restart the dev server, and view its logs. The preview depends on it.',
-    '  - remember: save things worth keeping long term (user preferences, project conventions, pitfalls you hit) to your long-term memory.',
+    ...(worker?.speculative
+      ? ['  - speculative_result: report whether you reproduced the problem, which files are your reproduction, and a short summary.']
+      : ['  - remember: save things worth keeping long term (user preferences, project conventions, pitfalls you hit) to your long-term memory.']),
     ...(worker ? [] : ['  - notify_user: send the user a notification (for example, when a scheduled task finds a problem).']),
     ...(worker?.subscriptions ? ['  - unsubscribe_thread, hand_back: leave a thread you subscribe to, or give one of its events back to the Router.'] : []),
     recall
@@ -186,7 +205,9 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
     `- Permissions: ${PERMISSION_NOTE[bot.permission]}`,
   );
 
-  if (worker)
+  if (worker?.speculative) {
+    // Nothing to communicate: the claim goes through speculative_result.
+  } else if (worker)
     lines.push(
       '',
       '## How to communicate',

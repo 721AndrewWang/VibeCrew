@@ -29,6 +29,7 @@ import type {
   Skill,
   SkillCandidate,
   SkillFamily,
+  Speculation,
   Thread,
   Trigger,
   TriggerDetail,
@@ -235,6 +236,12 @@ export const api = {
   stopJob: (id: string) => post<BackgroundJob>(`/api/jobs/${q(id)}/stop`),
 
   // Safety (ADR 007): drafts of external actions, the audit log, the guard's dry run.
+  // Speculative execution (ADR 008): verified fixes to merge or discard, and recent runs.
+  speculations: (q: { chatId?: string; projectId?: string } = {}) =>
+    get<{ speculations: Speculation[]; spentTodayUsd: number }>(`/api/speculations?${new URLSearchParams(Object.entries(q).filter(([, v]) => !!v) as [string, string][])}`),
+  speculationDiff: (id: string) => get<{ diff: string }>(`/api/speculations/${q(id)}/diff`),
+  mergeSpeculation: (id: string) => post<{ speculation: Speculation }>(`/api/speculations/${q(id)}/merge`),
+  discardSpeculation: (id: string) => post<{ speculation: Speculation }>(`/api/speculations/${q(id)}/discard`),
   approveDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/approve`),
   discardDraft: (id: string) => post<{ draft: ExternalDraft }>(`/api/drafts/${q(id)}/discard`),
   audit: (limit = 200) => get<{ enabled: boolean; entries: AuditEntry[] }>(`/api/audit?limit=${limit}`),

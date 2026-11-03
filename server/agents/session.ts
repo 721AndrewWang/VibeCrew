@@ -90,7 +90,7 @@ export interface SessionConfig {
   /** Replaces Claude Code's own system prompt (systemAppend is then unused): for sessions with no built-in tools. */
   systemPrompt?: string;
   /** For the demo agent: a Router or the Watchdog calls its tools, a Worker reports instead of handing off. */
-  role?: 'router' | 'worker' | 'watchdog';
+  role?: 'router' | 'worker' | 'watchdog' | 'speculative';
   /** The demo agent's way to call MCP tools by name, without an MCP client. */
   fakeTools?: Record<string, (args: Record<string, unknown>) => Promise<{ text: string; isError?: boolean }>>;
 }
@@ -469,6 +469,8 @@ export class FakeSession implements AgentSession {
             return r.text;
           }),
         );
+      } else if (this.cfg.role === 'speculative') {
+        await fakeSpeculative(ask, this.cfg.cwd, streamText, runTool, hooks.beforeEdit, () => this.stopped, this.cfg.fakeTools || {});
       } else if (this.cfg.role === 'worker' && /\bflaky\b/i.test(ask) && !flaked.has(this.cfg.cwd)) {
         // A demo Worker on a "flaky" task fails once with an error that reads as transient.
         flaked.add(this.cfg.cwd);
@@ -603,6 +605,60 @@ export class FakeSession implements AgentSession {
     this.closed = true;
     this.stopped = true;
   }
+}
+
+/**
+ * The demo speculative run (ADR 008). It "reproduces" a problem when a top-level file of its
+ * workspace contains BUG: it adds repro/crew-repro.sh (which fails while that file has BUG) and fixes
+ * the file, then reports. In the signal, "half" makes it skip the fix, "install" makes it try a
+ * command that would need approval (refused: nobody is there), and "slow" keeps it working until it
+ * is stopped. Without a BUG file it reports that it could not reproduce the problem.
+ */
+async function fakeSpeculative(
+  ask: string,
+  cwd: string,
+  say: (text: string) => Promise<void>,
+  tool: (name: string, input: Record<string, unknown>, run: () => string | Promise<string>) => Promise<string>,
+  beforeEdit: (file: string) => void,
+  stopped: () => boolean,
+  tools: NonNullable<SessionConfig['fakeTools']>,
+) {
+  const check = ask.match(/check command `([^`]+)`/)?.[1] || 'npm test';
+  const report = async (args: Record<string, unknown>) =>
+    tool('mcp__crew__speculative_result', args, async () => {
+      const r = await (tools.speculative_result?.(args) ?? Promise.resolve({ text: 'No speculative_result tool', isError: true }));
+      if (r.isError) throw new Error(r.text);
+      return r.text;
+    });
+  await tool('Bash', { command: check, description: 'Run the checks' }, () => '(demo) ran the checks');
+  if (/\binstall\b/i.test(ask)) await tool('Bash', { command: 'npm install left-pad', description: 'Install a package' }, () => '(demo) installed');
+  for (let i = 0; i < 300 && /\bslow\b/i.test(ask) && !stopped(); i++) await new Promise((r) => setTimeout(r, 100));
+  if (stopped()) return say('Stopped.');
+  const name = fs
+    .readdirSync(cwd)
+    .filter((f) => !f.startsWith('.') && fs.statSync(path.join(cwd, f)).isFile())
+    .find((f) => fs.readFileSync(path.join(cwd, f), 'utf8').includes('BUG'));
+  if (!name) {
+    await report({ reproduced: false, testFiles: [], summary: 'Could not reproduce it (demo mode).' });
+    return say('Could not reproduce it.');
+  }
+  const repro = path.join(cwd, 'repro', 'crew-repro.sh');
+  await tool('Write', { file_path: repro, content: `! grep -q BUG ${name}\n` }, () => {
+    beforeEdit(repro);
+    fs.mkdirSync(path.dirname(repro), { recursive: true });
+    fs.writeFileSync(repro, `! grep -q BUG ${name}\n`);
+    return `File created successfully at: ${repro}`;
+  });
+  if (!/\bhalf\b/i.test(ask)) {
+    const file = path.join(cwd, name);
+    await tool('Edit', { file_path: file, old_string: 'BUG', new_string: 'FIXED' }, () => {
+      beforeEdit(file);
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replaceAll('BUG', 'FIXED'));
+      return `The file ${file} has been updated.`;
+    });
+  }
+  await report({ reproduced: true, testFiles: ['repro/crew-repro.sh'], summary: `${name} still contained BUG; the fix replaces it (demo mode).` });
+  await say('Reported.');
 }
 
 /**
