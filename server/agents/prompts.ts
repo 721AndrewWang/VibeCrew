@@ -136,63 +136,62 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
     );
   }
 
-  lines.push('', '## Your environment');
+  // Where this session works (directory, branch) differs per Worker and per chat: it goes last, so
+  // sessions of the same bot share the longest possible prompt prefix (the prompt cache).
+  const place: string[] = [];
   if (worker?.speculative && project?.workspace?.workerId) {
-    lines.push(
+    place.push(
       `- Project: ${project.name}. You have a throwaway workspace: directory ${project.path} (your working directory), Git branch \`${project.workspace.branch}\`, made from the state the problem was seen in.`,
       '- Edit freely here and only here. Do not switch branches, merge or push. Crew commits your changes when you finish; it never merges them by itself, and removes the workspace unless the user merges your fix.',
     );
-    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
   } else if (worker && project?.workspace?.workerId) {
     const { branch, baseBranch } = project.workspace;
-    lines.push(
+    place.push(
       `- Project: ${project.name}. You have your own workspace: directory ${project.path} (your working directory), Git branch \`${branch}\`, branched from the chat's branch \`${baseBranch}\`.`,
       `- It is a git worktree, isolated from the chat's branch and from other Workers, so edit freely here and only here. Do not switch branches, do not merge into \`${baseBranch}\` yourself, and do not push.`,
       `- After each of your turns Crew commits your changes and merges them into \`${baseBranch}\` for you.`,
     );
-    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
   } else if (worker && project) {
-    lines.push(
+    place.push(
       `- Project: ${project.name}, directory ${project.path} (your working directory). You share this folder with the chat (${worker.shared || 'no workspace of your own'}), so change only what your task needs.`,
     );
-    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
   } else if (project?.workspace) {
     const { branch, baseBranch } = project.workspace;
-    lines.push(
+    place.push(
       `- Project: ${project.name}. This conversation has its own workspace: directory ${project.path} (your working directory), Git branch \`${branch}\`, branched from \`${baseBranch}\`.`,
       `- This is a git worktree, isolated from the project's main directory and from other conversations. Only edit files in this directory. Do not switch branches, do not merge into \`${baseBranch}\` yourself, and do not push.`,
       `- After each turn, Crew commits your changes to this branch automatically (you can also commit in steps yourself). Once the user approves, the branch is merged back into \`${baseBranch}\`.`,
     );
-    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
   } else if (project) {
-    lines.push(`- Project: ${project.name}, directory ${project.path} (your working directory)`);
-    if (project.framework) lines.push(`- Tech stack: ${project.framework}`);
+    place.push(`- Project: ${project.name}, directory ${project.path} (your working directory)`);
   } else {
-    lines.push('- This conversation is not linked to a project yet.');
+    place.push('- This conversation is not linked to a project yet.');
   }
+  if (project?.framework) place.push(`- Tech stack: ${project.framework}`);
+
+  // Each tool's own definition says what it does; these lines only add how to use it well.
+  lines.push('', '## Your environment');
   lines.push(
-    "- When you edit files, the user's preview refreshes automatically (static pages hot-reload; framework projects are hot-updated by the dev server).",
+    "- When you edit files, the user's preview refreshes automatically (static pages hot-reload; framework projects are hot-updated by the dev server). Where you work is at the end of this prompt.",
     '- Tools Crew provides (mcp__crew__*):',
-    '  - preview_screenshot: screenshot the page in a real browser to see how it looks (desktop/tablet/mobile, full page, or one element; colorScheme: dark for dark mode). Always take a look after changing the UI; if the page has a dark theme, check both color schemes.',
-    '  - preview_console: open the page and collect console errors and failed network requests.',
-    '  - browser_act: use the page like a user would (click, type, press keys, navigate, assert text); page state is kept between calls. It can also switch to dark mode with colorScheme: dark, and read real computed styles with eval (for example colors from getComputedStyle).',
+    '  - preview_screenshot: always take a look after changing the UI; if the page has a dark theme, check both color schemes (colorScheme: dark).',
+    '  - preview_console, browser_act: console errors and failed requests; using the page like a user (its state is kept between calls; eval reads computed styles).',
     ...(bot.plugins?.includes('rea')
       ? [
           '  - browser_debug_target: the cdp_endpoint and target_id of your browser_act page. Pass them to REA web tools (mcp__rea__inspect_web_page, analyze_web_bundle, observe_web_session) to analyze that page.',
         ]
       : []),
-    '  - dev_server: start, stop, or restart the dev server, and view its logs. The preview depends on it.',
+    '  - dev_server: the dev server the preview depends on.',
     ...(worker?.speculative
       ? ['  - speculative_result: report whether you reproduced the problem, which files are your reproduction, and a short summary.']
-      : ['  - remember: save things worth keeping long term (user preferences, project conventions, pitfalls you hit) to your long-term memory.']),
-    ...(worker ? [] : ['  - notify_user: send the user a notification (for example, when a scheduled task finds a problem).']),
-    ...(worker?.subscriptions ? ['  - unsubscribe_thread, hand_back: leave a thread you subscribe to, or give one of its events back to the Router.'] : []),
+      : ['  - remember: save what is worth keeping long term (user preferences, project conventions, pitfalls you hit).']),
+    ...(worker ? [] : ['  - notify_user: notify the user (for example, when a scheduled task finds a problem).']),
     recall
       ? RECALL_PROMPT_LINE
-      : '  - chat_history: read messages in this conversation in full. In a group chat, older messages that have little to do with your turn are shown only as a one-line summary (with a #number). Look them up when you need the details, and not otherwise.',
+      : '  - chat_history: in a group chat, older messages that have little to do with your turn are shown only as a one-line summary (with a #number). Read them in full when you need the details, and not otherwise.',
     ...(duplex
       ? [
-          '  - start, stop, status: background jobs (you work in full duplex). start runs a shell command, or a sub-task in a background session of you, and returns at once with a job id; its result arrives later as a new message (the head and tail of the output; the full log through status id=… from=… lines=…). stop terminates one; status lists them or reads one.',
+          '  - start, stop, status: background jobs (you work in full duplex). start runs a shell command, or a sub-task in a background session of you, and returns at once with a job id; its result arrives later as a new message (the head and tail of the output; the full log through status id=… from=… lines=…).',
         ]
       : []),
     '- Do not use Bash to run long-running commands like `npm run dev`, `vite`, or `next dev` directly. Use dev_server, which hooks into the preview automatically.',
@@ -238,6 +237,7 @@ export function buildSystemAppend(opts: { bot: Bot; chat: Chat; project: Project
 
   const memory = readMemory(bot.id).trim();
   lines.push('', '## Your long-term memory', memory ? memory.slice(-6000) : '(Nothing yet. When something is worth remembering, save it with the remember tool.)');
+  lines.push('', '## Where you work', ...place);
   return lines.join('\n');
 }
 
