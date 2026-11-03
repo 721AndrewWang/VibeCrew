@@ -16,12 +16,14 @@ export interface RoleStats {
   /** Context length summed over every call. */
   contextRead: number;
   output: number;
+  /** Virtual time spent waiting for model calls, by the latency model. */
+  modelMs: number;
 }
 
 export const ROLES: Role[] = ['router', 'worker', 'lead', 'subtask', 'filter', 'speculative'];
 
 export function emptyStats(): Record<Role, RoleStats> {
-  return Object.fromEntries(ROLES.map((r) => [r, { sessions: 0, turns: 0, calls: 0, injected: 0, contextRead: 0, output: 0 }])) as Record<Role, RoleStats>;
+  return Object.fromEntries(ROLES.map((r) => [r, { sessions: 0, turns: 0, calls: 0, injected: 0, contextRead: 0, output: 0, modelMs: 0 }])) as Record<Role, RoleStats>;
 }
 
 export interface SessionEnv {
@@ -116,7 +118,9 @@ export class SimSession {
       s.calls++;
       s.contextRead += this.tokens;
       s.output += out;
-      await Promise.race([clock.sleep(callLatency(latency, this.o.role, { read, fresh: this.fresh, out })), this.stopSignal()]);
+      const ms = callLatency(latency, this.o.role, { read, fresh: this.fresh, out });
+      s.modelMs += ms;
+      await Promise.race([clock.sleep(ms), this.stopSignal()]);
       if (this.stopped) return { text: '', stopped: true };
       this.fresh = 0;
       if ('text' in reply) {

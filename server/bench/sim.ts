@@ -14,6 +14,7 @@ import { BatchQueue } from '../layers/batch';
 import { dispatchRefusal, messageRefusal, replyRefusal } from '../layers/gates';
 import { type DirectLine, deliveredNote, explicitEvent, REPLY_WORDS, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type WorkerLine, wordCount, workerPrompt } from '../layers/prompts';
 import { ACTIVE, pushInbox, receivers } from '../layers/subscriptions';
+import { budgetOf } from '../recall/spill';
 import { speculativePrompt } from '../speculative/prompts';
 import { gateRefusal, SAME_SIGNAL_MS, signalOf } from '../speculative/rules';
 import { type FastInput, fastPath, fingerprintOf, normalizeSuperAgent, reachedSlowPath } from '../triggers/fastPath';
@@ -89,6 +90,12 @@ export interface SimOptions {
   /** Steps of work a speculative run takes, and how long one run of the check command takes (minutes, before time scaling). */
   speculativeSteps?: number;
   checkMin?: number;
+  /** Crew's real system prompts in place of the bench's stand-ins (the cost profile, ADR 108). */
+  systemPrompts?: { worker?: string; speculative?: string };
+  /** The chain of recall (ADR 005): the Router's batches and the Workers' deliveries spill behind recall handles. */
+  recall?: { inlineWords: number };
+  /** Record what each Worker did and when, so the cost profile can replay the Watchdog's ticks (ADR 108). */
+  timeline?: boolean;
 }
 
 export const SIM_DEFAULTS = {
@@ -140,6 +147,20 @@ export interface ArmMetrics {
   github?: { checks: number; direct: number; deliveries: number };
 }
 
+/** One Worker's life, for replaying the Watchdog's tick fast path (ADR 108). Times are from the start of the run. */
+export interface WorkerTimeline {
+  id: string;
+  title: string;
+  task: string;
+  createdAt: number;
+  /** When each of its model calls answered: its progress. */
+  activity: number[];
+  endedAt?: number;
+  status: string;
+  turns: number;
+  report?: string;
+}
+
 export interface RunResult {
   config: ConfigId;
   arm?: ArmId;
@@ -169,6 +190,8 @@ export interface RunResult {
   /** When the last thing happened, in milliseconds from the start. */
   endMs: number;
   arms: ArmMetrics;
+  /** With SimOptions.timeline. */
+  timeline?: WorkerTimeline[];
 }
 
 const MIN = 60_000;
@@ -211,6 +234,8 @@ interface WorkerSim {
   userWords: { seq: number; text: string }[];
   first: boolean;
   lastReport?: string;
+  activity: number[];
+  endedAt?: number;
 }
 
 interface Job {
@@ -603,7 +628,7 @@ class Run {
     const session = new SimSession(this.env, {
       role: 'speculative',
       model: 'bench-strong',
-      system: speculativeSystem(),
+      system: this.o.systemPrompts?.speculative ?? speculativeSystem(),
       overheadTokens: this.o.harnessTokens.claudeCode,
       handlers: {
         [TOOLS.work]: async () => {
@@ -716,7 +741,7 @@ class Run {
       team: [{ name: `${LEAD} (you)`, title: 'Tech lead', profile: '' }],
       maxWorkers: this.o.maxWorkers,
       subscriptions: this.direct,
-      recall: false,
+      recall: !!this.o.recall,
     })
       // Without channel norms (ADR 103), the Router's prompt as it was: no reply kinds, no Details.
       .split('\n')
@@ -795,7 +820,7 @@ class Run {
     for (const e of batch) if (e.kind === 'worker' && e.status === 'done') this.informed(this.workers.find((w) => w.rec.id === e.id)?.task);
     this.turnRecord(batch.length, this.currentExplicit);
     this.batchReports = batch.filter((e) => e.kind === 'worker').map((e) => e.id);
-    const text = renderBatch(batch, this.workerLines(), this.now, recap, this.observed.splice(0));
+    const text = renderBatch(batch, this.workerLines(), this.now, recap, this.observed.splice(0), this.o.recall ? budgetOf(this.o.recall.inlineWords) : undefined);
     await session.turn(text);
     if (session.tokens >= this.o.rotateAtTokens) this.rotate = true;
   }
@@ -840,7 +865,7 @@ class Run {
     // The user's own words from the dispatching batch, as Crew gives them to a Worker.
     const ids = new Set([...task.matchAll(/\bmsg_\d+\b/g)].map((m) => m[0]));
     const userWords = this.chat.filter((l) => l.who === 'User' && ids.has(l.id)).map((l) => ({ seq: l.seq, text: l.text }));
-    const w: WorkerSim = { rec, task: /^(T\d+)/.exec(title)?.[1] || 'T00', knows: new Set(), session: null, running: false, stop: false, userWords, first: true };
+    const w: WorkerSim = { rec, task: /^(T\d+)/.exec(title)?.[1] || 'T00', knows: new Set(), session: null, running: false, stop: false, userWords, first: true, activity: [] };
     this.workers.push(w);
     this.clock.after(this.o.startupMs, () => {
       if (w.stop) return this.finishWorker(w, 'stopped', 'Stopped before it began');
@@ -861,10 +886,11 @@ class Run {
     w.session = new SimSession(this.env, {
       role: 'worker',
       model: 'bench-strong',
-      system: workerSystem(this.direct),
+      system: this.o.systemPrompts?.worker ?? workerSystem(this.direct),
       overheadTokens: this.o.harnessTokens.claudeCode,
       handlers,
       afterTool: () => this.takeDeliveries(w),
+      onReply: this.o.timeline ? () => w.activity.push(this.now - this.t0) : undefined,
     });
     return w.session;
   }
@@ -888,8 +914,9 @@ class Run {
                 ]
               : undefined,
             now: this.now,
+            recall: !!this.o.recall,
           })
-        : workerPrompt({ context: [], lead: LEAD, followUps: (w.rec.pending || []).splice(0), now: this.now });
+        : workerPrompt({ context: [], lead: LEAD, followUps: (w.rec.pending || []).splice(0), now: this.now, recall: !!this.o.recall });
       w.first = false;
       this.learn(w.knows, prompt);
       w.rec.turns++;
@@ -909,6 +936,7 @@ class Run {
     w.rec.status = status;
     w.rec.detail = detail;
     w.running = false;
+    w.endedAt = this.now - this.t0;
     // What it never read goes back to the normal path; dropped only when the user stopped it all.
     const left = w.rec.inbox || [];
     w.rec.inbox = [];
@@ -923,7 +951,7 @@ class Run {
     if (!env.length) return null;
     w.rec.inbox = (w.rec.inbox || []).filter((d) => d.explicit);
     for (const d of env) this.unread.delete(d.triggerId);
-    return deliveredNote(env, this.now);
+    return deliveredNote(env, this.now, !!this.o.recall);
   }
 
   /** Returns true when the message waits for the Worker's current turn to end. */
@@ -1102,6 +1130,21 @@ class Run {
       executors: this.twoLayer ? this.workers.length : this.jobs.length,
       endMs: this.now - this.t0,
       arms: this.arm,
+      ...(this.o.timeline
+        ? {
+            timeline: this.workers.map((w) => ({
+              id: w.rec.id,
+              title: w.rec.title,
+              task: w.rec.task,
+              createdAt: w.rec.createdAt - this.t0,
+              activity: w.activity,
+              endedAt: w.endedAt,
+              status: w.rec.status,
+              turns: w.rec.turns,
+              report: w.lastReport,
+            })),
+          }
+        : {}),
     };
   }
 }
