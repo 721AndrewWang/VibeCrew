@@ -9,10 +9,10 @@
 // check. The guard catches the plain and the lightly wrapped cases, and says how to do them right.
 
 import path from 'node:path';
-import type { GuardRule, GuardVerdict } from '../shared/types';
+import type { GuardVerdict } from '../shared/types';
 import { EDIT_TOOLS, harmless } from './agents/permissions';
-import { cdTarget, hardenedToolVerdict, hardenedVerdict, type Segment, splitSegments } from './hardening/commands';
-import type { PathContext } from './hardening/paths';
+import { cdTarget, deny, hardenedToolVerdict, hardenedVerdict, type Segment, splitSegments } from './hardening/commands';
+import { expandHome, type PathContext, within } from './hardening/paths';
 
 export interface GuardContext {
   /** The folder the command runs in. */
@@ -66,7 +66,6 @@ const LOCAL_HOSTS = /^(localhost|.*\.localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|::1|
 const MAX_DEPTH = 4;
 const MAX_EFFECTS = 8;
 
-const deny = (rule: GuardRule, reason: string): GuardVerdict => ({ kind: 'deny', rule, reason });
 const READ: GuardVerdict = { kind: 'read' };
 const change = (...effects: string[]): GuardVerdict => ({ kind: 'change', effects });
 
@@ -224,14 +223,6 @@ export function substitutions(cmd: string): string[] {
 }
 
 // ---------------------------------------------------------------- credentials
-
-function expandHome(word: string, home: string): string {
-  return word.replace(/^~(?=\/|$)/, home).replace(/^\$\{?HOME\}?(?=\/|$)/, home);
-}
-
-function within(abs: string, root: string): boolean {
-  return abs === root || abs.startsWith(root.endsWith('/') ? root : `${root}/`);
-}
 
 function secretRoots(ctx: GuardContext): string[] {
   return [...CREDENTIAL_PATHS.map((p) => path.join(ctx.home, p)), ...(ctx.secretFiles || [])];

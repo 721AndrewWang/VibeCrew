@@ -67,7 +67,7 @@ export function splitSegments(cmd: string): Segment[] {
   return out;
 }
 
-const deny = (rule: GuardRule, reason: string): GuardVerdict => ({ kind: 'deny', rule, reason });
+export const deny = (rule: GuardRule, reason: string): GuardVerdict => ({ kind: 'deny', rule, reason });
 
 const CRED = (what: string) =>
   deny(
