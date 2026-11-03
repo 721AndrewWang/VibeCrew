@@ -265,9 +265,6 @@ describe.skipIf(!claudeCli())('the GitHub channel with Claude Code and a mock mo
     await crew.api('POST', '/github/poll', { projectId });
   });
   afterAll(async () => {
-    // Close the Router's Claude Code session first: one still writing its transcript keeps the folder from being removed.
-    await crew?.api('PATCH', '/settings', { superAgent: { enabled: false } });
-    await new Promise((r) => setTimeout(r, 1000));
     await crew?.stop();
     await mock?.close();
     gh?.remove();

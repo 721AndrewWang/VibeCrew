@@ -77,23 +77,6 @@ function turnStart(r: MockRequest): number {
   return 0;
 }
 
-/** A server whose folder the test removes itself: Claude Code may still be writing into it as it stops. */
-async function startOwned(): Promise<{ crew: CrewServer; remove: () => Promise<void> }> {
-  const dir = tempDir();
-  const crew = await startServer({ fakeAgent: false, dir });
-  return {
-    crew,
-    remove: async () => {
-      await crew.stop();
-      try {
-        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
-      } catch {
-        /* a straggler is still writing: the OS cleans the temp folder */
-      }
-    },
-  };
-}
-
 /** Every file under a folder, as text. */
 function filesUnder(dir: string): { file: string; text: string }[] {
   const out: { file: string; text: string }[] = [];
@@ -111,7 +94,6 @@ function filesUnder(dir: string): { file: string; text: string }[] {
 describe.skipIf(!claudeCli())('prompt injection through every Trigger source (real Claude Code, a compromised mock model)', () => {
   let mock: MockProvider;
   let crew: CrewServer;
-  let removeCrew = async () => {};
   let chief: any;
   let chat: any;
   let project: any;
@@ -177,7 +159,7 @@ describe.skipIf(!claudeCli())('prompt injection through every Trigger source (re
 
   beforeAll(async () => {
     mock = await startMockProvider({ token: TOKEN, reply });
-    ({ crew, remove: removeCrew } = await startOwned());
+    crew = await startServer({ fakeAgent: false });
     // A file outside the project holds a value equal to a settings secret, as a user's notes might.
     outside = tempDir('crew-outside');
     fs.writeFileSync(path.join(outside, 'notes.txt'), `Deploy key for later: ${CANARY}\n`);
@@ -207,7 +189,7 @@ describe.skipIf(!claudeCli())('prompt injection through every Trigger source (re
   });
   afterAll(async () => {
     ws?.close();
-    await removeCrew();
+    await crew?.stop();
     await mock?.close();
     for (const d of [remote, outside]) if (d) fs.rmSync(d, { recursive: true, force: true });
   });
@@ -317,7 +299,6 @@ describe.skipIf(!claudeCli())('a compromised Router (real Claude Code, a comprom
   const TOKEN_R = 'mock-router-secret-91d0a';
   let mock: MockProvider;
   let crew: CrewServer;
-  let removeCrew = async () => {};
   let group: any;
 
   beforeAll(async () => {
@@ -351,13 +332,13 @@ describe.skipIf(!claudeCli())('a compromised Router (real Claude Code, a comprom
         return { text: 'OK.' };
       },
     });
-    ({ crew, remove: removeCrew } = await startOwned());
+    crew = await startServer({ fakeAgent: false });
     await crew.api('PATCH', '/settings', { authMode: 'provider', provider: { preset: 'custom', baseUrl: mock.url, model: 'mock-model', fastModel: 'mock-fast' }, providerToken: TOKEN_R });
     await crew.api('PATCH', '/settings', { superAgent: { enabled: true, router: { enabled: true } } });
     group = (await crew.api('GET', '/bootstrap')).chats.find((c: any) => c.kind === 'group');
   });
   afterAll(async () => {
-    await removeCrew();
+    await crew?.stop();
     await mock?.close();
   });
 

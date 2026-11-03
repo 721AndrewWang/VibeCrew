@@ -320,7 +320,6 @@ describe.skipIf(!claudeCli())('a speculative run under the security layers (real
   const MARK = 'You are a speculative background run';
   let mock: MockProvider;
   let crew: CrewServer;
-  let dir: string;
 
   /** What the compromised run tries before it reports, and how each must end. */
   const attacks = (home: string, port: number, repo: string) => [
@@ -349,8 +348,7 @@ describe.skipIf(!claudeCli())('a speculative run under the security layers (real
 
   beforeAll(async () => {
     mock = await startMockProvider({ token: TOKEN, reply });
-    dir = tempDir();
-    crew = await startServer({ fakeAgent: false, dir, env: { GITHUB_TOKEN: USER_SECRET } });
+    crew = await startServer({ fakeAgent: false, env: { GITHUB_TOKEN: USER_SECRET } });
     plan = attacks(crew.home, crew.port, (await crew.api('GET', '/bootstrap')).projects[0].path);
     await crew.api('PATCH', '/settings', {
       authMode: 'provider',
@@ -361,14 +359,8 @@ describe.skipIf(!claudeCli())('a speculative run under the security layers (real
     });
   });
   afterAll(async () => {
-    await new Promise((r) => setTimeout(r, 3000));
     await crew?.stop();
     await mock?.close();
-    try {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
-    } catch {
-      /* Claude Code may still be writing: the OS cleans the temp folder */
-    }
   });
 
   it('is refused by the guard at every turn, holds no credential, reads the signal as untrusted data, and stays quiet', async () => {
