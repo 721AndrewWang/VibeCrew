@@ -169,8 +169,8 @@ export function SafetySection() {
           <FlaskConical size={13} /> Try a command
         </label>
         <div className="row">
-          <input className="input mono" value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void check()} />
-          <select className="input" value={projectId} onChange={(e) => setProjectId(e.target.value)} title="Whose allowed domains count">
+          <input className="input mono" aria-label="Command to try" value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void check()} />
+          <select className="input" aria-label="Project whose allowed domains count" value={projectId} onChange={(e) => setProjectId(e.target.value)} title="Whose allowed domains count">
             <option value="">No project</option>
             {listProjects(projects).map((p) => (
               <option key={p.id} value={p.id}>

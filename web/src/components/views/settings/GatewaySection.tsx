@@ -172,8 +172,8 @@ export function GatewaySection() {
   const setG = (i: number, patch: Partial<Form['groups'][number]>) => setForm({ ...form, groups: form.groups.map((g, j) => (j === i ? { ...g, ...patch } : g)) });
   const setW = (i: number, patch: Partial<SpendWindow>) => setForm({ ...form, windows: form.windows.map((w, j) => (j === i ? { ...w, ...patch } : w)) });
 
-  const targetSelect = (value: string, onChange: (v: string) => void, empty: string) => (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+  const targetSelect = (value: string, onChange: (v: string) => void, empty: string, label: string) => (
+    <select className="input" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{empty}</option>
       {options.map((o) => (
         <option key={o.id} value={o.id}>
@@ -223,17 +223,51 @@ export function GatewaySection() {
         </div>
         {form.providers.map((p, i) => (
           <div key={i} className="gateway-provider" data-provider={p.id}>
-            <input className="input mono" placeholder="id, e.g. deepseek" value={p.id} onChange={(e) => setP(i, { id: e.target.value })} />
-            <input className="input mono wide" placeholder="https://api.example.com/anthropic" value={p.baseUrl} onChange={(e) => setP(i, { baseUrl: e.target.value })} />
-            <select className="input" value={p.auth} onChange={(e) => setP(i, { auth: e.target.value as ProviderForm['auth'] })} title="How the key is sent">
+            <input className="input mono" aria-label={`Provider ${i + 1}: id`} placeholder="id, e.g. deepseek" value={p.id} onChange={(e) => setP(i, { id: e.target.value })} />
+            <input
+              className="input mono wide"
+              aria-label={`Provider ${i + 1}: base URL`}
+              placeholder="https://api.example.com/anthropic"
+              value={p.baseUrl}
+              onChange={(e) => setP(i, { baseUrl: e.target.value })}
+            />
+            <select
+              className="input"
+              aria-label={`Provider ${i + 1}: how the key is sent`}
+              value={p.auth}
+              onChange={(e) => setP(i, { auth: e.target.value as ProviderForm['auth'] })}
+              title="How the key is sent"
+            >
               <option value="bearer">Bearer</option>
               <option value="x-api-key">x-api-key</option>
             </select>
-            <input className="input mono" type="password" placeholder={p.hasToken ? 'Key saved' : 'Key'} value={p.key} onChange={(e) => setP(i, { key: e.target.value })} autoComplete="off" />
-            <input className="input mono wide" placeholder="Models, comma separated" value={p.models} onChange={(e) => setP(i, { models: e.target.value })} />
-            <input className="input num-input" placeholder="$ in" value={p.priceIn} onChange={(e) => setP(i, { priceIn: e.target.value })} title="USD per million input tokens" />
-            <input className="input num-input" placeholder="$ out" value={p.priceOut} onChange={(e) => setP(i, { priceOut: e.target.value })} title="USD per million output tokens" />
-            <button className="icon-btn sm" title="Remove" onClick={() => setForm({ ...form, providers: form.providers.filter((_, j) => j !== i) })}>
+            <input
+              className="input mono"
+              type="password"
+              aria-label={`Provider ${i + 1}: key`}
+              placeholder={p.hasToken ? 'Key saved' : 'Key'}
+              value={p.key}
+              onChange={(e) => setP(i, { key: e.target.value })}
+              autoComplete="off"
+            />
+            <input className="input mono wide" aria-label={`Provider ${i + 1}: models`} placeholder="Models, comma separated" value={p.models} onChange={(e) => setP(i, { models: e.target.value })} />
+            <input
+              className="input num-input"
+              aria-label={`Provider ${i + 1}: USD per million input tokens`}
+              placeholder="$ in"
+              value={p.priceIn}
+              onChange={(e) => setP(i, { priceIn: e.target.value })}
+              title="USD per million input tokens"
+            />
+            <input
+              className="input num-input"
+              aria-label={`Provider ${i + 1}: USD per million output tokens`}
+              placeholder="$ out"
+              value={p.priceOut}
+              onChange={(e) => setP(i, { priceOut: e.target.value })}
+              title="USD per million output tokens"
+            />
+            <button className="icon-btn sm" title="Remove" aria-label={`Remove provider ${p.id || i + 1}`} onClick={() => setForm({ ...form, providers: form.providers.filter((_, j) => j !== i) })}>
               <Trash2 size={14} />
             </button>
           </div>
@@ -251,15 +285,16 @@ export function GatewaySection() {
         <div className="hint">Members in order, one provider/model per line. provider/* passes on the model the agent asked for.</div>
         {form.groups.map((g, i) => (
           <div key={i} className="gateway-group">
-            <input className="input mono" placeholder="name, e.g. strong" value={g.id} onChange={(e) => setG(i, { id: e.target.value })} />
+            <input className="input mono" aria-label={`Group ${i + 1}: name`} placeholder="name, e.g. strong" value={g.id} onChange={(e) => setG(i, { id: e.target.value })} />
             <textarea
               className="input mono"
+              aria-label={`Group ${g.id || i + 1}: members, one per line`}
               rows={Math.max(2, g.members.split('\n').length)}
               placeholder={'anthropic/claude-opus-5-5\ndeepseek/deepseek-v4-pro'}
               value={g.members}
               onChange={(e) => setG(i, { members: e.target.value })}
             />
-            <button className="icon-btn sm" title="Remove" onClick={() => setForm({ ...form, groups: form.groups.filter((_, j) => j !== i) })}>
+            <button className="icon-btn sm" title="Remove" aria-label={`Remove group ${g.id || i + 1}`} onClick={() => setForm({ ...form, groups: form.groups.filter((_, j) => j !== i) })}>
               <Trash2 size={14} />
             </button>
           </div>
@@ -271,18 +306,18 @@ export function GatewaySection() {
         <div className="hint">Each bot picks a group or provider/model in its own model setting (and the chat's model switch). The routes below override the role's own model when set.</div>
         <div className="field">
           <label>Default</label>
-          {targetSelect(form.defaultTarget, (v) => setForm({ ...form, defaultTarget: v }), 'None')}
+          {targetSelect(form.defaultTarget, (v) => setForm({ ...form, defaultTarget: v }), 'None', 'Default route')}
           <div className="hint">Where a call that names no group or provider/model goes (a Claude model name, say).</div>
         </div>
         <div className="field">
           <label>Fast tier</label>
-          {targetSelect(form.fastTarget, (v) => setForm({ ...form, fastTarget: v }), "The session's own target")}
+          {targetSelect(form.fastTarget, (v) => setForm({ ...form, fastTarget: v }), "The session's own target", 'Fast tier route')}
           <div className="hint">Claude Code's small background calls (titles, summaries).</div>
         </div>
         {ROLES.map((r) => (
           <div key={r.id} className="field" data-role={r.id}>
             <label>{r.label}</label>
-            {targetSelect(form.roles[r.id] || '', (v) => setForm({ ...form, roles: { ...form.roles, [r.id]: v || undefined } }), "The role's own model")}
+            {targetSelect(form.roles[r.id] || '', (v) => setForm({ ...form, roles: { ...form.roles, [r.id]: v || undefined } }), "The role's own model", `Route for ${r.label}`)}
             <div className="hint">{r.hint}</div>
           </div>
         ))}
@@ -303,15 +338,15 @@ export function GatewaySection() {
           const state = report?.windows.find((x) => x.id === w.id);
           return (
             <div key={i} className="gateway-window">
-              <input className="input mono" value={w.id} onChange={(e) => setW(i, { id: e.target.value })} title="Name" />
-              <select className="input" value={w.role} onChange={(e) => setW(i, { role: e.target.value as SpendWindow['role'] })}>
+              <input className="input mono" value={w.id} onChange={(e) => setW(i, { id: e.target.value })} title="Name" aria-label={`Spend window ${i + 1}: name`} />
+              <select className="input" aria-label={`Spend window ${w.id}: role`} value={w.role} onChange={(e) => setW(i, { role: e.target.value as SpendWindow['role'] })}>
                 {WINDOW_ROLES.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.label}
                   </option>
                 ))}
               </select>
-              <select className="input" value={w.botId || ''} onChange={(e) => setW(i, { botId: e.target.value || undefined })}>
+              <select className="input" aria-label={`Spend window ${w.id}: bot`} value={w.botId || ''} onChange={(e) => setW(i, { botId: e.target.value || undefined })}>
                 <option value="">Every bot</option>
                 {bots.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -334,7 +369,7 @@ export function GatewaySection() {
                   {state.spent ? ' · used up' : ''}
                 </span>
               )}
-              <button className="icon-btn sm" title="Remove" onClick={() => setForm({ ...form, windows: form.windows.filter((_, j) => j !== i) })}>
+              <button className="icon-btn sm" title="Remove" aria-label={`Remove spend window ${w.id}`} onClick={() => setForm({ ...form, windows: form.windows.filter((_, j) => j !== i) })}>
                 <Trash2 size={14} />
               </button>
             </div>
@@ -371,13 +406,13 @@ export function GatewaySection() {
           <span className="spacer" />
           {saved.enabled && (
             <>
-              {targetSelect(testTarget, setTestTarget, 'Test the default')}
+              {targetSelect(testTarget, setTestTarget, 'Test the default', 'Route to test')}
               <button className="btn ghost sm" disabled={test === 'running' || !report?.running} onClick={() => void runTest()}>
                 {test === 'running' ? <span className="spinner" /> : null} Test
               </button>
             </>
           )}
-          <button className="icon-btn sm" title="Refresh" onClick={() => void refresh()}>
+          <button className="icon-btn sm" title="Refresh" aria-label="Refresh the gateway's report" onClick={() => void refresh()}>
             <RefreshCw size={14} />
           </button>
         </div>
