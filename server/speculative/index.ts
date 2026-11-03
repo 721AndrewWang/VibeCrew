@@ -14,9 +14,14 @@ import type { Chat, Project, Speculation, SpeculativeSignal, Trigger, Worker } f
 import type { SpeculativeClaimArgs } from '../agents/crewTools';
 import { parseNumstat } from '../autoChallenge';
 import { bus, notify } from '../bus';
+import { asyncRefusal, shapeAsync } from '../channels/profiles';
 import { DATA, FAKE_AGENT } from '../config';
+import { createDraft, discardDraft } from '../drafts';
+import { asyncBody } from '../github/gates';
 import { autoCommit, gitError } from '../gitops';
+import { redactDeep } from '../hardening/redactor';
 import { getJob } from '../jobs';
+import { groupGone, reapOrphan } from '../jobs/orphans';
 import { leadOf, routerEvent, routerMode } from '../layers';
 import { dismissWorker, type SpeculativeHost, setSpeculativeHost, startWorker, stopWorker } from '../layers/workers';
 import { logger } from '../log';
@@ -27,13 +32,14 @@ import { chatProjectId, configOf, gitIn, HttpError } from '../projects';
 import { agentEnvOptions } from '../safety';
 import { sandboxOptions } from '../sandbox';
 import { skills } from '../skills';
-import { bots, chats, messages, projects, settings, speculationLog, uid, workers } from '../store';
+import { bots, chats, drafts, messages, projects, settings, speculationLog, uid, workers } from '../store';
 import { chatThread, detailText, onTrigger, publishTrigger, superAgentOn, targetChat } from '../triggers';
 import { monthSpend } from '../usage';
 import { checkGit, disposeWorkspace, type Workspace } from '../workspaces';
 import { DEFAULT_PROJECT_SPECULATIVE, detectCheckCommand, normalizeProjectSpeculative } from './config';
 import { speculativePrompt } from './prompts';
-import { botRefusal, dayStart, gateRefusal, judgeClaim, repoPath, SAME_SIGNAL_MS, type SignalInput, signalOf } from './rules';
+import { botRefusal, gateRefusal, judgeClaim, repoPath, SAME_SIGNAL_MS, type SignalInput, signalOf } from './rules';
+import { spentToday } from './spend';
 import { type CheckEnv, verifyFix } from './verify';
 
 const log = logger('speculative');
@@ -55,6 +61,8 @@ const timers = new Map<string, NodeJS.Timeout>();
 
 function record(sp: Speculation, patch: Partial<Speculation> = {}): Speculation {
   Object.assign(sp, patch, { updatedAt: Date.now() });
+  // Check output and the run's summary may quote a secret: the ledger never holds one (ADR 104 × 008).
+  Object.assign(sp, redactDeep({ claim: sp.claim, checks: sp.checks, summary: sp.summary, why: sp.why }));
   speculationLog.append(sp);
   bus.emit({ t: 'speculation', speculation: sp });
   return sp;
@@ -78,11 +86,7 @@ export function bootSpeculations(): Speculation[] {
 
 const byWorker = (w: Pick<Worker, 'speculation'>) => speculationLog.get(w.speculation);
 
-/** What today's runs cost: finished ones from their record, running ones from their Worker so far. */
-export function spentToday(now = Date.now()): number {
-  const from = dayStart(now);
-  return speculationLog.all().reduce((sum, s) => (s.at >= from && s.status !== 'skipped' ? sum + Math.max(s.costUsd, workers.get(s.workerId)?.costUsd || 0) : sum), 0);
-}
+export { spentToday } from './spend';
 
 // ---------------------------------------------------------------- deciding (ADR 008 §1)
 
@@ -118,6 +122,9 @@ function inputOf(t: Trigger, checkCommand: string): SignalInput | null {
       .map((l) => l.slice(8));
     return { source: 'preview-console', filterRule: t.filter.rule, errors };
   }
+  // A failing check GitHub reported on a pull request (ADR 102 × 008, ADR 011).
+  if (t.source === 'github' && t.github?.kind === 'check' && t.github.check)
+    return { source: 'github', check: t.github.check.name, conclusion: t.github.check.conclusion, ref: `${t.github.repo}#${t.github.number}` };
   if (t.source === 'user' && t.ref.kind === 'message') {
     const m = messages.get(t.ref.chatId, t.ref.messageId);
     return m && !m.skill ? { source: 'user', text: m.text } : null;
@@ -127,7 +134,7 @@ function inputOf(t: Trigger, checkCommand: string): SignalInput | null {
 
 /** The text the run starts from: what ran and how it ended, the console lines, the user's words. */
 function detailOf(t: Trigger, signal: SpeculativeSignal): string {
-  if (signal === 'failing-check') {
+  if (signal === 'failing-check' && t.source !== 'github') {
     const job = getJob(t.related[0]);
     const m = t.ref.kind === 'message' ? messages.get(t.ref.chatId, t.ref.messageId) : undefined;
     return [`Command: ${job?.command || '(unknown)'}`, m?.text || detailText(t)].join('\n');
@@ -137,7 +144,7 @@ function detailOf(t: Trigger, signal: SpeculativeSignal): string {
 
 /** The Trigger bus calls this for every recorded Trigger: cheap checks first, the rest in the background. */
 function consider(t: Trigger) {
-  if (!superAgentOn() || (t.source !== 'job' && t.source !== 'preview-console' && t.source !== 'user')) return;
+  if (!superAgentOn() || (t.source !== 'job' && t.source !== 'preview-console' && t.source !== 'user' && t.source !== 'github')) return;
   const chat = targetChat(t);
   const folder = folderOf(chat, t);
   if (!folder) return;
@@ -161,6 +168,20 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
     () => true,
     () => false,
   );
+  // A GitHub check failed at its pull request's head: that commit is the observed state (ADR 011).
+  const gh = t.source === 'github' && t.github?.check ? { repo: t.github.repo, number: t.github.number, check: t.github.check.name, head: t.github.check.head } : undefined;
+  const head =
+    gh && git
+      ? {
+          sha: gh.head,
+          present:
+            /^[0-9a-f]{7,64}$/i.test(gh.head) &&
+            (await gitIn(folder.path, ['cat-file', '-e', `${gh.head}^{commit}`]).then(
+              () => true,
+              () => false,
+            )),
+        }
+      : undefined;
   const live = speculationLog.all().filter((s) => IN_FLIGHT.has(s.status));
   const twin = speculationLog.recent(1, (s) => s.fingerprint === t.fingerprint && s.status !== 'skipped' && now - s.at < SAME_SIGNAL_MS)[0];
   const refused = gateRefusal({
@@ -172,6 +193,7 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
     chat: !!chat,
     bot: botRefusal(lead && { name: lead.name, blindReview: lead.blindReview, level, overBudget: !!lead.monthlyBudgetUsd && monthSpend(lead.id) >= lead.monthlyBudgetUsd }),
     git,
+    head,
     duplicateOf: twin?.id,
     inFlight: live.length,
     inFlightHere: live.filter((s) => s.projectId === root.id).length,
@@ -190,6 +212,7 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
     chatId: chat?.id ?? null,
     status: 'skipped',
     costUsd: 0,
+    ...(gh ? { github: gh } : {}),
   };
   if (refused) {
     const again = speculationLog.recent(1, (s) => s.status === 'skipped' && s.fingerprint === t.fingerprint && s.why === refused && now - s.at < SKIP_REPEAT_MS)[0];
@@ -218,12 +241,14 @@ async function decide(t: Trigger, chat: Chat | undefined, folder: Project, root:
 
 const host: SpeculativeHost = {
   source: (w) => projects.get(byWorker(w)?.target),
+  baseCommit: (w) => byWorker(w)?.github?.head,
   checkCommand: (w) => byWorker(w)?.checkCommand || '',
   model: (_w, chat) => settings.get().superAgent.speculative.model || (chat.model !== undefined ? chat.model : settings.get().superAgent.router.workerModel),
   prompt(w, project, context) {
     const sp = byWorker(w);
     return speculativePrompt({
       signal: sp?.signal || 'bug-report',
+      origin: sp?.github ? 'github' : undefined,
       detail: (sp && details.get(sp.id)) || sp?.summary || '',
       checkCommand: sp?.checkCommand || '',
       playbook: FAMILIES.flatMap((f) => skills.forFamily(project, f, 'speculative')).map((s) => ({ name: s.name, title: s.title, body: s.body })),
@@ -258,7 +283,7 @@ const host: SpeculativeHost = {
     stopReasons.delete(w.id);
     if (sp?.status !== 'running') return;
     record(sp, { costUsd: w.costUsd });
-    if (outcome === 'stopped') return void discard(sp, stopped || 'It was stopped');
+    if (outcome === 'stopped') return void discard(sp, stopped || (detail?.startsWith('The Watchdog') ? detail : 'It was stopped'));
     if (outcome === 'error') return void discard(sp, `It failed: ${detail || 'unknown error'}`);
     void verify(sp, w).catch((e) => discard(sp, `Verification failed: ${(e as Error).message}`));
   },
@@ -267,18 +292,21 @@ setSpeculativeHost(host);
 
 // ---------------------------------------------------------------- verification (ADR 008 §3)
 
-function checkEnv(w: Worker, ws: Project): CheckEnv {
+function checkEnv(w: Worker, ws: Project, sp: Speculation): CheckEnv {
   const s = settings.get();
   const bot = bots.get(w.botId);
   const conf = configOf(ws);
   return {
-    // The demo agent has no Claude Code to run a sandboxed Bash call in.
-    sandbox: FAKE_AGENT ? undefined : sandboxOptions(s.sandbox.enabled, s.sandbox.allowedDomains, conf.allowedDomains),
+    // The demo agent has no Claude Code to run a sandboxed Bash call in. The worktree's folder gives the
+    // sandbox the hardened filesystem rules every agent session gets (ADR 104 × 008).
+    sandbox: FAKE_AGENT ? undefined : sandboxOptions(s.sandbox.enabled, s.sandbox.allowedDomains, conf.allowedDomains, ws.path),
     denyRules: s.denyRules || [],
     deniedReason: (tool, input) => deniedReason(tool, input, ws.path, { project: ws, actor: { botId: w.botId, botName: bot?.name, chatId: w.chatId, workerId: w.id } }),
     env: { CREW_SPECULATIVE: '1' },
     envOptions: agentEnvOptions(ws),
     agentEnv: agentEnv({ role: 'speculative', botId: w.botId }, undefined, ws),
+    onStart: (pid, startedAt) => void record(sp, { checking: { pid, startedAt } }),
+    onEnd: () => void record(sp, { checking: undefined }),
   };
 }
 
@@ -296,7 +324,7 @@ async function verify(sp: Speculation, w: Worker) {
   const tests = new Set(claim.ok ? claim.testFiles : []);
   record(sp, { head, files: changed.map((f) => ({ ...f, test: tests.has(f.path) })) });
   if (!claim.ok) return discard(sp, claim.why);
-  const r = await verifyFix({ worktree: info.worktree, cwd: ws.path, base: sp.base, head, fixFiles: claim.fixFiles, checkCommand: sp.checkCommand || '', env: checkEnv(w, ws) });
+  const r = await verifyFix({ worktree: info.worktree, cwd: ws.path, base: sp.base, head, fixFiles: claim.fixFiles, checkCommand: sp.checkCommand || '', env: checkEnv(w, ws, sp) });
   record(sp, { checks: { after: r.after, before: r.before } });
   if (!r.ok) return discard(sp, r.why);
   surface(sp, w);
@@ -349,6 +377,8 @@ function surface(sp: Speculation, w: Worker) {
   });
   record(sp, { status: 'ready', triggerOut: t?.id, messageId: msg.id });
   notify('Crew found a fix', sp.summary.slice(0, 140), { chatId: chat.id, level: 'success' });
+  // From a GitHub check: the pull request hears of it in GitHub's register, as a draft the user posts (ADR 011).
+  if (sp.github) void draftForGithub(sp, chat).catch((e) => log.warn(`${sp.id}: could not draft the pull request comment:`, e));
   // The Router may mention it; as an environment event it cannot merge it or start work from it.
   if (routerMode(chat))
     routerEvent(chat.id, {
@@ -358,8 +388,42 @@ function surface(sp: Speculation, w: Worker) {
       source: 'speculative',
       summary: `A fix is ready (${sp.id}) for ${sp.summary}. ${fileList(sp, false)}.`,
       reason: "Crew reproduced the problem in a throwaway workspace and the fix passed the project's checks; the user merges or discards it with one click in the chat",
+      ...(sp.github && t ? { thread: t.threadId, github: `${sp.github.repo}#${sp.github.number}` } : {}),
     });
   log.info(`${sp.id}: fix ready in ${chat.id}`);
+}
+
+/**
+ * The comment a fix for a failing GitHub check gets on its pull request: built by code from the
+ * verified facts, in the GitHub channel's three sections and the comment profile (ADR 102 × 103),
+ * and saved as a draft. Nothing is posted until the user approves it.
+ */
+export function githubComment(sp: Pick<Speculation, 'github' | 'files' | 'checkCommand' | 'checks' | 'claim' | 'id'>, withSummary = true): string {
+  const gh = sp.github;
+  const files = (sp.files || []).map((f) => `- \`${f.path}\` (+${f.added} −${f.removed})${f.test ? ', the reproduction' : ''}`);
+  return asyncBody({
+    background: `The check "${gh?.check}" failed on this pull request at ${gh?.head.slice(0, 12)}. Crew reproduced the failure locally on that commit in a throwaway worktree.`,
+    change: [withSummary && sp.claim?.summary ? sp.claim.summary : '', ...files].filter(Boolean).join('\n'),
+    verification: [
+      `\`${sp.checkCommand}\` fails without the fix (exit code ${sp.checks?.before?.exitCode ?? '?'}) and passes with it (exit code ${sp.checks?.after?.exitCode ?? '?'}), the reproduction kept both times.`,
+      `The fix is not pushed: it waits in Crew (${sp.id}) to be merged.`,
+    ].join('\n'),
+  });
+}
+
+async function draftForGithub(sp: Speculation, chat: Chat) {
+  const gh = sp.github;
+  if (!gh) return;
+  // The run's summary is model text written after reading outside input: dropped if it does not fit the profile.
+  let body = githubComment(sp);
+  if (asyncRefusal('comment', body)) body = githubComment(sp, false);
+  if (asyncRefusal('comment', body)) return;
+  const cwd = projects.get(sp.target)?.path || projects.get(sp.projectId)?.path || '';
+  const d = await createDraft(
+    { kind: 'pr-comment', repo: gh.repo, number: gh.number, body: shapeAsync('comment', body), why: `A verified fix for the failing check "${gh.check}"` },
+    { chatId: chat.id, botId: sp.botId ?? null, workerId: sp.workerId, cwd },
+  );
+  record(sp, { draftId: d.id });
 }
 
 // ---------------------------------------------------------------- merging and discarding
@@ -378,6 +442,8 @@ export async function discard(sp: Speculation, why: string) {
   if (sp.status === 'merged' || sp.status === 'discarded' || sp.status === 'skipped') return sp;
   details.delete(sp.id);
   record(sp, { status: 'discarded', why, decidedAt: Date.now() });
+  // Its pull request comment speaks of a fix that is gone now.
+  if (sp.draftId && drafts.get(sp.draftId)?.status === 'pending') discardDraft(sp.draftId, `The speculative fix ${sp.id} was discarded: ${why}`);
   await dispose(sp);
   log.info(`${sp.id}: discarded: ${why}`);
   return sp;
@@ -461,7 +527,14 @@ export async function sweepSpeculations(now = Date.now()) {
  * branch removed); ready fixes stay, with their Worker and workspace.
  */
 export async function recoverSpeculations() {
-  for (const sp of speculationLog.all()) if (IN_FLIGHT.has(sp.status)) await discard(sp, 'Crew restarted');
+  for (const sp of speculationLog.all()) {
+    if (!IN_FLIGHT.has(sp.status)) continue;
+    // A check command Crew was running lives in its own process group and outlives a crash: stop it
+    // before its worktree is removed, as for a background job (ADR 105 × 008, ADR 011).
+    const reaped = sp.checking ? reapOrphan({ id: sp.id, pid: sp.checking.pid, startedAt: sp.checking.startedAt }) : false;
+    if (reaped && sp.checking) await groupGone(sp.checking.pid);
+    await discard(sp, reaped ? 'Crew restarted; its check command was still running and was stopped' : 'Crew restarted');
+  }
   setInterval(() => void sweepSpeculations().catch((e) => log.warn('sweep:', e)), 3600_000).unref();
 }
 

@@ -57,6 +57,8 @@ interface Live {
   stop: boolean;
   /** Stopped with the whole chat: the Router is not told. */
   quiet: boolean;
+  /** Who stopped it and why (the Watchdog, the user): a speculative run's discard says so (ADR 011). */
+  why?: string;
   first?: { userMessageIds: string[]; setupNote?: string };
   /** The environment lines the session was last sent. */
   context?: string[];
@@ -112,6 +114,8 @@ export function listWorkers(chatId?: string): Worker[] {
 export interface SpeculativeHost {
   /** Where the problem was observed: the chat's workspace or the project folder. */
   source(w: Worker): Project | undefined;
+  /** The commit to start from instead of the folder's current state: a GitHub check's head (ADR 011). */
+  baseCommit?(w: Worker): string | undefined;
   checkCommand(w: Worker): string;
   model(w: Worker, chat: Chat): string;
   /** The run's prompt, built in its throwaway workspace. */
@@ -284,7 +288,7 @@ async function launchSpeculative(w: Worker, l: Live) {
   const source = host?.source(w);
   if (!host || !source) throw new Error('The folder the problem was seen in is gone');
   save(w, { detail: 'Creating its throwaway workspace' });
-  const { ws, base } = await createSpeculativeWorkspace(source, w);
+  const { ws, base } = await createSpeculativeWorkspace(source, w, host.baseCommit?.(w));
   projects.flush();
   save(w, { projectId: ws.id, base, landedHead: base, detail: undefined });
   host.launched(w, ws, base);
@@ -650,7 +654,7 @@ async function runTurn(w: Worker, first: Live['first'], followUps: string[], del
  */
 async function endSpeculative(w: Worker, project: Project | null, msg: ChatMessage, stopped: boolean) {
   const outcome = stopped || msg.status === 'stopped' ? 'stopped' : msg.status === 'done' ? 'done' : 'error';
-  let detail = outcome === 'error' ? (msg.error || 'unknown error').split('\n')[0].slice(0, 160) : undefined;
+  let detail = outcome === 'error' ? (msg.error || 'unknown error').split('\n')[0].slice(0, 160) : outcome === 'stopped' ? liveOf(w.id).why : undefined;
   const wt = project?.workspace?.worktree;
   if (wt) await autoCommit(wt, `Speculative run: ${commitSubject(msg.text, w.title)}`).catch((e) => (detail = `Couldn't commit its changes: ${gitError(e)}`));
   save(w, { turns: w.turns + 1, costUsd: w.costUsd + (msg.meta?.costUsd || 0) });
@@ -810,6 +814,7 @@ export async function stopWorker(id: string, opts: { quiet?: boolean; why?: stri
   const l = liveOf(id);
   l.stop = true;
   l.quiet = !!opts.quiet;
+  l.why = opts.why;
   if (w.pending?.length) save(w, { pending: [] });
   const stream = l.stream;
   if (stream) {

@@ -21,6 +21,7 @@ import type {
   Thread,
   Trigger,
   TriggerDetail,
+  TriggerGithub,
   TriggerList,
   TriggerRef,
   TriggerSource,
@@ -73,6 +74,8 @@ export interface TriggerInput {
   action?: string;
   /** The Worker whose action this event is (its own landing): its subscriptions do not count. */
   origin?: string;
+  /** A GitHub event's facts, kept on the Trigger (ADR 011). */
+  github?: TriggerGithub;
 }
 
 export const chatThread = (chat: Chat): ThreadSpec => ({ key: `chat:${chat.id}`, kind: 'chat', title: chat.title, chatId: chat.id, projectId: chatProjectId(chat) });
@@ -135,6 +138,7 @@ function publish(input: TriggerInput, sa: SuperAgentSettings): Trigger {
     fingerprint: fingerprintOf(input.source, subjects.length ? subjects : [input.summary]),
     filter: { verdict: 'drop', stage: 'fast', rule: '', reason: '' },
     action: input.action,
+    ...(input.github ? { github: input.github } : {}),
   };
   const fast: FastInput = { source: t.source, explicit: t.explicit, rootProjectId: rootProject(t.projectId), subjects, fingerprint: t.fingerprint, facts: input.facts ?? {} };
   const to = receiversFor(thread, t.explicit || t.source === 'user' || t.source === 'routine', input.origin);

@@ -26,7 +26,12 @@ export type SignalInput =
   /** Console errors in the preview, after the fast path. */
   | { source: 'preview-console'; filterRule: string; errors: string[] }
   /** A user's message. */
-  | { source: 'user'; text: string };
+  | { source: 'user'; text: string }
+  /** A check run GitHub reported on a pull request (ADR 102): its name, conclusion and `owner/repo#n`. */
+  | { source: 'github'; check: string; conclusion: string; ref: string };
+
+/** GitHub conclusions that mean the check found a problem (not cancelled, skipped or neutral). */
+const GITHUB_FAILED = new Set(['failure', 'timed_out']);
 
 export interface SignalMatch {
   signal: SpeculativeSignal;
@@ -48,6 +53,10 @@ export function signalOf(input: SignalInput): SignalMatch | null {
     if (check && (cmd === check || cmd.startsWith(`${check} `))) return { signal: 'failing-check', reasons: [`The project's check command failed: ${short(cmd)}`] };
     const word = cmd.match(CHECK_WORDS)?.[0];
     return word ? { signal: 'failing-check', reasons: [`A check failed: ${short(cmd)} (it reads like a check: "${word}")`] } : null;
+  }
+  if (input.source === 'github') {
+    if (!GITHUB_FAILED.has(input.conclusion)) return null;
+    return { signal: 'failing-check', reasons: [`GitHub check "${short(input.check, 60)}" ${input.conclusion === 'timed_out' ? 'timed out' : 'failed'} on ${input.ref}`] };
   }
   if (input.source === 'preview-console') {
     if (QUIET_RULES.has(input.filterRule)) return null;
@@ -83,6 +92,8 @@ export interface GateInput {
   /** Why the member it would run as cannot, if it cannot. */
   bot: string | null;
   git: boolean;
+  /** A GitHub check's head commit (ADR 011): the state to reproduce, and whether the local repository has it. */
+  head?: { sha: string; present: boolean };
   /** A run on the same fingerprint within SAME_SIGNAL_MS: its id. */
   duplicateOf?: string;
   inFlight: number;
@@ -99,6 +110,7 @@ export function gateRefusal(g: GateInput): string | null {
   if (!g.chat) return 'No chat works on this project, so there is nowhere to surface a fix';
   if (g.bot) return g.bot;
   if (!g.git) return "The project isn't a git repository with a commit, so there is no throwaway workspace";
+  if (g.head && !g.head.present) return `The pull request's head commit ${g.head.sha.slice(0, 7)} is not in the local repository (fetch it), so the state the check failed in cannot be reproduced`;
   if (g.duplicateOf) return `The same signal was speculated on in the last 24 hours (${g.duplicateOf})`;
   if (g.inFlight >= g.settings.maxConcurrent) return `${g.inFlight} speculative run${g.inFlight === 1 ? ' is' : 's are'} already going (at most ${g.settings.maxConcurrent})`;
   if (g.inFlightHere) return 'A speculative run is already going in this project';

@@ -756,7 +756,8 @@ async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, 
   }
   const text = replies.join(' ').split(/\s+/).slice(0, 90).join(' ');
   // A finished Worker's report asks the user to look at the work; anything else reports a decision.
-  const kind = /kind="worker"[^>]*status="done"/.test(prompt) ? 'acceptance' : 'decision';
+  // So is a verified speculative fix waiting for the user's merge (ADR 011).
+  const kind = /kind="worker"[^>]*status="done"/.test(prompt) || /kind="environment"[^>]*source="speculative"/.test(prompt) ? 'acceptance' : 'decision';
   if (text) {
     const sent = await call('reply', { text, kind });
     // Refused (the chat profile): one shorter, plainer try, as a model would after reading why.
@@ -784,7 +785,10 @@ async function fakeWatchdog(prompt: string, say: (text: string) => Promise<void>
     const running = ['running', 'starting', 'waiting'].includes(a.status);
     const result = async (p: Promise<string>) => p.catch((e) => `refused: ${(e as Error).message}`);
     if (!maintainer && running && (flags.includes('stuck') || flags.includes('looping') || /\bdrift\b/i.test(task)))
-      done.push(`${a.id}: ${await result(call('stop_worker', { id: a.id, why: 'It is not making progress on its task.', redirect: 'Refocus on your task and report what is done.' }))}`);
+      // A speculative run (ADR 008) is stopped without a redirect: it takes no notes (ADR 011).
+      done.push(
+        `${a.id}: ${await result(call('stop_worker', { id: a.id, why: 'It is not making progress on its task.', ...(a.speculative === 'true' ? {} : { redirect: 'Refocus on your task and report what is done.' }) }))}`,
+      );
     else if (!maintainer && a.status === 'error' && flags.includes('failed-transient'))
       done.push(`${a.id}: ${await result(call('restart_worker', { id: a.id, note: 'The failure looked transient; try again.' }))}`);
   }

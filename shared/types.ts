@@ -896,6 +896,12 @@ export interface Speculation {
   messageId?: ID;
   /** When it was merged or discarded. */
   decidedAt?: number;
+  /** A failing GitHub check it acted on (ADR 011): the pull request, the check and the head commit the run started from. */
+  github?: { repo: string; number: number; check: string; head: string };
+  /** The comment Crew drafted on that pull request when the fix was verified: posted only on the user's click. */
+  draftId?: ID;
+  /** The check command Crew is running now, by process group: a restart stops it before the run is discarded (ADR 011). */
+  checking?: { pid: number; startedAt: number };
 }
 
 export interface RecallSettings {
@@ -1024,9 +1030,17 @@ export interface WatchdogInfo {
   ticksLastHour: number;
   actionsToday: number;
   spentTodayUsd: number;
+  /** Speculative runs (ADR 008), which the Watchdog also watches: today's spend against their own daily budget (ADR 011). */
+  speculative?: SpeculativeSpend;
   lastTick?: WatchdogTick;
   pendingProposals: number;
   openWatches: number;
+}
+
+export interface SpeculativeSpend {
+  running: number;
+  spentTodayUsd: number;
+  dailyBudgetUsd: number;
 }
 
 export interface WatchdogOverview extends WatchdogInfo {
@@ -1167,6 +1181,18 @@ export interface Trigger {
   filter: TriggerFilter;
   /** What acting meant, e.g. "Sent to Chief". */
   action?: string;
+  /** A GitHub event's facts (ADR 102), for code that acts on them: which issue or pull request, and a check's outcome. */
+  github?: TriggerGithub;
+}
+
+export interface TriggerGithub {
+  kind: 'issue' | 'comment' | 'review-comment' | 'check';
+  /** The event's key in its repository (`<kind>:<GitHub id>`): a poll a restart cut off is not published twice. */
+  key: string;
+  repo: string;
+  number: number;
+  pr: boolean;
+  check?: { name: string; conclusion: string; head: string };
 }
 
 /** A stream of related Triggers: one chat topic, one routine, one workspace, or one GitHub issue or pull request. */

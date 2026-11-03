@@ -211,6 +211,14 @@ export function WatchdogView() {
             <div className="wd-meters">
               <Meter label="Ticks this hour" used={info.ticksLastHour} max={o.settings.maxTicksPerHour} />
               <Meter label="Spent today" used={info.spentTodayUsd} max={o.settings.dailyBudgetUsd} fmt={fmtUsd} />
+              {info.speculative && (
+                <Meter
+                  label={`Speculative runs today${info.speculative.running ? ` (${info.speculative.running} running)` : ''}`}
+                  used={info.speculative.spentTodayUsd}
+                  max={info.speculative.dailyBudgetUsd}
+                  fmt={fmtUsd}
+                />
+              )}
               <div className="wd-meter">
                 <div className="wd-meter-head">
                   <span>Actions today</span>

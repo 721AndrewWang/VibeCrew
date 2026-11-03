@@ -33,6 +33,8 @@ export interface WorkerSnap {
   transient: boolean;
   nudgesToday: number;
   restartsToday: number;
+  /** A silent speculative run (ADR 008): the Watchdog may stop it, nothing else (ADR 011). */
+  speculative?: boolean;
 }
 
 export interface ApprovalSnap {
@@ -104,6 +106,8 @@ export interface Snapshot {
   watches: WatchSnap[];
   /** Empty while the audit log is off (Settings → Safety). */
   audit: AuditSnap[];
+  /** Speculative runs today, when any project speculates (ADR 011). */
+  speculative?: { running: number; spentTodayUsd: number; dailyBudgetUsd: number };
 }
 
 /** An approval waiting this long is stuck. */
@@ -158,7 +162,8 @@ export function workerFlags(w: WorkerSnap, s: Pick<Snapshot, 'at' | 'since' | 's
   // Waiting for the user is not the Worker's lack of progress; the approval is flagged instead.
   if (active && w.status !== 'waiting' && s.at - w.lastProgressAt >= s.stuckMinutes * 60_000) flags.push('stuck');
   if (active && w.repeats >= LOOP_REPEATS) flags.push('looping');
-  if (w.status === 'error' && (w.report?.at ?? 0) >= s.since) flags.push(w.transient ? 'failed-transient' : 'failed');
+  // A speculative run that failed is discarded by Crew, quietly: nothing for the Watchdog to restart or tell.
+  if (w.status === 'error' && !w.speculative && (w.report?.at ?? 0) >= s.since) flags.push(w.transient ? 'failed-transient' : 'failed');
   return flags;
 }
 
@@ -197,7 +202,7 @@ const data = (source: string, text: string, words?: number) => untrustedLine(sou
 
 /** Defuses the snapshot's own tags inside quoted text. */
 export function defuseSnap(s: string): string {
-  return defuse(s).replace(/<(\s*\/?\s*)(snapshot|worker|approval|turn_error|friction|interface|watch|limits|audit)\b/gi, '‹$1$2');
+  return defuse(s).replace(/<(\s*\/?\s*)(snapshot|worker|approval|turn_error|friction|interface|watch|limits|audit|speculative)\b/gi, '‹$1$2');
 }
 
 export function renderSnapshot(s: Snapshot, opts: { reason: string }): string {
@@ -212,9 +217,10 @@ export function renderSnapshot(s: Snapshot, opts: { reason: string }): string {
   for (const w of s.workers) {
     const f = workerFlags(w, s);
     out.push(
-      `<worker id="${w.id}" chat="${w.chatId}" chat_title="${attr(w.chatTitle)}" bot="${attr(w.bot)}" status="${w.status}" age="${span(now - w.createdAt)}" last_progress="${ago(w.lastProgressAt, now)}" turns="${w.turns}" cost="$${w.costUsd.toFixed(2)}"${f.length ? ` flags="${f.join(',')}"` : ''} nudges_today="${w.nudgesToday}" restarts_today="${w.restartsToday}">`,
+      `<worker id="${w.id}" chat="${w.chatId}" chat_title="${attr(w.chatTitle)}" bot="${attr(w.bot)}" status="${w.status}" age="${span(now - w.createdAt)}" last_progress="${ago(w.lastProgressAt, now)}" turns="${w.turns}" cost="$${w.costUsd.toFixed(2)}"${w.speculative ? ' speculative="true"' : ''}${f.length ? ` flags="${f.join(',')}"` : ''} nudges_today="${w.nudgesToday}" restarts_today="${w.restartsToday}">`,
     );
     out.push(`Title: ${defuseSnap(w.title)}`);
+    if (w.speculative) out.push('(A silent speculative run: if it is stuck or looping, stop it without a redirect. It takes no notes, is never restarted, and no chat hears of it.)');
     out.push(`Task: ${data('worker task', w.task, 40)}`);
     if (w.detail) out.push(`Now: ${defuseSnap(w.detail)}`);
     if (w.recent.length) out.push(`Latest tool calls: ${data('tool calls', w.recent.join(' · '))}`);
@@ -223,6 +229,7 @@ export function renderSnapshot(s: Snapshot, opts: { reason: string }): string {
     out.push(`(inspect ${w.id} for the full task, calls and report)`);
     out.push('</worker>');
   }
+  if (s.speculative) out.push(`<speculative running="${s.speculative.running}" spent_today="$${s.speculative.spentTodayUsd.toFixed(2)}" daily_budget="$${s.speculative.dailyBudgetUsd.toFixed(2)}" />`);
   for (const a of s.approvals)
     out.push(
       `<approval id="${a.id}" chat="${a.chatId}" chat_title="${attr(a.chatTitle)}" who="${attr(a.who)}"${a.workerId ? ` worker="${a.workerId}"` : ''} waiting="${span(now - a.askedAt)}">${data('approval', a.title)}</approval>`,

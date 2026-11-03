@@ -26,6 +26,9 @@ export interface CheckEnv {
   envOptions: CleanEnvOptions;
   /** The sandboxed helper session's environment. */
   agentEnv: Record<string, string>;
+  /** A check Crew spawned itself started (its process group) and ended: recorded, so a restart can stop it (ADR 011). */
+  onStart?(pid: number, startedAt: number): void;
+  onEnd?(): void;
 }
 
 /** Runs the check command once in `cwd`; never throws. */
@@ -43,6 +46,7 @@ export function runCheck(command: string, cwd: string, ce: CheckEnv, timeoutMin 
         if (done) return;
         done = true;
         clearTimeout(timer);
+        ce.onEnd?.();
         if (r.error) out += `\n${r.error}`;
         if (timedOut) out += `\n(Crew stopped it after ${timeoutMin} min)`;
         const tail = out.trim().split('\n').slice(-TAIL_LINES).join('\n').slice(-TAIL_CHARS);
@@ -52,6 +56,7 @@ export function runCheck(command: string, cwd: string, ce: CheckEnv, timeoutMin 
     const run = ce.sandbox
       ? runSandboxed(command, { cwd, title: 'Speculative check', timeoutMin, sandbox: ce.sandbox, denyRules: ce.denyRules, deniedReason: ce.deniedReason, env: ce.agentEnv }, hooks)
       : runDirect(command, cwd, ce.env, hooks, ce.envOptions);
+    if (run.pid) ce.onStart?.(run.pid, started);
     const timer = setTimeout(() => {
       timedOut = true;
       void run.stop();

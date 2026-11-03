@@ -12,7 +12,7 @@ import { HOME_DIR } from '../config';
 import { routerMode } from '../layers';
 import { logger } from '../log';
 import { HttpError } from '../projects';
-import { Collection, chats, drafts, projects, settings } from '../store';
+import { Collection, chats, drafts, projects, settings, triggerLog } from '../store';
 import { publishTrigger } from '../triggers';
 import { activeChannel } from './config';
 import { freshEvents, type GithubCursor, OVERLAP_MS } from './cursor';
@@ -83,6 +83,13 @@ function ownUrls(): Set<string> {
   return new Set(drafts.all().flatMap((d) => (d.status === 'done' && d.result?.url ? [d.result.url] : [])));
 }
 
+/** Keys of this repository's events already in the Trigger log. */
+function publishedKeys(projectId: string, repo: string): Set<string> {
+  const keys = new Set<string>();
+  for (const t of triggerLog.recent(2000, (x) => x.source === 'github' && x.projectId === projectId && x.github?.repo === repo)) if (t.github) keys.add(t.github.key);
+  return keys;
+}
+
 function publishEvent(project: Project, conf: GithubChannel, e: GhEvent, own: Set<string>, chatId: string | null): Trigger | null {
   const screen = screenGithub(e, conf, { ownUrls: own });
   return publishTrigger({
@@ -95,6 +102,7 @@ function publishEvent(project: Project, conf: GithubChannel, e: GhEvent, own: Se
     chatId,
     subjects: fingerprintParts(e),
     facts: screen ? { screen } : {},
+    github: { kind: e.kind, key: e.key, repo: e.repo, number: e.number, pr: e.pr, ...(e.check ? { check: { name: e.check.name, conclusion: e.check.conclusion, head: e.check.head } } : {}) },
   });
 }
 
@@ -115,8 +123,12 @@ async function pollNow(project: Project, conf: GithubChannel): Promise<GithubSta
       if (!still) break;
       const own = ownUrls();
       const chatId = chatFor(project);
-      for (const e of r.fresh) if (publishEvent(project, still, e, own, chatId)) published++;
+      // The cursor is saved a moment after the Triggers: a poll a crash cut off in between reads the same
+      // events again, and those already published are not published twice (ADR 011).
+      const done = publishedKeys(project.id, repo);
+      for (const e of r.fresh) if (!done.has(e.key) && publishEvent(project, still, e, own, chatId)) published++;
       cursors.set(r.cursor);
+      cursors.flush();
     } catch (e) {
       errors.push(`${repo}: ${(e as Error).message}`);
     }

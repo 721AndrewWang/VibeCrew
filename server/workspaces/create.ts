@@ -153,12 +153,14 @@ export async function createWorkerWorkspace(chatWs: Workspace, worker: { id: str
  * HEAD. No chat lock is taken and the chat is not moved: a turn running there is not held up.
  * Untracked files are not brought along (local files git ignores are, as for any workspace).
  */
-export async function createSpeculativeWorkspace(source: Project, worker: { id: string; chatId: string; title: string }): Promise<{ ws: Workspace; base: string }> {
+export async function createSpeculativeWorkspace(source: Project, worker: { id: string; chatId: string; title: string }, at?: string): Promise<{ ws: Workspace; base: string }> {
   await checkGit(source.path);
   const repo = (await gitIn(source.path, ['rev-parse', '--show-toplevel'])).trim();
   const prefix = (await gitIn(source.path, ['rev-parse', '--show-prefix'])).trim();
-  const snapshot = (await gitIn(source.path, ['stash', 'create', 'Crew: the state a speculative run started from']).catch(() => '')).trim();
-  const base = snapshot || (await gitIn(source.path, ['rev-parse', 'HEAD'])).trim();
+  // A given commit (a GitHub check's head, ADR 011) is the observed state; otherwise the folder as it is now.
+  const given = at ? (await gitIn(source.path, ['rev-parse', '--verify', `${at}^{commit}`])).trim() : '';
+  const snapshot = given ? '' : (await gitIn(source.path, ['stash', 'create', 'Crew: the state a speculative run started from']).catch(() => '')).trim();
+  const base = given || snapshot || (await gitIn(source.path, ['rev-parse', 'HEAD'])).trim();
   const branchName = (await gitIn(source.path, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => 'HEAD')).trim() || 'HEAD';
   const { branch, worktree, path: wsPath } = await addWorktree(repo, base, prefix, worker.title);
   const now = Date.now();

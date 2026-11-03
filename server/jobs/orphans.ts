@@ -69,3 +69,13 @@ export function reapOrphan(j: Pick<BackgroundJob, 'id' | 'pid' | 'startedAt'>, n
   log.info(`${j.id}: its command was still running after a restart; stopped it`);
   return true;
 }
+
+/** Waits (at most `ms`) for a reaped group to be gone, so what it was writing into can be removed after it. */
+export async function groupGone(pgid: number, ms = 4000): Promise<boolean> {
+  const until = Date.now() + ms;
+  while (alive(pgid)) {
+    if (Date.now() >= until) return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return true;
+}

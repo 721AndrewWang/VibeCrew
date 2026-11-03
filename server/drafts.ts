@@ -185,6 +185,15 @@ export async function createDraft(f: DraftFields, origin: DraftOrigin): Promise<
     if (r.code === 0 && r.out && r.out !== 'HEAD') current = r.out.trim();
   }
   const built = buildDraft(f, current);
+  // The same draft, still waiting, in the same chat: a Router turn a restart cut off and handed over
+  // again drafts it a second time (ADR 105 × 102). The user gets one card, not two (ADR 011).
+  const twin = drafts
+    .all()
+    .find(
+      (x) =>
+        x.status === 'pending' && x.chatId === origin.chatId && x.kind === built.kind && x.target === built.target && x.body === built.body && showCommand(x.command) === showCommand(built.command),
+    );
+  if (twin) return twin;
   const d: ExternalDraft = { id: uid('dr_'), at: Date.now(), ...built, chatId: origin.chatId, botId: origin.botId, workerId: origin.workerId, cwd: origin.cwd, status: 'pending' };
   // Where the push goes, as the card shows it; checked again before it runs (ADR 104).
   if (d.kind === 'git-push' && d.command) d.remoteUrl = await pushUrl(d.command[2], d.cwd);
@@ -285,13 +294,14 @@ export async function approveDraft(id: string): Promise<ExternalDraft> {
   return d;
 }
 
-export function discardDraft(id: string): ExternalDraft {
+/** The user's Discard; or Crew's own, with why (a speculative fix that is gone, ADR 011). */
+export function discardDraft(id: string, byCrew?: string): ExternalDraft {
   const d = pendingDraft(id);
   d.status = 'discarded';
   d.decidedAt = Date.now();
   save(d);
-  audit({ event: 'discarded', actor: { ...actorOf(d), user: true }, kind: d.kind, target: d.target, command: showCommand(d.command) || undefined, draftId: d.id });
-  tellChat(d, `You discarded the drafted action: ${d.target}.`);
+  audit({ event: 'discarded', actor: { ...actorOf(d), user: !byCrew }, kind: d.kind, target: d.target, command: showCommand(d.command) || undefined, draftId: d.id, detail: byCrew });
+  if (!byCrew) tellChat(d, `You discarded the drafted action: ${d.target}.`);
   return d;
 }
 

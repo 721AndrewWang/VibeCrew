@@ -54,6 +54,9 @@ const ago = (at: number) => {
 
 const workerState = (w: Worker | undefined) => (w ? { status: w.status, dismissed: !!w.dismissedAt } : null);
 
+/** A speculative run (ADR 008) is silent and one-shot: the Watchdog may stop it, not steer it (ADR 011). */
+const SPECULATIVE_NOTE = 'This is a silent speculative run: it takes no notes and is never redirected. Stop it without a redirect if it is stuck or looping.';
+
 export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffects): Record<string, Handler> {
   /** Runs an action through the per-turn limit, its own gate, and the ledger. */
   const act = async (kind: WatchdogActionKind, target: string, text: string, gate: () => string | null, run: (actionId: string) => Promise<string> | string, chatId?: string): Promise<Result> => {
@@ -79,7 +82,7 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         'nudge',
         str(args.id),
         text,
-        () => noteRefusal(text) ?? nudgeRefusal(workerState(w), w ? fx.countToday(['nudge', 'stop'], w.id) : 0),
+        () => (w?.speculation ? SPECULATIVE_NOTE : null) ?? noteRefusal(text) ?? nudgeRefusal(workerState(w), w ? fx.countToday(['nudge', 'stop'], w.id) : 0),
         (actionId) => {
           fx.nudge(w!, watchdogNote(text, actionId));
           return `Queued for ${w!.id}; it reads the note when its current turn ends.`;
@@ -96,9 +99,13 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         'stop',
         str(args.id),
         then ? `${why} Then: ${then}` : why,
-        () => stopRefusal(workerState(w)) ?? (then ? (noteRefusal(then) ?? nudgeRefusal(workerState(w), fx.countToday(['nudge', 'stop'], w!.id))) : noteRefusal(why)),
+        () =>
+          stopRefusal(workerState(w)) ??
+          (w?.speculation && then ? SPECULATIVE_NOTE : null) ??
+          (then ? (noteRefusal(then) ?? nudgeRefusal(workerState(w), fx.countToday(['nudge', 'stop'], w!.id))) : noteRefusal(why)),
         async (actionId) => {
           await fx.stop(w!, why);
+          if (w!.speculation) return `Stopping ${w!.id}; Crew discards the speculative run quietly, and no chat hears of it.`;
           if (!then) return `Stopping ${w!.id}; the Router is told it was stopped.`;
           fx.nudge(w!, watchdogNote(then, actionId));
           return `Stopping ${w!.id}; it resumes with your note right after.`;

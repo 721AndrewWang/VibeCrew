@@ -30,6 +30,7 @@ import { systemMessage } from '../orchestrator/chatLog';
 import { deniedReason, openApprovals } from '../orchestrator/permissionGate';
 import { agentEnv } from '../orchestrator/turnContext';
 import { HttpError } from '../projects';
+import { speculativeSpend } from '../speculative/spend';
 import { auditLog, bots, chats, messages, settings, triggerLog, uid, WATCHDOG_LOG, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
 import { normalizeSuperAgent } from '../triggers/fastPath';
 import { cronExpr } from './config';
@@ -187,6 +188,7 @@ function workerSnap(w: Worker, now: number): WorkerSnap {
     transient: w.status === 'error' && isTransient(w.detail || w.report?.text),
     nudgesToday: countToday(['nudge', 'stop'], w.id),
     restartsToday: countToday('restart', w.id),
+    ...(w.speculation ? { speculative: true } : {}),
   };
 }
 
@@ -194,8 +196,8 @@ function workerSnap(w: Worker, now: number): WorkerSnap {
 export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().superAgent.watchdog.maxActionsPerTick, since = lastLook(now)): Snapshot {
   const ws = workers
     .all()
-    // Speculative runs (ADR 008) have their own time limit and never need the user: not the Watchdog's to steer.
-    .filter((w) => !w.dismissedAt && !w.speculation && (ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
+    // Speculative runs (ADR 008) are in it too, marked: stuck or looping, the Watchdog may stop one (ADR 011).
+    .filter((w) => !w.dismissedAt && (ACTIVE.has(w.status) || w.updatedAt >= since || openWatches().some((x) => x.subject === w.id)))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_WORKERS);
   const title = (chatId?: string) => (chatId ? chats.get(chatId)?.title : undefined);
@@ -247,6 +249,7 @@ export function gatherSnapshot(now = Date.now(), actionsLeft = settings.get().su
         .map((t) => ({ kind: 'console' as const, id: t.id, at: t.at, chatId: t.chatId ?? undefined, chatTitle: title(t.chatId ?? undefined), text: t.summary })),
     ],
     watches: openWatches().map((w) => ({ id: w.id, subject: w.subject, note: w.note, checks: w.checks, nextAt: w.nextAt, by: w.by })),
+    speculative: speculativeSpend(now),
     // The lifecycle audit log (ADR 007): the guard's refusals and failed draft runs since the last look.
     audit: auditSnaps(
       auditLog.recent(200, (e) => e.at >= since && (e.event === 'blocked' || e.event === 'failed')),
@@ -498,6 +501,7 @@ class WatchdogLoop {
       ticksLastHour: ticksLastHour(now),
       actionsToday: actionsToday(now).filter((a) => !a.refused).length,
       spentTodayUsd: spentToday(now),
+      speculative: speculativeSpend(now),
       lastTick: watchdogTicks.recent(1)[0],
       pendingProposals: watchdogProposals.all().filter((p) => p.status === 'pending').length,
       openWatches: openWatches().length,

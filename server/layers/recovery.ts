@@ -24,7 +24,7 @@ export function routerRedo(o: {
   /** The Router's turns (its log), oldest first. */
   turns: Pick<ChatMessage, 'batch' | 'interrupted' | 'ts' | 'role'>[];
   /** The chat's Workers. */
-  workers: Pick<Worker, 'id' | 'related' | 'report' | 'dismissedAt'>[];
+  workers: Pick<Worker, 'id' | 'related' | 'report' | 'dismissedAt' | 'speculation'>[];
   /** Workers this restart cut off: their interruption is reported on its own. */
   cutOff: Set<string>;
   /** When the user last stopped the chat: its Router's inbox was dropped on purpose then. */
@@ -32,9 +32,12 @@ export function routerRedo(o: {
   now: number;
 }): RouterRedo {
   const turns = o.turns.filter((t) => t.role === 'bot' && t.batch?.length);
+  // A speculative run (ADR 008) is no Router's Worker: it was dispatched for no message and reports to no Router,
+  // so its record neither covers a message the Router took nor carries a report to hand over again (ADR 011).
+  const ours = o.workers.filter((w) => !w.speculation);
   const finished = turns.filter((t) => !t.interrupted);
   const takenByFinished = new Set(finished.flatMap((t) => t.batch || []));
-  const dispatchedFor = new Set(o.workers.flatMap((w) => w.related || []));
+  const dispatchedFor = new Set(ours.flatMap((w) => w.related || []));
 
   const messages: string[] = [];
   for (const t of turns) {
@@ -47,7 +50,7 @@ export function routerRedo(o: {
   }
 
   const reports: RouterRedo['reports'] = [];
-  for (const w of o.workers) {
+  for (const w of ours) {
     const r = w.report;
     if (!r || w.dismissedAt || o.cutOff.has(w.id) || r.quiet) continue;
     if (o.now - r.at > REDO_MAX_AGE_MS || (o.stoppedAt !== undefined && r.at <= o.stoppedAt)) continue;
