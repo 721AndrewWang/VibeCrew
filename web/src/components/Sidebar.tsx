@@ -26,6 +26,7 @@ import { api } from '../api';
 import { openChat, openModal, setView, toast, useStore, type View } from '../store';
 import { cx, fmtShort, statusLabel } from '../utils';
 import { Avatar, confirmDialog, GroupAvatar, Logo, Menu, MenuButton, type MenuItem, useNow } from './ui';
+import { ActivityStrip } from './views/ActivityView';
 
 const NAV: { view: View; label: string; icon: typeof MessageCircle; superAgent?: boolean; watchdog?: boolean }[] = [
   { view: 'chat', label: 'Chats', icon: MessageCircle },
@@ -195,10 +196,11 @@ export function Sidebar() {
         ))}
         {!list.length && <div className="empty">No matching chats</div>}
       </div>
+      <ActivityStrip />
       <nav className="sb-nav">
         {NAV.filter((n) => (!n.superAgent || superAgent) && (!n.watchdog || watchdog)).map((n) => (
-          <button key={n.view} className={cx('sb-nav-item', view === n.view && 'on')} onClick={() => setView(n.view)} title={n.label}>
-            <n.icon size={18} />
+          <button key={n.view} className={cx('sb-nav-item', view === n.view && 'on')} onClick={() => setView(n.view)} title={n.label} aria-current={view === n.view ? 'page' : undefined}>
+            <n.icon size={18} aria-hidden />
             <span>{n.label}</span>
             {n.view === 'chat' && unreadTotal > 0 && view !== 'chat' && <i className="nav-dot" />}
           </button>

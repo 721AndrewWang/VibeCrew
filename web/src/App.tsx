@@ -5,6 +5,7 @@ import { JobLogDialog } from './components/JobsBar';
 import { Sidebar } from './components/Sidebar';
 import { TraceDialog } from './components/TraceDialog';
 import { Logo, Toasts } from './components/ui';
+import { ActivityView } from './components/views/ActivityView';
 import { BotEditorDialog } from './components/views/BotEditor';
 import { BotsView } from './components/views/BotsView';
 import { NewBotDialog } from './components/views/bot-editor/NewBotDialog';
@@ -100,6 +101,7 @@ export function App() {
         {view === 'routines' && <RoutinesView />}
         {view === 'projects' && <ProjectsView />}
         {view === 'triggers' && <TriggersView />}
+        {view === 'activity' && <ActivityView />}
         {view === 'watchdog' && <WatchdogView />}
         {view === 'settings' && <SettingsView />}
       </main>
