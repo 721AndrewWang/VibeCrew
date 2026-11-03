@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import type { RoutingReport } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { toast, useStore } from '../../../store';
+import { fmtUsd } from '../../../utils';
 import { Toggle } from '../../ui';
-import { fmtUsd } from '../BotsView';
 import { Section } from './Section';
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;

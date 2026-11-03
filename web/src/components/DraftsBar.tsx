@@ -28,7 +28,7 @@ const STATUS: Record<ExternalDraft['status'], { label: string; cls: string }> = 
 };
 
 /** The command as a shell would read it: what the user sees is what runs. */
-export function shellLine(argv: string[] | null): string {
+function shellLine(argv: string[] | null): string {
   if (!argv) return '';
   return argv.map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`)).join(' ');
 }

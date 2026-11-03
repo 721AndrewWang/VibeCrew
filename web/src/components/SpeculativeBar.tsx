@@ -51,7 +51,7 @@ function DiffDialog({ sp, onClose }: { sp: Speculation; onClose: () => void }) {
 }
 
 /** One run: a verified fix with its evidence and actions, or how a run ended. */
-export function SpeculationCard({ sp, compact }: { sp: Speculation; compact?: boolean }) {
+function SpeculationCard({ sp, compact }: { sp: Speculation; compact?: boolean }) {
   const bot = useStore((s) => (sp.botId ? s.bots[sp.botId] : undefined));
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState(false);

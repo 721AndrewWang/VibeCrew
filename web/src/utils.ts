@@ -63,6 +63,11 @@ export function fmtDuration(ms: number) {
 }
 
 /** "1 file" / "3 files". */
+/** The list with `x` added, or without it when it was in. */
+export function toggled<T>(list: T[], x: T): T[] {
+  return list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
+}
+
 export function plural(n: number, one: string, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -77,6 +82,11 @@ export function fmtRelative(ts: number) {
 }
 
 /** Token counts: 950, 1.2k, 45k, 1.3M. */
+/** Dollars: cents below $10, whole dollars from there. */
+export function fmtUsd(n: number) {
+  return n >= 10 ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
+}
+
 export function fmtTokens(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 10_000) return `${Math.round(n / 1000)}k`;

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FilteredSource, RecallSettings, RouterSettings, SourceMode, SpeculativeSettings, SuperAgentSettings, WatchdogSettings } from '../../../../../shared/types';
 import { api } from '../../../api';
 import { listProjects, setView, toast, useStore } from '../../../store';
-import { cx, gatewayOptions } from '../../../utils';
+import { cx, gatewayOptions, toggled } from '../../../utils';
 import { SIGNAL_LABEL, SPECULATION_STATUS } from '../../SpeculativeBar';
 import { Toggle } from '../../ui';
 import { Section } from './Section';
@@ -89,7 +89,7 @@ export function SuperAgentSection() {
     }
   };
   const setSource = (id: FilteredSource, p: Partial<Form['sources'][FilteredSource]>) => setForm({ ...form, sources: { ...form.sources, [id]: { ...form.sources[id], ...p } } });
-  const toggleProject = (id: string) => setForm({ ...form, projects: form.projects.includes(id) ? form.projects.filter((x) => x !== id) : [...form.projects, id] });
+  const toggleProject = (id: string) => setForm({ ...form, projects: toggled(form.projects, id) });
 
   return (
     <Section

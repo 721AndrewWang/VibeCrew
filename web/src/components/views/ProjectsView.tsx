@@ -6,7 +6,7 @@ import { SKILL_FAMILIES } from '../../../../shared/families';
 import type { DevServerState, GithubChannel, Project, ProjectSpeculative, SkillFamily } from '../../../../shared/types';
 import { api } from '../../api';
 import { listProjects, openChat, toast, useStore } from '../../store';
-import { copyText, cx, shortPath } from '../../utils';
+import { copyText, cx, shortPath, toggled } from '../../utils';
 import { showWorkspaceChanges } from '../../workspace';
 import { confirmDialog, Glyph, MenuButton, Modal, Toggle } from '../ui';
 import { PageHead } from './BotsView';
@@ -73,7 +73,7 @@ function ProjectSettingsForm({ project, onDone }: { project: Project; onDone: ()
   const setSignal = (k: keyof ProjectSpeculative['signals'], v: boolean) => setSpec({ ...spec, signals: { ...spec.signals, [k]: v } });
   const [github, setGithub] = useState<GithubChannel>(project.github || DEFAULT_GITHUB);
   const [saving, setSaving] = useState(false);
-  const toggleFamily = (id: SkillFamily) => setFamilies(families.includes(id) ? families.filter((f) => f !== id) : [...families, id]);
+  const toggleFamily = (id: SkillFamily) => setFamilies(toggled(families, id));
 
   const save = async () => {
     setSaving(true);

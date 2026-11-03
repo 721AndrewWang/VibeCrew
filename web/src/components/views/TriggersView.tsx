@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Thread, Trigger, TriggerDetail, TriggerList, TriggerSource } from '../../../../shared/types';
 import { api } from '../../api';
 import { loadTriggers, openChat, setView, useStore } from '../../store';
-import { cx, fmtRelative, fmtShort } from '../../utils';
+import { cx, fmtRelative, fmtShort, fmtUsd } from '../../utils';
 import { Modal, useNow } from '../ui';
-import { fmtUsd, PageHead } from './BotsView';
+import { PageHead } from './BotsView';
 
-export const SOURCE_LABEL: Record<TriggerSource, string> = {
+const SOURCE_LABEL: Record<TriggerSource, string> = {
   user: 'User message',
   routine: 'Routine run',
   turn: 'Turn result',

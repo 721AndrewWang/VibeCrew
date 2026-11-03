@@ -23,7 +23,7 @@ const STATUS: Record<JobStatus, { label: string; cls: string }> = {
 /** Finished jobs the bar keeps showing. */
 const RECENT = 4;
 
-export function fmtElapsed(ms: number): string {
+function fmtElapsed(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;

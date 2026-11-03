@@ -7,10 +7,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Chat, WatchdogAction, WatchdogOverview, WatchdogProposal, WatchdogTick } from '../../../../shared/types';
 import { api } from '../../api';
 import { loadLog, openChat, setView, toast, useStore } from '../../store';
-import { cx, fmtRelative, fmtShort } from '../../utils';
+import { cx, fmtRelative, fmtShort, fmtUsd } from '../../utils';
 import { BotMessage, UserMessage } from '../Message';
 import { useNow } from '../ui';
-import { fmtUsd, PageHead } from './BotsView';
+import { PageHead } from './BotsView';
 
 const LOG_ID = 'watchdog';
 /** The Watchdog's log is not a chat; message rendering only needs these fields. */
