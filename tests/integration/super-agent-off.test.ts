@@ -2,15 +2,17 @@
 // them (ADR 010): no new process (no gateway listener, no Watchdog timer, no Router, Worker or
 // background job), no new file or folder in the data folder, and no model call beyond the bot's
 // own turn, whose tools are the ones it had before. A crash and restart with everything off recovers
-// nothing new either (ADR 105).
+// nothing new either (ADR 105). The second wave adds to the list (ADR 011): no speculative run, no
+// GitHub poller and no `gh` process, no webhook delivery, and no channel shape on any reply.
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { type FakeGh, fakeGh } from '../helpers/fakeGh';
 import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
 import { type Api, type CrewServer, claudeCli, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
 /** What the milestones write in the data folder, each only once its feature is on. */
-const NEW_ENTRIES = ['triggers', 'workers.json', 'router', 'jobs', 'watchdog', 'gateway', 'drafts.json', 'audit.jsonl', 'speculative'];
+const NEW_ENTRIES = ['triggers', 'workers.json', 'router', 'jobs', 'watchdog', 'gateway', 'drafts.json', 'audit.jsonl', 'speculative', 'github'];
 /** Their logs beside the chats' in messages/: a Router's, a Worker's, a sub-task's, the Watchdog's. */
 const NEW_LOGS = /^(rt_|wk_|job_|watchdog)/;
 
@@ -43,18 +45,26 @@ async function expectNothingNew(crew: CrewServer) {
   expect(await api('GET', '/triggers')).toMatchObject({ enabled: false, triggers: [], stats: { total: 0 } });
   expect((await api('GET', '/audit')).entries).toEqual([]);
   expect((await api('GET', `/recall/chat?chatId=${b.chats[0].id}`)).status).toBe(404);
+  // The second wave (ADR 011): no project polls GitHub, no webhook is set, and no reply carries a channel shape.
+  expect((await api('GET', '/github')).projects.every((p: any) => !p.active && !p.lastPollAt)).toBe(true);
+  for (const p of b.projects.filter((x: any) => !x.workspace)) expect(await api('GET', `/projects/${p.id}/webhook`)).toMatchObject({ configured: false, enabled: false, deliveries: [] });
+  for (const c of b.chats) expect((await api('GET', `/chats/${c.id}/messages?limit=200`)).messages.some((m: any) => m.channel || m.notice === 'speculative')).toBe(false);
   expect(newFiles(crew.home)).toEqual([]);
 }
 
 describe('everything off (demo mode)', () => {
   const dir = tempDir('crew-off');
   let crew: CrewServer;
+  // A `gh` on PATH that logs every call: with the GitHub channel off, nothing ever runs it.
+  let gh: FakeGh;
 
   beforeAll(async () => {
-    crew = await startServer({ dir });
+    gh = fakeGh();
+    crew = await startServer({ dir, env: { PATH: gh.path } });
   });
   afterAll(async () => {
     await crew?.stop();
+    gh?.remove();
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -64,7 +74,7 @@ describe('everything off (demo mode)', () => {
     expect(b.settings.gateway).toMatchObject({ enabled: false, masking: false });
     expect(b.settings.safety).toEqual({ guard: true, stripCredentials: true, audit: false });
     expect(b.bots.every((x: any) => !x.fullDuplex)).toBe(true);
-    expect(b.projects.every((p: any) => !p.skillFamilies?.length && !p.passEnv?.length && !p.speculative)).toBe(true);
+    expect(b.projects.every((p: any) => !p.skillFamilies?.length && !p.passEnv?.length && !p.speculative && !p.github)).toBe(true);
     await expectNothingNew(crew);
   });
 
@@ -84,6 +94,7 @@ describe('everything off (demo mode)', () => {
     const reply = await waitTurn(crew.api, group.id, asked.seq);
     expect(reply).toMatchObject({ status: 'done', botId: group.leadBotId });
     expect(reply.router).toBeUndefined();
+    expect(reply.channel).toBeUndefined();
     const r = await crew.api('POST', '/routines', { name: 'Check', botId: group.leadBotId, chatId: group.id, prompt: 'Check the links', trigger: { type: 'daily', time: '03:00' } });
     const before = (await crew.api('GET', `/chats/${group.id}/messages?limit=200`)).messages.at(-1).seq;
     await crew.api('POST', `/routines/${r.id}/run`);
@@ -98,6 +109,11 @@ describe('everything off (demo mode)', () => {
     ).toBeNull();
     // The demo bot was not offered the full-duplex tools: it did the work itself.
     expect((await waitTurn(crew.api, dm.id, direct.seq)).parts.some((p: any) => p.type === 'tool' && String(p.name).includes('start'))).toBe(false);
+    // A message that reads like a bug report starts no speculative run, and nothing ever ran gh.
+    const bug = await crew.api('POST', `/chats/${group.id}/messages`, { text: 'The header is broken, it shows an error' });
+    await waitTurn(crew.api, group.id, bug.seq);
+    await new Promise((res) => setTimeout(res, 1500));
+    expect(gh.calls()).toEqual([]);
     await expectNothingNew(crew);
   });
 
@@ -108,8 +124,8 @@ describe('everything off (demo mode)', () => {
     await crew.api('POST', `/chats/${group.id}/messages`, { text: 'Build a footer' });
     await waitFor(async () => (await crew.api('GET', `/chats/${group.id}/messages?limit=5`)).messages.some((m: any) => m.role === 'bot'), 20_000);
     await crew.kill();
-    crew = await startServer({ dir });
-    expect(crew.log()).not.toMatch(/\[(watchdog|jobs|layers|triggers)\]/);
+    crew = await startServer({ dir, env: { PATH: gh.path } });
+    expect(crew.log()).not.toMatch(/\[(watchdog|jobs|layers|triggers|speculative|github)\]/);
     const sent = await crew.api('POST', `/chats/${group.id}/messages`, { text: 'Build a header' });
     expect((await waitTurn(crew.api, group.id, sent.seq)).router).toBeUndefined();
     await expectNothingNew(crew);
@@ -143,7 +159,7 @@ describe.skipIf(!claudeCli())('everything off (real Claude Code and a mock model
     const calls = mock.requests.filter((r) => r.url.startsWith('/v1/messages') && !r.url.includes('count_tokens'));
     expect(calls.length).toBeGreaterThan(0);
     const systems = calls.map((r) => JSON.stringify(r.body.system || ''));
-    for (const marker of ['You filter events for Crew', 'coordinator of the group chat', 'You are working as a Worker', "You are Crew's Watchdog"]) {
+    for (const marker of ['You filter events for Crew', 'coordinator of the group chat', 'You are working as a Worker', "You are Crew's Watchdog", 'You are a speculative background run']) {
       expect(systems.some((s) => s.includes(marker))).toBe(false);
     }
     // The main loop's tools: chat_history as before; no recall, no background jobs, no thread tools.
@@ -151,7 +167,8 @@ describe.skipIf(!claudeCli())('everything off (real Claude Code and a mock model
     expect(main.length).toBeGreaterThan(0);
     for (const r of main) {
       expect(r.tools).toContain('mcp__crew__chat_history');
-      for (const t of ['mcp__crew__recall', 'mcp__crew__start', 'mcp__crew__stop', 'mcp__crew__status', 'mcp__crew__hand_back', 'mcp__crew__unsubscribe_thread']) expect(r.tools).not.toContain(t);
+      for (const t of ['mcp__crew__recall', 'mcp__crew__start', 'mcp__crew__stop', 'mcp__crew__status', 'mcp__crew__hand_back', 'mcp__crew__unsubscribe_thread', 'mcp__crew__speculative_result'])
+        expect(r.tools).not.toContain(t);
     }
     await expectNothingNew(crew);
   });
