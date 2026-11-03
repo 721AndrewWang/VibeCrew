@@ -5,11 +5,15 @@
 // full (they are what the work is for), a Worker's report only its first words with the handle that
 // reads the rest, and environment events their summary, fenced and marked as data.
 
+import { REPLY_WORDS } from '../channels/profiles';
 import { type Budget, handle, spill } from '../recall/spill';
+import { firstWords, wordCount } from '../text';
 import { UNTRUSTED_RULE, untrusted } from '../untrusted';
 import { renderWatchdogNote, WATCHDOG_MARK } from '../watchdog/prompts';
 
-export const REPLY_WORDS = 100;
+/** Kept where the tests read it. */
+export { wordCount };
+
 const REPORT_WORDS = 80;
 const USER_CHARS = 4000;
 
@@ -85,20 +89,6 @@ export interface TeamMember {
   title: string;
   /** Read-only, editable paths, model tier: what the Router needs to pick the right member. */
   profile: string;
-}
-
-/** Scripts written without spaces between words (kana, CJK ideographs, Hangul): each character counts as a word. */
-
-const range = (from: number, to: number) => `${String.fromCharCode(from)}-${String.fromCharCode(to)}`;
-const CJK = new RegExp(`[${range(0x3040, 0x30ff)}${range(0x3400, 0x9fff)}${range(0xac00, 0xd7af)}${range(0xf900, 0xfaff)}]`, 'g');
-
-export function wordCount(text: string): number {
-  return text.replace(CJK, ' ').split(/\s+/).filter(Boolean).length + (text.match(CJK)?.length ?? 0);
-}
-
-export function firstWords(text: string, n: number): { text: string; rest: number } {
-  const words = text.split(/\s+/).filter(Boolean);
-  return words.length > n ? { text: `${words.slice(0, n).join(' ')} …`, rest: words.length - n } : { text: words.join(' '), rest: 0 };
 }
 
 /** Defuses anything inside event text that looks like the prompt's own tags. */

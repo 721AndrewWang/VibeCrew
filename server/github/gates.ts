@@ -1,7 +1,7 @@
 // What the Router may draft for GitHub (ADR 102), and how: a structured write-up for an
 // asynchronous channel, checked in code. Pure.
 
-import { wordCount } from '../layers/prompts';
+import { wordCount } from '../text';
 
 /** An asynchronous channel takes a dense write-up, not a chat line; this bounds it. */
 export const DRAFT_WORDS = 1500;

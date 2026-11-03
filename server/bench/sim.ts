@@ -6,16 +6,18 @@
 
 import { DEFAULT_PROJECT_SPECULATIVE, DEFAULT_SPECULATIVE } from '../../shared/speculative';
 import type { SuperAgentSettings, Thread, Trigger, Worker, WorkerDelivery } from '../../shared/types';
+import { REPLY_WORDS } from '../channels/profiles';
 import { DEFAULT_GITHUB } from '../github/config';
 import type { GhEvent } from '../github/events';
 import { screenGithub } from '../github/filter';
 import { MAX_RUNNING, startRefusal } from '../jobs/gates';
 import { BatchQueue } from '../layers/batch';
 import { dispatchRefusal, messageRefusal, replyRefusal } from '../layers/gates';
-import { type DirectLine, deliveredNote, explicitEvent, REPLY_WORDS, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type WorkerLine, wordCount, workerPrompt } from '../layers/prompts';
+import { type DirectLine, deliveredNote, explicitEvent, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type WorkerLine, workerPrompt } from '../layers/prompts';
 import { ACTIVE, pushInbox, receivers } from '../layers/subscriptions';
 import { speculativePrompt } from '../speculative/prompts';
 import { gateRefusal, SAME_SIGNAL_MS, signalOf } from '../speculative/rules';
+import { wordCount } from '../text';
 import { type FastInput, fastPath, fingerprintOf, normalizeSuperAgent, reachedSlowPath } from '../triggers/fastPath';
 import { BENCH_EPOCH, VirtualClock } from './clock';
 import { DEFAULT_LATENCY, type LatencyModel, type ModelClient, type Role } from './model';

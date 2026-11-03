@@ -5,9 +5,12 @@
 // a surface call these checks, and each refusal tells the model what to change.
 
 import type { DraftKind, ReplyKind } from '../../shared/types';
-import { firstWords, REPLY_WORDS, wordCount } from '../layers/prompts';
+import { firstWords, wordCount } from '../text';
 
 // ---------------------------------------------------------------- the chat profile
+
+/** The most words a Router reply may have in the chat. */
+export const REPLY_WORDS = 100;
 
 export const CHAT_PROFILE = {
   maxWords: REPLY_WORDS,

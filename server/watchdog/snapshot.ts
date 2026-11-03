@@ -7,7 +7,8 @@
 // <untrusted> wrapper as everywhere else in Crew (ADR 007), so it reads as data, never instructions.
 
 import type { AuditEntry } from '../../shared/types';
-import { defuse, firstWords } from '../layers/prompts';
+import { defuse } from '../layers/prompts';
+import { firstWords } from '../text';
 import { untrustedLine } from '../untrusted';
 import { LOOP_REPEATS } from './signals';
 

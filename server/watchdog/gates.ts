@@ -1,7 +1,7 @@
 // The Watchdog's output is probabilistic; these checks are not. Each returns why a tick or an
 // action is refused (the model reads it as the tool's error), or null. Pure.
 
-import { wordCount } from '../layers/prompts';
+import { wordCount } from '../text';
 import { NOTE_WORDS } from './prompts';
 
 export { NOTE_WORDS };
