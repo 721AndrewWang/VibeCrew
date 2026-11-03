@@ -1,0 +1,352 @@
+/*
+ * The Super-agent views' shared look (ADR 107): one spacing scale (4 / 8 / 12 / 16 px), section titles
+ * at 13px semibold, rows at 12.5px, hints at 12px; status colours only through the badge tones in
+ * superagent.ts (accent = in progress, orange = needs you, green = done, red = failed, grey = ended).
+ */
+
+/* ---------------------------------------------------------------- empty, loading and error states */
+.sa-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.sa-state.compact {
+  flex-direction: row;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.sa-state-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--text-2);
+}
+
+.sa-state-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sa-state.compact .sa-state-title {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.sa-state-body {
+  max-width: 520px;
+  line-height: 1.5;
+}
+
+.sa-loading {
+  flex-direction: row;
+  justify-content: center;
+}
+
+.sa-error {
+  flex-direction: row;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  background: var(--red-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.sa-error svg {
+  color: var(--red);
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- notices, costs, links */
+.notice.sa-off {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.notice.sa-off > span {
+  flex: 1;
+}
+
+.sa-cost {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.link-btn.sa-trigger-link {
+  font-size: inherit;
+}
+
+.sa-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sa-section-title:first-child {
+  margin-top: 0;
+}
+
+.sa-section-title .muted {
+  font-weight: 400;
+}
+
+/* Rows that are whole buttons keep their focus ring inside the scrolling bar that holds them. */
+.trigger-row:focus-visible,
+.wr-main:focus-visible,
+.wb-toggle:focus-visible,
+.sa-row-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------------------------------------------------------------- Settings → Super-agent: onboarding */
+.sa-primer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sa-primer-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.sa-primer-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text-2);
+}
+
+.sa-primer-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.sa-parts {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.sa-part {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sa-part:first-child {
+  border-top: 0;
+}
+
+.sa-part-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sa-part-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.sa-part-cost {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.sa-part-cost b {
+  font-weight: 600;
+}
+
+.sa-part-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-top: 2px;
+}
+
+.sa-quick {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.sa-details {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.sa-details > summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* ---------------------------------------------------------------- the Activity page */
+.sa-activity-totals {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.sa-activity-totals b {
+  color: var(--text);
+}
+
+.sa-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.sa-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.sa-row:first-child {
+  border-top: 0;
+}
+
+.sa-row.attention {
+  background: var(--orange-soft);
+}
+
+.sa-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sa-row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sa-row-title b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sa-row-why {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.sa-row-why > * + *::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------------- drafts and fixes: what approval does */
+.sa-effect {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.sa-effect-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.sa-effect ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.sa-effect li + li {
+  margin-top: 2px;
+}
+
+@media (max-width: 760px) {
+  .sa-primer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sa-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}

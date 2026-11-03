@@ -13,7 +13,7 @@ import { NewProjectDialog, ProjectsView } from './components/views/ProjectsView'
 import { RoutinesView } from './components/views/RoutinesView';
 import { SettingsView } from './components/views/SettingsView';
 import { SkillsView } from './components/views/SkillsView';
-import { TriggersView } from './components/views/TriggersView';
+import { TriggerDialog, TriggersView } from './components/views/TriggersView';
 import { WatchdogView } from './components/views/WatchdogView';
 import { AgentLogDialog } from './components/WorkersBar';
 import { closeModal, useStore } from './store';
@@ -41,6 +41,8 @@ function Modals() {
       return <AgentLogDialog chatId={modal.chatId} workerId={modal.workerId} onClose={closeModal} />;
     case 'jobLog':
       return <JobLogDialog jobId={modal.jobId} onClose={closeModal} />;
+    case 'trigger':
+      return <TriggerDialog id={modal.triggerId} onClose={closeModal} />;
     default:
       return null;
   }
