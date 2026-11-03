@@ -71,6 +71,8 @@ export interface CrewServer {
   stop(): Promise<void>;
   /** Ends the process at once, as a crash would, and keeps the folder for a restart. */
   kill(): Promise<void>;
+  /** With StartOptions.clock: moves the server's Date.now() this many ms ahead of real time. */
+  shiftClock(ms: number): void;
 }
 
 export interface StartOptions {
@@ -82,6 +84,8 @@ export interface StartOptions {
   dir?: string;
   /** false: no CREW_HOME / CREW_PROJECTS, e.g. to test the data-folder migration under a fake HOME. */
   isolate?: boolean;
+  /** Preload the test clock (helpers/clock.ts), so shiftClock() can move the server's time forward. */
+  clock?: boolean;
 }
 
 /** Variables of the shell running the tests that must not reach the server (Claude Code's own session). */
@@ -104,13 +108,16 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     fs.mkdirSync(path.join(dir, 'claude'), { recursive: true });
   }
   if (opts.fakeAgent !== false) env.CREW_FAKE_AGENT = '1';
+  const clockFile = path.join(dir, 'clock');
+  if (opts.clock) env.CREW_TEST_CLOCK_FILE = clockFile;
   for (const [k, v] of Object.entries(opts.env || {})) {
     if (v === undefined) delete env[k];
     else env[k] = v;
   }
 
   // tsx as a loader rather than its CLI: the CLI opens a Unix socket for IPC, which sandboxes refuse.
-  const proc: ChildProcess = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  const preload = opts.clock ? ['--import', './tests/helpers/clock.ts'] : [];
+  const proc: ChildProcess = spawn(process.execPath, ['--import', 'tsx', ...preload, 'server/index.ts'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let out = '';
   proc.stdout?.on('data', (d) => (out += d));
   proc.stderr?.on('data', (d) => (out += d));
@@ -124,12 +131,29 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     return { ...(Array.isArray(json) ? { items: json } : json), status: r.status };
   };
 
+  /**
+   * Until every process of the server's group has exited (or `ms` pass): Claude Code sessions are in
+   * it and may still be writing their files under `dir` after the server itself is gone.
+   */
+  const groupGone = async (ms: number) => {
+    const pid = proc.pid;
+    if (!pid) return;
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+      try {
+        process.kill(-pid, 0);
+      } catch {
+        return;
+      }
+    }
+  };
+
   const kill = async () => {
     if (proc.exitCode === null && proc.pid) {
       const exited = new Promise((r) => proc.once('exit', r));
       process.kill(-proc.pid, 'SIGKILL');
       await exited;
     }
+    await groupGone(5000);
   };
 
   const stop = async () => {
@@ -142,6 +166,7 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
       }
       await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
     }
+    await groupGone(10_000);
     if (owned && !process.env.CREW_TEST_KEEP) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   };
 
@@ -162,7 +187,11 @@ export async function startServer(opts: StartOptions = {}): Promise<CrewServer> 
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return { base, port, dir, home: env.CREW_HOME ?? path.join(env.HOME ?? os.homedir(), '.crew'), env, api, log: () => out, stop, kill };
+  const shiftClock = (ms: number) => {
+    if (!opts.clock) throw new Error('start the server with { clock: true } to shift its clock');
+    fs.writeFileSync(clockFile, String(ms));
+  };
+  return { base, port, dir, home: env.CREW_HOME ?? path.join(env.HOME ?? os.homedir(), '.crew'), env, api, log: () => out, stop, kill, shiftClock };
 }
 
 /** Polls `fn` until it returns something truthy (or throws after `ms`). */

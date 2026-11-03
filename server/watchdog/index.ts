@@ -15,6 +15,7 @@ import { Cron } from 'croner';
 import type { ChatMessage, WatchdogAction, WatchdogActionKind, WatchdogInfo, WatchdogOverview, WatchdogProposal, WatchdogTick, WatchdogWatch, Worker } from '../../shared/types';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
+import { NO_TOOL_SEARCH } from '../agents/toolSearch';
 import { bus, notify } from '../bus';
 import { botModel } from '../claudeAuth';
 import { DATA, FAKE_AGENT } from '../config';
@@ -35,6 +36,7 @@ import { cronExpr } from './config';
 import { tickRefusal } from './gates';
 import { maintainerPrompt, tickPrompt, watchdogRecap, watchdogSystemPrompt } from './prompts';
 import { registerWatchdogRecall } from './recall';
+import { recoverWatchdog } from './recovery';
 import { isTransient, nextCheck, progressOf, WATCH_MAX_CHECKS } from './signals';
 import { auditSnaps, isQuiet, renderSnapshot, type Snapshot, snapshotFlags, type WorkerSnap } from './snapshot';
 import { type WatchdogTurn, watchdogMcpServer, watchdogTools } from './tools';
@@ -316,7 +318,7 @@ export function watchdogSessionConfig(tools: ReturnType<typeof watchdogTools>): 
     deniedReason: (toolName, input) => deniedReason(toolName, input, DATA.watchdog, { actor: WATCHDOG_ACTOR }),
     mcpServers: { crew_watchdog: watchdogMcpServer(tools) as McpServerConfig },
     settingSources: [],
-    env: agentEnv(WATCHDOG_SCOPE, wd.model || settings.get().defaultModel || undefined),
+    env: { ...agentEnv(WATCHDOG_SCOPE, wd.model || settings.get().defaultModel || undefined), ...NO_TOOL_SEARCH },
     role: 'watchdog',
     fakeTools: tools,
   };
@@ -651,6 +653,8 @@ export function invalidateWatchdog() {
 }
 
 export function startWatchdog() {
+  // Ticks and questions a restart cut off, before anything new is recorded (ADR 105).
+  recoverWatchdog();
   watchdogTicks.prune();
   watchdogActions.prune();
   loop.sync();

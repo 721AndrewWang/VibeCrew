@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The project is now English-only: UI, agent prompts, docs and code comments. The default UI language is English, and `@all` (or `@everyone`) mentions everyone in a group chat.
 - The desktop build downloads Electron and the AppImage tools from their official sources; set `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` to use a mirror.
 
+### Fixed
+
+- **Super-agent mode, hardened as one system** (no new setting; see `docs/adr/105-hardening.md`). With current Claude Code versions, Crew's own tools (`chat_history`, `recall`, `hand_back`, `start`/`stop`/`status`, the Router's and the Watchdog's tools) were hidden behind Claude Code's tool search; they are always offered again. Trigger summaries, notifications and the chat list no longer mangle ids such as `job_…` (an agent can recall what a summary names). After a crash: a background command that kept running is stopped before its job is reported; a message the Router was handling when Crew died, and a Worker's report it had not read yet, are handed to it again (marked as such, and never when a Worker was already dispatched for it); a Watchdog tick or question the crash cut off is settled instead of hiding what it was about to look at. The Watchdog no longer restarts a Worker that a restart cut off, that you stopped, or that the Router already replaced. ARCHITECTURE.md and the README now explain Super-agent mode from the top: its parts, where to turn each on and what each costs.
+
 ## [0.2.0] - 2026-10-02
 
 The first official release. Renamed to Crew, with isolated workspaces, a sandbox, adversarial review and a set of "improve from use" mechanisms, plus the engineering groundwork.

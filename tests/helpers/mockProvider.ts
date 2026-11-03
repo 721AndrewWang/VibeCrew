@@ -95,3 +95,17 @@ export async function startMockProvider(opts: { token: string; reply?: (req: Moc
   const { port } = server.address() as AddressInfo;
   return { url: `http://127.0.0.1:${port}`, requests, toolResults, close: () => new Promise((resolve) => server.close(() => resolve())) };
 }
+
+/** An account that is out of quota: every request is answered 429, as a provider does once a quota runs out. */
+export async function startOutOfQuota(): Promise<{ url: string; hits: number; close(): Promise<void> }> {
+  const out = { url: '', hits: 0, close: async () => {} };
+  const srv = http.createServer((req, res) => {
+    req.resume();
+    out.hits++;
+    res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '30' }).end('{"type":"error","error":{"type":"rate_limit_error","message":"quota used up"}}');
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', () => r()));
+  out.url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  out.close = () => new Promise<void>((r) => srv.close(() => r()));
+  return out;
+}

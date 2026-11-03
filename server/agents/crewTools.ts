@@ -124,6 +124,8 @@ export function crewServer(ctx: CrewContext) {
   return createSdkMcpServer({
     name: 'crew',
     version: '1.0.0',
+    // Crew's own tools are few and its prompts name them: never deferred behind Claude Code's tool search.
+    alwaysLoad: true,
     tools: [
       ctx.recall
         ? tool(

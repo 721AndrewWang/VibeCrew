@@ -11,6 +11,7 @@ import { firstWords } from '../layers/prompts';
 import { auditLog, bots, chats, jobs, messages, projects, settings, triggerLog, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
 import { triggerDetail } from '../triggers';
 import { untrusted } from '../untrusted';
+import { restartConflict } from './duplicates';
 import { actionRefusal, noteRefusal, notifyRefusal, nudgeRefusal, proposeRefusal, restartRefusal, stopRefusal, watchRefusal } from './gates';
 import { restartRecap, watchdogNote } from './prompts';
 import { callSignature, nextCheck } from './signals';
@@ -113,7 +114,7 @@ export function watchdogTools(ctx: () => WatchdogTurn | null, fx: WatchdogEffect
         'restart',
         str(args.id),
         note,
-        () => restartRefusal(workerState(w), w ? fx.countToday('restart', w.id) : 0) ?? (note ? noteRefusal(note) : null),
+        () => restartRefusal(workerState(w), w ? fx.countToday('restart', w.id) : 0) ?? (w ? restartConflict(w, workers.all()) : null) ?? (note ? noteRefusal(note) : null),
         (actionId) => {
           const branch = projects.get(w!.projectId)?.workspace?.branch;
           fx.restart(w!, watchdogNote(restartRecap({ status: w!.status, report: w!.report?.text || w!.detail || '', branch, note }), actionId));
@@ -292,6 +293,8 @@ export function watchdogMcpServer(h: Record<string, Handler>) {
   return createSdkMcpServer({
     name: 'crew_watchdog',
     version: '1.0.0',
+    // Crew's own tools are few and its prompts name them: never deferred behind Claude Code's tool search.
+    alwaysLoad: true,
     tools: [
       tool(
         'nudge_worker',

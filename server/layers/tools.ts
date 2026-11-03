@@ -193,6 +193,8 @@ export function routerMcpServer(h: Record<string, Handler>, o: { subscriptions?:
   return createSdkMcpServer({
     name: 'crew_router',
     version: '1.0.0',
+    // Crew's own tools are few and its prompts name them: never deferred behind Claude Code's tool search.
+    alwaysLoad: true,
     tools: [
       tool(
         'reply',

@@ -2,10 +2,16 @@ import type { Bot, Chat, ChatMessage } from '../../shared/types';
 import { bus } from '../bus';
 import { bots, chats, messages, uid } from '../store';
 
+/**
+ * One line of a message for lists, notifications and Trigger summaries. Markdown marks go, but an
+ * underscore inside a word stays: ids (`job_…`, `wk_…`, `tg_…`) and snake_case names must survive,
+ * since a summary is what an agent recalls by (ADR 105).
+ */
 export function preview(text: string): string {
   return text
     .replace(/```[\s\S]*?```/g, '[code]')
-    .replace(/[#>*_`~[\]]/g, '')
+    .replace(/[#>*`~[\]]/g, '')
+    .replace(/(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 120);

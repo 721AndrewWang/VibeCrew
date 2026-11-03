@@ -1,12 +1,13 @@
 // With every setting the Super-agent milestones added switched off, Crew behaves as it did before
 // them (ADR 010): no new process (no gateway listener, no Watchdog timer, no Router, Worker or
 // background job), no new file or folder in the data folder, and no model call beyond the bot's
-// own turn, whose tools are the ones it had before.
+// own turn, whose tools are the ones it had before. A crash and restart with everything off recovers
+// nothing new either (ADR 105).
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type MockProvider, startMockProvider } from '../helpers/mockProvider';
-import { type Api, type CrewServer, claudeCli, startServer, waitFor, waitTurn } from '../helpers/server';
+import { type Api, type CrewServer, claudeCli, startServer, tempDir, waitFor, waitTurn } from '../helpers/server';
 
 /** What the milestones write in the data folder, each only once its feature is on. */
 const NEW_ENTRIES = ['triggers', 'workers.json', 'router', 'jobs', 'watchdog', 'gateway', 'drafts.json', 'audit.jsonl'];
@@ -44,12 +45,16 @@ async function expectNothingNew(crew: CrewServer) {
 }
 
 describe('everything off (demo mode)', () => {
+  const dir = tempDir('crew-off');
   let crew: CrewServer;
 
   beforeAll(async () => {
-    crew = await startServer();
+    crew = await startServer({ dir });
   });
-  afterAll(() => crew?.stop());
+  afterAll(async () => {
+    await crew?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 
   it('starts with every new switch off, except the guard and stripping, which only refuse and remove', async () => {
     const b = await crew.api('GET', '/bootstrap');
@@ -91,6 +96,20 @@ describe('everything off (demo mode)', () => {
     ).toBeNull();
     // The demo bot was not offered the full-duplex tools: it did the work itself.
     expect((await waitTurn(crew.api, dm.id, direct.seq)).parts.some((p: any) => p.type === 'tool' && String(p.name).includes('start'))).toBe(false);
+    await expectNothingNew(crew);
+  });
+
+  it('starts again after a crash without recovering, writing or starting anything new (ADR 105)', async () => {
+    const b = await crew.api('GET', '/bootstrap');
+    const group = b.chats.find((c: any) => c.kind === 'group');
+    // Killed in the middle of a turn: the recovery added for the Super-agent finds nothing of its own to do.
+    await crew.api('POST', `/chats/${group.id}/messages`, { text: 'Build a footer' });
+    await waitFor(async () => (await crew.api('GET', `/chats/${group.id}/messages?limit=5`)).messages.some((m: any) => m.role === 'bot'), 20_000);
+    await crew.kill();
+    crew = await startServer({ dir });
+    expect(crew.log()).not.toMatch(/\[(watchdog|jobs|layers|triggers)\]/);
+    const sent = await crew.api('POST', `/chats/${group.id}/messages`, { text: 'Build a header' });
+    expect((await waitTurn(crew.api, group.id, sent.seq)).router).toBeUndefined();
     await expectNothingNew(crew);
   });
 });

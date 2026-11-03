@@ -21,10 +21,26 @@ export interface HandedBack {
 
 /** One event in the Router's inbox. Environment events are data from outside: they cannot start work. */
 export type RouterEvent =
-  | { kind: 'user'; id: string; at: number; seq: number; text: string; to?: string; attachments?: number; triggerId?: string }
-  | { kind: 'routine'; id: string; at: number; seq: number; text: string; routine: string; bot?: string; triggerId?: string; threadId?: string; handedBack?: HandedBack }
-  | { kind: 'worker'; id: string; at: number; bot: string; title: string; status: 'done' | 'error' | 'stopped'; report: string; landing?: string }
+  | { kind: 'user'; id: string; at: number; seq: number; text: string; to?: string; attachments?: number; triggerId?: string; resumed?: Resumed }
+  | { kind: 'routine'; id: string; at: number; seq: number; text: string; routine: string; bot?: string; triggerId?: string; threadId?: string; handedBack?: HandedBack; resumed?: Resumed }
+  | { kind: 'worker'; id: string; at: number; bot: string; title: string; status: 'done' | 'error' | 'stopped'; report: string; landing?: string; resumed?: Resumed }
   | { kind: 'environment'; id: string; at: number; source: string; summary: string; reason: string; handedBack?: HandedBack };
+
+/**
+ * Why an event is handed to the Router a second time after a restart of Crew (ADR 105): a turn that
+ * took it was cut off before it finished, or it waited in the inbox when Crew stopped.
+ */
+export type Resumed = 'cut-off' | 'unread';
+
+/** What the Router reads about a re-handed event, so it checks before it dispatches the same work twice. */
+export function resumedLine(r: Resumed | undefined): string[] {
+  if (!r) return [];
+  return [
+    r === 'cut-off'
+      ? '(Crew restarted while you were handling this event; your turn was cut off. Check list_workers before you dispatch anything for it: a Worker may already exist.)'
+      : '(Crew restarted before you read this event; it is handed to you now.)',
+  ];
+}
 
 /** The user (or the user's routine, or a Worker the user's request started) is behind this event. */
 export const explicitEvent = (e: RouterEvent) => e.kind !== 'environment';
@@ -203,7 +219,12 @@ function recallEvent(e: RouterEvent, when: string, b: Budget): string[] {
 
 function renderEvent(e: RouterEvent, now: number, recall?: Budget): string[] {
   const when = ago(e.at, now);
-  if (recall) return recallEvent(e, when, recall);
+  const lines = recall ? recallEvent(e, when, recall) : plainEvent(e, when);
+  // After the opening tag: the event is the same, only how it reaches the Router differs.
+  return e.kind === 'environment' ? lines : [lines[0], ...resumedLine(e.resumed), ...lines.slice(1)];
+}
+
+function plainEvent(e: RouterEvent, when: string): string[] {
   switch (e.kind) {
     case 'user': {
       const text = e.text.length > USER_CHARS ? `${e.text.slice(0, USER_CHARS)} … (cut; the full message is #${e.seq})` : e.text;

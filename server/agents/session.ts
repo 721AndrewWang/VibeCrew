@@ -449,12 +449,16 @@ export class FakeSession implements AgentSession {
     try {
       if (this.cfg.role === 'router') {
         const tools = this.cfg.fakeTools || {};
-        await fakeRouter(prompt, streamText, (name, args) =>
-          runTool(`mcp__crew_router__${name}`, args, async () => {
-            const r = await (tools[name]?.(args) ?? Promise.resolve({ text: `No such tool: ${name}`, isError: true }));
-            if (r.isError) throw new Error(r.text);
-            return r.text;
-          }),
+        await fakeRouter(
+          prompt,
+          streamText,
+          () => this.stopped,
+          (name, args) =>
+            runTool(`mcp__crew_router__${name}`, args, async () => {
+              const r = await (tools[name]?.(args) ?? Promise.resolve({ text: `No such tool: ${name}`, isError: true }));
+              if (r.isError) throw new Error(r.text);
+              return r.text;
+            }),
         );
       } else if (this.cfg.role === 'watchdog') {
         const tools = this.cfg.fakeTools || {};
@@ -607,7 +611,11 @@ export class FakeSession implements AgentSession {
  * step by step and answers what the user wrote meanwhile.
  */
 async function fakeFullDuplex(ask: string, say: (text: string) => Promise<void>, heard: string[], stopped: () => boolean, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
-  const result = ask.match(/Background job (job_\w+)[^\n]*/);
+  // A job's result is what the turn is about only when nothing the user wrote comes after it (a
+  // result posted while no turn could read it, after a restart, is just context for the next request).
+  const lastResult = ask.lastIndexOf('Background job job_');
+  const lastUser = Math.max(ask.lastIndexOf('[User'), ask.lastIndexOf('What the user asked for'));
+  const result = lastResult > lastUser ? ask.slice(lastResult).match(/Background job (job_\w+)[^\n]*/) : null;
   if (result) {
     await say(`The background job is over: ${result[0].replace(/^Background job /, '').slice(0, 160)}`);
     return;
@@ -640,13 +648,19 @@ async function fakeFullDuplex(ask: string, say: (text: string) => Promise<void>,
 
 /**
  * The demo Router: reads the batch's events (layers/prompts.ts renders them), dispatches a Worker
- * for anything that asks for work, and answers with a short reply. "split" asks for two Workers.
+ * for anything that asks for work, and answers with a short reply. "split" asks for two Workers;
+ * "hold on" makes it think for a while first.
  */
-async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
+async function fakeRouter(prompt: string, say: (text: string) => Promise<void>, stopped: () => boolean, call: (tool: string, args: Record<string, unknown>) => Promise<string>) {
   const replies: string[] = [];
   for (const m of prompt.matchAll(/<event ([^>]*)>\n([\s\S]*?)\n<\/event>/g)) {
     const a = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((x) => [x[1], x[2]]));
-    const body = m[2].trim();
+    // A re-handed event's note (ADR 105) is about the event, not part of it.
+    const resumed = /^\(Crew restarted [^\n]*\)$/m;
+    const body = m[2].replace(resumed, '').trim();
+    // "hold on": the demo Router thinks for up to 20 s before it acts, so a test can restart Crew mid-turn
+    // (ADR 105). Handed over again after a restart, it acts at once.
+    if (a.kind === 'user' && /\bhold on\b/i.test(body) && !resumed.test(m[2])) for (let i = 0; i < 200 && !stopped(); i++) await new Promise((r) => setTimeout(r, 100));
     const short = (body.split('\n').find((l) => l.trim()) || '').slice(0, 60);
     if (a.kind === 'worker') replies.push(`${a.bot} ${a.status === 'done' ? 'finished' : `ended (${a.status})`}: "${a.title}".`);
     else if (a.kind === 'environment') replies.push(`Crew noticed: ${short}`);

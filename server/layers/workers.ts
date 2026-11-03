@@ -666,7 +666,7 @@ function publishLanding(w: Worker, chat: Chat, bot: Bot, landing: NonNullable<Wo
 /** Records how the turn (or the start) ended and tells the Router, unless the whole chat was stopped. */
 function finish(w: Worker, outcome: 'done' | 'error' | 'stopped', detail?: string, text?: string) {
   const l = liveOf(w.id);
-  const report = { at: Date.now(), status: outcome, text: text ?? (detail ? `${outcome === 'error' ? 'Failed' : 'Stopped'}: ${detail}` : '') };
+  const report = { at: Date.now(), status: outcome, text: text ?? (detail ? `${outcome === 'error' ? 'Failed' : 'Stopped'}: ${detail}` : ''), ...(l.quiet ? { quiet: true } : {}) };
   save(w, { status: outcome, detail, report });
   // It never got to run (a failed start): what was delivered to it goes on.
   if (!l.running) settleInbox(w);

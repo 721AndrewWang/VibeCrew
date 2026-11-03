@@ -14,6 +14,7 @@ import { familyInfo } from '../../shared/families';
 import type { Bot, Chat, ChatMessage, RouterInfo } from '../../shared/types';
 import { type AgentSession, BotSession, FakeSession, type SessionConfig } from '../agents/session';
 import type { TurnStream } from '../agents/stream';
+import { NO_TOOL_SEARCH } from '../agents/toolSearch';
 import { findSkeptic } from '../autoChallenge';
 import { bus, notify } from '../bus';
 import { botModel } from '../claudeAuth';
@@ -25,15 +26,16 @@ import { deniedReason } from '../orchestrator/permissionGate';
 import { agentEnv } from '../orchestrator/turnContext';
 import { type Budget, measureInjected, RECALL_RESUME_NOTE, recallBudget } from '../recall';
 import { projectFamilies } from '../skills';
-import { bots, chats, messages, projects, routerLogId, settings } from '../store';
+import { bots, chats, messages, projects, routerLogId, settings, workers } from '../store';
 import { directRuns, handBackTrigger } from '../triggers';
 import { monthSpend } from '../usage';
 import { BatchQueue } from './batch';
 import { type DirectLine, explicitEvent, type FamilyLine, type RouterEvent, recapText, renderBatch, routerSystemPrompt, type TeamMember } from './prompts';
+import { routerRedo } from './recovery';
 import { subscriptionsOn } from './subscriptions';
 import { routerMcpServer, routerTools, type TurnCtx } from './tools';
 import { runLogged } from './turn';
-import { type recoverWorkers, workerLines } from './workers';
+import { landingText, type recoverWorkers, workerLines } from './workers';
 
 const log = logger('router');
 
@@ -175,7 +177,7 @@ class ChatRouter {
       mcpServers: { crew_router: routerMcpServer(this.tools, { subscriptions: subscribed, recall: !!this.recall }) as McpServerConfig },
       // No settings files, CLAUDE.md or hooks: nothing in the project can widen what the Router may do.
       settingSources: [],
-      env: agentEnv({ role: 'router', botId: lead.id }, rs.model || settings.get().defaultModel || undefined),
+      env: { ...agentEnv({ role: 'router', botId: lead.id }, rs.model || settings.get().defaultModel || undefined), ...NO_TOOL_SEARCH },
       role: 'router',
       fakeTools: this.tools,
     };
@@ -316,8 +318,9 @@ class ChatRouter {
     // Dropped on purpose: after a restart they are not handed over again.
     const seqs = this.queue.clear().flatMap((e) => (e.kind === 'user' || e.kind === 'routine' ? [e.seq] : []));
     const chat = chats.get(this.chatId);
-    if (chat && seqs.length) {
-      chat.router = { ...chat.router, cursor: Math.max(chat.router?.cursor ?? 0, ...seqs) };
+    if (chat) {
+      // The whole inbox is dropped, Workers' reports included: a restart must not hand them over again (ADR 105).
+      chat.router = { ...chat.router, stoppedAt: Date.now(), ...(seqs.length ? { cursor: Math.max(chat.router?.cursor ?? 0, ...seqs) } : {}) };
       chats.flush();
     }
     const stream = this.stream;
@@ -416,14 +419,46 @@ export function resumeRouters({ interrupted, undelivered }: Pick<ReturnType<type
   for (const chat of chats.all()) {
     if (!routerMode(chat)) continue;
     const cursor = chat.router?.cursor;
+    const asEvent = (m: ChatMessage, resumed?: 'cut-off'): RouterEvent =>
+      m.trigger?.type === 'routine'
+        ? { kind: 'routine', id: m.id, at: m.ts, seq: m.seq, text: m.prompt || m.text, routine: 'routine', resumed }
+        : { kind: 'user', id: m.id, at: m.ts, seq: m.seq, text: m.prompt || m.text, attachments: m.attachments?.length, resumed };
+    // What a cut-off Router turn took without dispatching, and Workers' reports it never finished reading (ADR 105).
+    const chatWorkers = workers.all().filter((w) => w.chatId === chat.id);
+    const redo = routerRedo({
+      turns: messages.sorted(routerLogId(chat.id)),
+      workers: chatWorkers,
+      cutOff: new Set(interrupted.map((w) => w.id)),
+      stoppedAt: chat.router?.stoppedAt,
+      now: Date.now(),
+    });
+    for (const id of redo.messages) {
+      const m = messages.get(chat.id, id);
+      if (m && m.role === 'user' && !m.uiOnly) routerEvent(chat.id, asEvent(m, 'cut-off'));
+    }
     if (cursor !== undefined) {
       // Routine runs that went straight to a Worker are not the Router's (those a restart cut off come below).
       const direct = directRuns(chat.id);
       for (const m of messages.sorted(chat.id)) {
         if (m.seq <= cursor || m.role !== 'user' || m.uiOnly || direct.has(m.id)) continue;
-        if (m.trigger?.type === 'routine') routerEvent(chat.id, { kind: 'routine', id: m.id, at: m.ts, seq: m.seq, text: m.prompt || m.text, routine: 'routine' });
-        else routerEvent(chat.id, { kind: 'user', id: m.id, at: m.ts, seq: m.seq, text: m.prompt || m.text, attachments: m.attachments?.length });
+        routerEvent(chat.id, asEvent(m));
       }
+    }
+    for (const r of redo.reports) {
+      const w = chatWorkers.find((x) => x.id === r.id);
+      if (!w?.report) continue;
+      const report = w.report;
+      routerEvent(chat.id, {
+        kind: 'worker',
+        id: w.id,
+        at: report.at,
+        bot: bots.get(w.botId)?.name || 'deleted bot',
+        title: w.title,
+        status: report.status,
+        report: report.text,
+        landing: landingText(w),
+        resumed: r.resumed,
+      });
     }
     for (const w of interrupted.filter((x) => x.chatId === chat.id)) {
       routerEvent(chat.id, { kind: 'worker', id: w.id, at: Date.now(), bot: bots.get(w.botId)?.name || 'deleted bot', title: w.title, status: 'stopped', report: w.report?.text || '' });
