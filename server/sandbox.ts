@@ -53,30 +53,61 @@ export function sandboxStatus(refresh = false): SandboxStatus {
   return cached;
 }
 
-function probe(): SandboxStatus {
-  if (process.platform !== 'linux' && process.platform !== 'darwin') return { available: false, missing: [], hint: 'The sandbox only supports Linux and macOS.' };
-  if (process.platform !== 'linux') return { available: true, missing: [] };
-  const missing: string[] = [];
-  for (const bin of ['bwrap', 'socat']) {
+/** Runs a probe command; throws when it fails (execFileSync's contract). */
+export type ProbeExec = (file: string, args: string[]) => void;
+
+const execProbe: ProbeExec = (file, args) => {
+  execFileSync(file, args, { stdio: 'ignore', timeout: 5000 });
+};
+
+const RESTRICTED_HINT =
+  "bubblewrap can't create a sandbox on this machine (user namespaces may be restricted). On Ubuntu, try: sudo apt install bubblewrap, and check that /etc/apparmor.d/bwrap-userns-restrict exists.";
+
+/**
+ * Claude Code applies its seccomp filter from a user namespace nested inside bubblewrap's. Ubuntu
+ * 24.04's AppArmor userns restriction lets bwrap itself start but strips the capabilities of what
+ * runs inside it, so that nested namespace cannot be set up and every sandboxed command fails
+ * ("apply-seccomp: write /proc/self/setgroups ... Permission denied"). Reported as unavailable.
+ */
+const NESTED_HINT =
+  "bubblewrap starts, but cannot set up the nested user namespace Claude Code's sandbox needs, so every sandboxed command would fail. On Ubuntu 24.04 this is AppArmor's restriction on unprivileged user namespaces: run sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0 (or give bwrap an AppArmor profile that allows it), then check again.";
+
+/** Whether the sandbox can start here, by running what it runs. Pure apart from `exec`. */
+export function probeSandbox(platform: NodeJS.Platform, exec: ProbeExec = execProbe): SandboxStatus {
+  if (platform !== 'linux' && platform !== 'darwin') return { available: false, missing: [], hint: 'The sandbox only supports Linux and macOS.' };
+  if (platform !== 'linux') return { available: true, missing: [] };
+  const has = (bin: string) => {
     try {
-      execFileSync('which', [bin], { stdio: 'ignore' });
+      exec('which', [bin]);
+      return true;
     } catch {
-      missing.push(bin === 'bwrap' ? 'bubblewrap' : bin);
+      return false;
     }
-  }
+  };
+  const missing = ['bwrap', 'socat'].filter((bin) => !has(bin)).map((bin) => (bin === 'bwrap' ? 'bubblewrap' : bin));
   if (missing.length) return { available: false, missing, hint: `Missing ${missing.join(' and ')}. On Ubuntu, run: sudo apt install ${missing.join(' ')}` };
   // User namespaces may be restricted (Ubuntu 24.04 does unless bwrap has its AppArmor profile).
   try {
-    execFileSync('bwrap', ['--ro-bind', '/', '/', '--unshare-all', '--', '/bin/true'], { stdio: 'ignore', timeout: 5000 });
+    exec('bwrap', ['--ro-bind', '/', '/', '--unshare-all', '--', '/bin/true']);
   } catch (e) {
     log.warn('bwrap cannot create a sandbox:', (e as Error).message);
-    return {
-      available: false,
-      missing,
-      hint: "bubblewrap can't create a sandbox on this machine (user namespaces may be restricted). On Ubuntu, try: sudo apt install bubblewrap, and check that /etc/apparmor.d/bwrap-userns-restrict exists.",
-    };
+    return { available: false, missing, hint: RESTRICTED_HINT };
+  }
+  // The nested namespace, set up the way Claude Code's seccomp helper does (it writes setgroups and
+  // the id maps). Without util-linux's unshare there is nothing to try it with; bwrap alone decides.
+  if (has('unshare')) {
+    try {
+      exec('bwrap', ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--die-with-parent', '--', 'unshare', '--user', '--map-root-user', '/bin/true']);
+    } catch (e) {
+      log.warn('bwrap cannot create a nested user namespace:', (e as Error).message);
+      return { available: false, missing, hint: NESTED_HINT };
+    }
   }
   return { available: true, missing: [] };
+}
+
+function probe(): SandboxStatus {
+  return probeSandbox(process.platform);
 }
 
 /**

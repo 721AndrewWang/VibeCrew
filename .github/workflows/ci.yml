@@ -29,6 +29,8 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code
       # The command sandbox's dependencies, for the tests that run commands inside it.
       - run: sudo apt-get install -y bubblewrap socat
+      - name: Let the command sandbox create its nested user namespace
+        run: bash scripts/ci-sandbox.sh
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       - run: npm run typecheck
       - run: npx biome ci .
@@ -73,5 +75,7 @@ jobs:
       - run: npm ci
       - run: npm install -g @anthropic-ai/claude-code@latest && claude --version
       - run: sudo apt-get install -y bubblewrap socat
+      - name: Let the command sandbox create its nested user namespace
+        run: bash scripts/ci-sandbox.sh
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       - run: npx vitest run tests/integration/claude-cli.test.ts tests/integration/sandbox.test.ts
