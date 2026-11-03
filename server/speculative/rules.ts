@@ -4,6 +4,7 @@
 // claim must pass before Crew spends time running the checks. Pure.
 
 import type { ProjectSpeculative, SpeculativeSettings, SpeculativeSignal } from '../../shared/types';
+import { clip } from '../text';
 import { isConsoleNoise } from '../triggers/fastPath';
 
 /** A command that reads like a project check: tests, type checks, linters, builds. */
@@ -39,30 +40,25 @@ export interface SignalMatch {
   reasons: string[];
 }
 
-const short = (s: string, n = 80) => {
-  const t = s.replace(/\s+/g, ' ').trim();
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
-};
-
 /** Whether the event is one of the three signals, and why; null when it is not. */
 export function signalOf(input: SignalInput): SignalMatch | null {
   if (input.source === 'job') {
     if (!input.failed || !input.command.trim()) return null;
     const cmd = input.command.trim();
     const check = input.checkCommand.trim();
-    if (check && (cmd === check || cmd.startsWith(`${check} `))) return { signal: 'failing-check', reasons: [`The project's check command failed: ${short(cmd)}`] };
+    if (check && (cmd === check || cmd.startsWith(`${check} `))) return { signal: 'failing-check', reasons: [`The project's check command failed: ${clip(cmd, 80)}`] };
     const word = cmd.match(CHECK_WORDS)?.[0];
-    return word ? { signal: 'failing-check', reasons: [`A check failed: ${short(cmd)} (it reads like a check: "${word}")`] } : null;
+    return word ? { signal: 'failing-check', reasons: [`A check failed: ${clip(cmd, 80)} (it reads like a check: "${word}")`] } : null;
   }
   if (input.source === 'github') {
     if (!GITHUB_FAILED.has(input.conclusion)) return null;
-    return { signal: 'failing-check', reasons: [`GitHub check "${short(input.check, 60)}" ${input.conclusion === 'timed_out' ? 'timed out' : 'failed'} on ${input.ref}`] };
+    return { signal: 'failing-check', reasons: [`GitHub check "${clip(input.check, 60)}" ${input.conclusion === 'timed_out' ? 'timed out' : 'failed'} on ${input.ref}`] };
   }
   if (input.source === 'preview-console') {
     if (QUIET_RULES.has(input.filterRule)) return null;
     const errors = input.errors.filter((e) => e.trim() && !isConsoleNoise(e));
     if (!errors.length) return null;
-    return { signal: 'console-error', reasons: [`The preview logged ${errors.length === 1 ? 'an error' : `${errors.length} errors`}: ${short(errors[0])}`] };
+    return { signal: 'console-error', reasons: [`The preview logged ${errors.length === 1 ? 'an error' : `${errors.length} errors`}: ${clip(errors[0], 80)}`] };
   }
   const text = input.text.trim();
   if (text.split(/\s+/).length < 3) return null;

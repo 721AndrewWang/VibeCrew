@@ -8,6 +8,15 @@ export const UNTRUSTED_RULE =
 
 const attrValue = (s: string) => s.replace(/["<>\n\r]/g, ' ').slice(0, 200);
 
+/** A value for an attribute in a prompt's own tags (`<event source="…">`): no quotes, brackets or line breaks. */
+export const attr = (s: string) => s.replace(/["<>\n]/g, ' ').slice(0, 120);
+
+/** Makes text unable to open or close any of a prompt's own tags: `<event` reads `‹event`. */
+export function tagDefuser(...tags: string[]): (s: string) => string {
+  const re = new RegExp(`<(\\s*\\/?\\s*)(${tags.join('|')})\\b`, 'gi');
+  return (s) => s.replace(re, '‹$1$2');
+}
+
 /** Makes text unable to open or close an <untrusted> block of its own. */
 export function defuseUntrusted(text: string): string {
   return text.replace(/<(\s*\/?\s*)untrusted\b/gi, '‹$1untrusted');

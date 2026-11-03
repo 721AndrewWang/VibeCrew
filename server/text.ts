@@ -20,3 +20,9 @@ export function firstWords(text: string, n: number): { text: string; rest: numbe
   const words = text.split(/\s+/).filter(Boolean);
   return words.length > n ? { text: `${words.slice(0, n).join(' ')} …`, rest: words.length - n } : { text: words.join(' '), rest: 0 };
 }
+
+/** Whitespace collapsed to one line, at most `max` characters, the last one an ellipsis when cut. */
+export function clip(s: string, max: number): string {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}

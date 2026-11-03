@@ -9,7 +9,7 @@ import { REPLY_WORDS } from '../channels/profiles';
 import { type Budget, handle, spill } from '../recall/spill';
 import { firstWords, wordCount } from '../text';
 import { ago } from '../time';
-import { UNTRUSTED_RULE, untrusted } from '../untrusted';
+import { attr, tagDefuser, UNTRUSTED_RULE, untrusted } from '../untrusted';
 import { renderWatchdogNote, WATCHDOG_MARK } from '../watchdog/prompts';
 
 /** Kept where the tests read it. */
@@ -93,11 +93,7 @@ export interface TeamMember {
 }
 
 /** Defuses anything inside event text that looks like the prompt's own tags. */
-export function defuse(s: string): string {
-  return s.replace(/<(\s*\/?\s*)(event|workers|direct)\b/gi, '‹$1$2');
-}
-
-const attr = (s: string) => s.replace(/["<>\n]/g, ' ').slice(0, 120);
+export const defuse = tagDefuser('event', 'workers', 'direct');
 
 /** A lifecycle family the chat's project enabled: the Router can hand its skills to a Worker. */
 export interface FamilyLine {

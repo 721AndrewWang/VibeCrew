@@ -11,7 +11,7 @@ import { WORKER_ACTIVE } from '../../shared/workers';
 import { defuse } from '../layers/prompts';
 import { firstWords } from '../text';
 import { ago } from '../time';
-import { untrustedLine } from '../untrusted';
+import { attr, tagDefuser, untrustedLine } from '../untrusted';
 import { LOOP_REPEATS } from './signals';
 
 export interface WorkerSnap {
@@ -190,7 +190,6 @@ export function isQuiet(s: Snapshot): boolean {
   return !s.workers.length && !s.approvals.length && !s.turnErrors.length && !s.friction.length && !s.interfaceErrors.length && !s.watches.length && !s.audit?.length;
 }
 
-const attr = (v: string) => v.replace(/["<>\n]/g, ' ').slice(0, 120);
 const span = (ms: number) => {
   const m = Math.max(0, Math.round(ms / 60_000));
   return m < 90 ? `${m} min` : `${Math.round(m / 60)} h`;
@@ -199,9 +198,8 @@ const span = (ms: number) => {
 const data = (source: string, text: string, words?: number) => untrustedLine(source, defuseSnap(words ? firstWords(text.trim(), words).text : text.trim()));
 
 /** Defuses the snapshot's own tags inside quoted text. */
-export function defuseSnap(s: string): string {
-  return defuse(s).replace(/<(\s*\/?\s*)(snapshot|worker|approval|turn_error|friction|interface|watch|limits|audit|speculative)\b/gi, '‹$1$2');
-}
+const defuseOwn = tagDefuser('snapshot', 'worker', 'approval', 'turn_error', 'friction', 'interface', 'watch', 'limits', 'audit', 'speculative');
+const defuseSnap = (s: string) => defuseOwn(defuse(s));
 
 export function renderSnapshot(s: Snapshot, opts: { reason: string }): string {
   const now = s.at;
