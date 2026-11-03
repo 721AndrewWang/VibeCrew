@@ -8,6 +8,7 @@
 import { REPLY_WORDS } from '../channels/profiles';
 import { type Budget, handle, spill } from '../recall/spill';
 import { firstWords, wordCount } from '../text';
+import { ago } from '../time';
 import { UNTRUSTED_RULE, untrusted } from '../untrusted';
 import { renderWatchdogNote, WATCHDOG_MARK } from '../watchdog/prompts';
 
@@ -97,11 +98,6 @@ export function defuse(s: string): string {
 }
 
 const attr = (s: string) => s.replace(/["<>\n]/g, ' ').slice(0, 120);
-
-const ago = (at: number, now: number) => {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
 
 /** A lifecycle family the chat's project enabled: the Router can hand its skills to a Worker. */
 export interface FamilyLine {

@@ -3,13 +3,13 @@
 
 import type { SpeculativeSpend } from '../../shared/types';
 import { projects, settings, speculationLog, workers } from '../store';
-import { dayStart } from './rules';
+import { startOfDay } from '../time';
 
 const IN_FLIGHT = new Set(['running', 'verifying']);
 
 /** What today's runs cost: finished ones from their record, running ones from their Worker so far. */
 export function spentToday(now = Date.now()): number {
-  const from = dayStart(now);
+  const from = startOfDay(now);
   return speculationLog.all().reduce((sum, s) => (s.at >= from && s.status !== 'skipped' ? sum + Math.max(s.costUsd, workers.get(s.workerId)?.costUsd || 0) : sum), 0);
 }
 

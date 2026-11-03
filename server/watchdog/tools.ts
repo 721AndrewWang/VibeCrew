@@ -9,6 +9,7 @@ import type { WatchdogActionKind, Worker } from '../../shared/types';
 import { jobLine, jobSource } from '../jobs/spill';
 import { auditLog, bots, chats, jobs, messages, projects, settings, triggerLog, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
 import { firstWords } from '../text';
+import { ago } from '../time';
 import { triggerDetail } from '../triggers';
 import { untrusted } from '../untrusted';
 import { restartConflict } from './duplicates';
@@ -46,11 +47,6 @@ type Handler = (args: Record<string, unknown>) => Promise<Result>;
 const ok = (text: string): Result => ({ text });
 const fail = (text: string): Result => ({ text, isError: true });
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
-
-const ago = (at: number) => {
-  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
 
 const workerState = (w: Worker | undefined) => (w ? { status: w.status, dismissed: !!w.dismissedAt } : null);
 

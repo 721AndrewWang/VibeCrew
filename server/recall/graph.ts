@@ -10,6 +10,7 @@ import { fmtDuration, inlineOutput, jobLine } from '../jobs/spill';
 import { contextLines } from '../orchestrator/turnContext';
 import { chatProjectId } from '../projects';
 import { bots, chats, jobs, messages, projects, threads, triggerLog, watchdogActions, watchdogWatches, workers } from '../store';
+import { agoLong as ago } from '../time';
 import { detailText } from '../triggers';
 import { MAX_LINKS } from './spill';
 
@@ -29,11 +30,6 @@ const extra = new Map<string, RecallResolver>();
 export function registerRecall(prefix: string, resolver: RecallResolver) {
   extra.set(prefix, resolver);
 }
-
-export const ago = (at: number) => {
-  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 172_800 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86_400)} days ago`;
-};
 
 const fail = (error: string): Resolved => ({ error });
 

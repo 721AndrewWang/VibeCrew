@@ -8,8 +8,9 @@
 // the ledger, other chats' flags and the maintainer's proposals stay out of it.
 
 import type { Chat, RecallLink, RecallNode, WatchdogAction, WatchdogActionKind, WatchdogInfo, WatchdogTick, WatchdogWatch } from '../../shared/types';
-import { ago, linkFor, type Resolved, registerRecall } from '../recall/graph';
+import { linkFor, type Resolved, registerRecall } from '../recall/graph';
 import { chats, watchdogActions, watchdogTicks, watchdogWatches, workers } from '../store';
+import { agoLong as ago } from '../time';
 
 const DONE: Record<WatchdogActionKind, string> = {
   nudge: 'nudged',

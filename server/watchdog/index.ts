@@ -33,6 +33,7 @@ import { agentEnv } from '../orchestrator/turnContext';
 import { HttpError } from '../projects';
 import { speculativeSpend } from '../speculative/spend';
 import { auditLog, bots, chats, messages, settings, triggerLog, uid, WATCHDOG_LOG, watchdogActions, watchdogProposals, watchdogTicks, watchdogWatches, workers } from '../store';
+import { HOUR, startOfDay } from '../time';
 import { normalizeSuperAgent } from '../triggers/fastPath';
 import { cronExpr } from './config';
 import { tickRefusal } from './gates';
@@ -49,7 +50,6 @@ const log = logger('watchdog');
 export const WATCHDOG_ID = 'watchdog';
 /** Who its model calls are for, in the model gateway's terms (ADR 009). */
 const WATCHDOG_SCOPE: Scope = { role: 'watchdog' };
-const HOUR = 3600_000;
 /** The snapshot never looks further back than this. */
 const MAX_WINDOW_MS = 6 * HOUR;
 /** A code-opened watch on a transient failure is first re-checked after this many minutes. */
@@ -58,12 +58,6 @@ const MAX_WORKERS = 12;
 const MAX_LIST = 10;
 
 type Job = { kind: 'tick' | 'manual'; tick: WatchdogTick; reason: string; since: number } | { kind: 'maintainer'; tick: WatchdogTick; messageId: string; text: string };
-
-const startOfToday = (now = Date.now()) => {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
 
 export function watchdogOn(): boolean {
   const sa = settings.get().superAgent;
@@ -78,7 +72,7 @@ function recordTick(t: WatchdogTick) {
 }
 
 function spentToday(now = Date.now()): number {
-  const from = startOfToday(now);
+  const from = startOfDay(now);
   return watchdogTicks.recent(Number.MAX_SAFE_INTEGER, (t) => t.at >= from).reduce((s, t) => s + (t.costUsd || 0), 0);
 }
 
@@ -87,7 +81,7 @@ function ticksLastHour(now = Date.now()): number {
 }
 
 function actionsToday(now = Date.now()): WatchdogAction[] {
-  const from = startOfToday(now);
+  const from = startOfDay(now);
   return watchdogActions.recent(Number.MAX_SAFE_INTEGER, (a) => a.at >= from);
 }
 

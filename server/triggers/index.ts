@@ -39,12 +39,12 @@ import { logger } from '../log';
 import { systemMessage } from '../orchestrator/chatLog';
 import { chatProjectId } from '../projects';
 import { bots, chats, messages, projects, routines, settings, TRIGGER_LIMITS, threads, triggerLog, triggerPayloadFile, uid, workers } from '../store';
+import { HOUR } from '../time';
 import { type FastInput, FILTERED_SOURCES, fastPath, fingerprintOf, reachedSlowPath } from './fastPath';
 import { type Decided, fakeDecide, modelDecide, type SlowItem, SlowQueue } from './slowPath';
 
 const log = logger('triggers');
 
-const HOUR = 3600_000;
 const DETAIL_MAX = 20_000;
 /** Words a notice may use: chat is a low-interruption channel. */
 const NOTICE_WORDS = 100;

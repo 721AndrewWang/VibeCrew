@@ -165,10 +165,3 @@ export function judgeClaim(claim: { reproduced: boolean; testFiles: string[] } |
   if (fixLines > maxFixLines) return { ok: false, why: `The fix changes ${fixLines} lines (at most ${maxFixLines} are surfaced)` };
   return { ok: true, testFiles, fixFiles: fix.map((f) => f.path), fixLines };
 }
-
-/** Start of the local day, for the daily budget. */
-export function dayStart(now: number): number {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}

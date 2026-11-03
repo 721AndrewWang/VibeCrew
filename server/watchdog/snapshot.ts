@@ -10,6 +10,7 @@ import type { AuditEntry } from '../../shared/types';
 import { WORKER_ACTIVE } from '../../shared/workers';
 import { defuse } from '../layers/prompts';
 import { firstWords } from '../text';
+import { ago } from '../time';
 import { untrustedLine } from '../untrusted';
 import { LOOP_REPEATS } from './signals';
 
@@ -190,10 +191,6 @@ export function isQuiet(s: Snapshot): boolean {
 }
 
 const attr = (v: string) => v.replace(/["<>\n]/g, ' ').slice(0, 120);
-const ago = (at: number, now: number) => {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
 const span = (ms: number) => {
   const m = Math.max(0, Math.round(ms / 60_000));
   return m < 90 ? `${m} min` : `${Math.round(m / 60)} h`;

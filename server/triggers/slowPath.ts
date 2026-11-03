@@ -11,6 +11,7 @@
 import type { Trigger } from '../../shared/types';
 import { logger } from '../log';
 import { oneShot } from '../oneShot';
+import { ago } from '../time';
 import { UNTRUSTED_RULE, untrusted } from '../untrusted';
 
 const log = logger('triggers');
@@ -52,11 +53,6 @@ export function excerpt(text: string, words = EXCERPT_WORDS): string {
 export function fenceSafe(s: string): string {
   return s.replace(/<(\s*\/?\s*)(event|policies)\b/gi, '‹$1$2');
 }
-
-const ago = (at: number, now: number) => {
-  const s = Math.max(0, Math.round((now - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
 
 const attr = (s: string) => s.replace(/["<>\n]/g, ' ').slice(0, 120);
 

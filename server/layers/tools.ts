@@ -16,6 +16,7 @@ import { RECALL_TOOL, recallText } from '../recall';
 import { projectFamilies } from '../skills';
 import { bots, chats, messages, projects, settings, uid, workers } from '../store';
 import { firstWords } from '../text';
+import { ago } from '../time';
 import { monthSpend } from '../usage';
 import { workspaceOf } from '../workspaces';
 import { dispatchRefusal, messageRefusal, replyRefusal } from './gates';
@@ -46,11 +47,6 @@ type Handler = (args: Record<string, unknown>) => Promise<Result>;
 const ok = (text: string): Result => ({ text });
 const fail = (text: string): Result => ({ text, isError: true });
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
-
-const ago = (at: number) => {
-  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
-  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-};
 
 export function routerTools(ctx: () => TurnCtx | null): Record<string, Handler> {
   const turn = () => {
